@@ -1477,6 +1477,60 @@ test("basket add treats quantity as a positive delta and preserves every existin
   assert.equal(basket.numberOfProducts, 4);
 });
 
+test("shopping-list transfer uses the native list endpoints and never the individual basket endpoint", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match: "/ShoppingList/CreateShoppingList\\?name=Nemlig\\+Assistant$",
+      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      response: json({ ListId: 44 }),
+    },
+    {
+      match: "/ShoppingList/getShoppingList\\?listId=44$",
+      response: json({ Id: 44, Name: "Nemlig Assistant", Products: [] }),
+    },
+    {
+      match:
+        "/ShoppingList/UpdateProductInShoppingList\\?listId=44&productId=7&amount=2$",
+      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      response: json({}),
+    },
+    {
+      match: "/ShoppingList/getShoppingList\\?listId=44$",
+      response: json({
+        Id: 44,
+        Name: "Nemlig Assistant",
+        Products: [{ ProductId: 7, Quantity: 2 }],
+      }),
+    },
+    {
+      match: "/basket/addShoppingListToBasket$",
+      inspect: (_url, init) => {
+        assert.equal(init?.method, "POST");
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          ListId: 44,
+          ConfirmMissingProducts: false,
+        });
+      },
+      response: json({}),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+
+  const list = await client.createShoppingList("Nemlig Assistant");
+  await client.updateShoppingListProduct(list.id, 7, 2);
+  assert.deepEqual(await client.getShoppingList(list.id), {
+    id: 44,
+    name: "Nemlig Assistant",
+    items: [{ productId: 7, quantity: 2 }],
+  });
+  await client.addShoppingListToCart(list.id);
+  assert.equal(requests.length, 0);
+});
+
 test("basket validation blocks bad inputs before calls and reports partial readback failure", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),

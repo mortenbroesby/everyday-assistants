@@ -8,9 +8,22 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import type { Basket, Product, ShoppingClient } from "./client.js";
+import type {
+  Basket,
+  Product,
+  ShoppingClient,
+  ShoppingListClient,
+} from "./client.js";
 import { createMcpServer } from "./mcp.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
+
+type ShoppingListTransferClient = Pick<
+  ShoppingListClient,
+  | "createShoppingList"
+  | "updateShoppingListProduct"
+  | "getShoppingList"
+  | "addShoppingListToCart"
+>;
 
 const product = (id: number, name: string, price: number): Product => ({
   id,
@@ -96,7 +109,8 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
-  const provider: ShoppingClient = {
+  const shoppingLists = new Map<number, Map<number, number>>();
+  const provider: ShoppingClient & ShoppingListTransferClient = {
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
@@ -109,30 +123,47 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     listDepartments: async () => [],
     browseDepartment: async () => ({ products: [], page: 1, hasNext: false }),
     getCart: async () => structuredClone(basket),
-    addToCart: async (id, quantity = 1) => {
+    addToCart: async () => {
+      throw new Error("Direct basket writes must not be used.");
+    },
+    createShoppingList: async (name) => {
+      shoppingLists.set(1, new Map());
+      return { id: 1, name, items: [] };
+    },
+    updateShoppingListProduct: async (listId, id, quantity) => {
+      shoppingLists.get(listId)?.set(id, quantity);
+    },
+    getShoppingList: async (listId) => ({
+      id: listId,
+      name: "Nemlig Assistant Local basket",
+      items: [...(shoppingLists.get(listId) ?? [])].map(
+        ([productId, quantity]) => ({ productId, quantity }),
+      ),
+    }),
+    addShoppingListToCart: async (listId) => {
       providerWrites++;
-      const productValue = products.get(id);
-      assert.ok(productValue, `Unexpected product mutation: ${id}`);
-      const line = item(
-        id,
-        productValue.name ?? `Product ${id}`,
-        quantity,
-        productValue.price ?? 0,
+      const additions = [...(shoppingLists.get(listId) ?? [])].map(
+        ([id, quantity]) => {
+          const productValue = products.get(id);
+          assert.ok(productValue, `Unexpected product mutation: ${id}`);
+          return item(
+            id,
+            productValue.name ?? `Product ${id}`,
+            quantity,
+            productValue.price ?? 0,
+          );
+        },
       );
-      const existing = basket.items.find((current) => current.id === id);
       basket = {
         ...basket,
-        items: existing
-          ? basket.items.map((current) => (current.id === id ? line : current))
-          : [...basket.items, line],
+        items: [...basket.items, ...additions],
         productsPrice:
           (basket.productsPrice ?? 0) +
-          (line.total ?? 0) -
-          (existing?.total ?? 0),
+          additions.reduce((total, line) => total + (line.total ?? 0), 0),
         numberOfProducts:
-          (basket.numberOfProducts ?? 0) + quantity - (existing?.quantity ?? 0),
+          (basket.numberOfProducts ?? 0) +
+          additions.reduce((total, line) => total + (line.quantity ?? 0), 0),
       };
-      return structuredClone(basket);
     },
   };
   const credentials = async () => ({
@@ -312,7 +343,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     );
     assert.equal(submittedData.result.basket.products_price, 31.75);
     assert.equal(submittedData.result.basket.number_of_products, 7);
-    assert.equal(providerWrites, 2);
+    assert.equal(providerWrites, 1);
     assert.deepEqual(
       (await provider.getCart()).items.map(({ id, quantity }) => [
         id,
@@ -339,7 +370,7 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     );
     assert.equal(
       providerWrites,
-      2,
+      1,
       "rejected duplicate makes no additional provider write",
     );
   });

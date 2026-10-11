@@ -1728,17 +1728,34 @@ test("only an actual missing basket opens the picker on repository failures", as
     );
 
     responseMode = "provider404";
+    const providerMissingClient = Object.assign(
+      fakeClient({
+        getCart: async () => ({
+          ...basket,
+          items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
+        }),
+        getFreshProduct: async () => {
+          throw new NemligError("Provider product not found", 404);
+        },
+      }),
+      {
+        createShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
+        updateShoppingListProduct: async () => undefined,
+        getShoppingList: async () => ({
+          id: 1,
+          name: "fixture",
+          items: [],
+        }),
+        addShoppingListToCart: async () => undefined,
+      },
+    );
     await withMcpClient(
       createMcpServer(
-        fakeClient({
-          getCart: async () => ({
-            ...basket,
-            items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
-          }),
-          getFreshProduct: async () => {
-            throw new NemligError("Provider product not found", 404);
-          },
-        }),
+        providerMissingClient,
         async () => undefined,
         undefined,
         undefined,
@@ -1838,6 +1855,7 @@ test("legacy raw visual chooser is unavailable", async () => {
 
 test("a clear conversational add command authorizes only its exact prepared Local basket", async () => {
   let writes = 0;
+  const shoppingLists = new Map<number, Map<number, number>>();
   let current: Basket = {
     items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }],
     productsPrice: 2,
@@ -1845,27 +1863,62 @@ test("a clear conversational add command authorizes only its exact prepared Loca
     numberOfProducts: 1,
     deliveryTime: undefined,
   };
-  const provider = fakeClient({
-    getCart: async () => structuredClone(current),
-    addToCart: async (id, quantity = 1) => {
-      writes++;
-      current = {
-        ...current,
-        items: [
-          { id: 99, name: "Existing", quantity: 1, total: 2 },
-          {
-            id,
-            name: product.name,
-            quantity,
-            total: quantity * product.price!,
-          },
-        ],
-        productsPrice: 2 + quantity * product.price!,
-        numberOfProducts: 1 + quantity,
-      };
-      return structuredClone(current);
+  const provider = Object.assign(
+    fakeClient({
+      getCart: async () => structuredClone(current),
+      addToCart: async () => {
+        throw new Error("Direct basket writes must not be used.");
+      },
+    }),
+    {
+      createShoppingList: async (name: string) => {
+        shoppingLists.set(1, new Map());
+        return { id: 1, name, items: [] };
+      },
+      updateShoppingListProduct: async (
+        listId: number,
+        productId: number,
+        quantity: number,
+      ) => {
+        shoppingLists.get(listId)?.set(productId, quantity);
+      },
+      getShoppingList: async (listId: number) => ({
+        id: listId,
+        name: "Nemlig Assistant Local basket",
+        items: [...(shoppingLists.get(listId) ?? [])].map(
+          ([productId, quantity]) => ({ productId, quantity }),
+        ),
+      }),
+      addShoppingListToCart: async (listId: number) => {
+        writes++;
+        const items = shoppingLists.get(listId) ?? new Map();
+        current = {
+          ...current,
+          items: [
+            ...current.items,
+            ...[...items].map(([id, quantity]) => ({
+              id,
+              name: product.name,
+              quantity,
+              total: quantity * product.price!,
+            })),
+          ],
+          productsPrice:
+            (current.productsPrice ?? 0) +
+            [...items.values()].reduce(
+              (total, quantity) => total + quantity * product.price!,
+              0,
+            ),
+          numberOfProducts:
+            (current.numberOfProducts ?? 0) +
+            [...items.values()].reduce(
+              (total, quantity) => total + quantity,
+              0,
+            ),
+        };
+      },
     },
-  });
+  );
   await withMcpClient(
     createMcpServer(provider, testCredentials),
     async (mcp) => {

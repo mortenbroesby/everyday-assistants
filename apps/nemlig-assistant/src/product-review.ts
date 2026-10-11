@@ -460,7 +460,8 @@ export class ProductReviewService {
       this.proposals?.prepareShoppingListAdditions &&
       this.client.createShoppingList &&
       this.client.updateShoppingListProduct &&
-      this.client.getShoppingList,
+      this.client.getShoppingList &&
+      this.client.addShoppingListToCart,
     );
   }
 
@@ -472,26 +473,21 @@ export class ProductReviewService {
   ): Promise<{
     proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
   }> {
-    const proposal = this.canPrepareShoppingList()
-      ? await this.proposals!.prepareShoppingListAdditions!(
-          owner,
-          basket.lines.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          `Nemlig Assistant ${basketId.slice(0, 8)}`,
-          { kind: "exact_review" },
-          { signal, freshProducts: true },
-        )
-      : await this.proposals!.prepareAdditions(
-          owner,
-          basket.lines.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          { kind: "exact_review" },
-          { signal, freshProducts: true },
-        );
+    if (!this.canPrepareShoppingList()) {
+      throw new NemligError(
+        "Shopping-list submission is unavailable. No Nemlig basket write was sent.",
+      );
+    }
+    const proposal = await this.proposals!.prepareShoppingListAdditions!(
+      owner,
+      basket.lines.map(({ productId, quantity }) => ({
+        product_id: productId,
+        quantity,
+      })),
+      `Nemlig Assistant ${basketId.slice(0, 8)}`,
+      { kind: "exact_review" },
+      { signal, freshProducts: true },
+    );
     return { proposal };
   }
 
@@ -947,9 +943,6 @@ export class ProductReviewService {
     owner: string,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    if (!this.proposals) {
-      throw new NemligError("Submission service unavailable.");
-    }
     const stored = this.lock(owner);
     try {
       const previous = stored.snapshot.submission;
@@ -973,9 +966,15 @@ export class ProductReviewService {
           "The Local basket has unavailable or unresolved product details. Review them before submitting.",
         );
       }
-      const proposal = await this.proposals.prepareAdditions(
+      if (!this.canPrepareShoppingList()) {
+        throw new NemligError(
+          "Shopping-list submission is unavailable. No Nemlig basket write was sent.",
+        );
+      }
+      const proposal = await this.proposals!.prepareShoppingListAdditions!(
         owner,
         items.map(({ product_id, quantity }) => ({ product_id, quantity })),
+        "Nemlig Assistant Local basket",
         { kind: "exact_review" },
         { signal, freshProducts: true },
       );
