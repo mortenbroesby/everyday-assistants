@@ -14,7 +14,7 @@
 
 - [x] 3.1 Replace per-product `addToCart` review submission with one list transfer bound to exact list and real-basket baselines.
 - [x] 3.2 Retain no-retry uncertain-transfer behavior; distinguish verified success and failure.
-- [ ] 3.3 Follow-up: add durable provider-list lifecycle and cleanup only after native smoke evidence.
+- [x] 3.3 Delete the exact app-created provider list only after verified basket readback; keep successful submissions completed and warn if cleanup is not confirmed. Durable lifecycle recovery remains deferred.
 
 ## 4. Surface and documentation
 

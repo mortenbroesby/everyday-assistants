@@ -1746,6 +1746,7 @@ test("only an actual missing basket opens the picker on repository failures", as
           name: "fixture",
           items: [],
         }),
+        deleteShoppingList: async () => undefined,
         addShoppingListToCart: async () => undefined,
       },
     );
@@ -1885,6 +1886,9 @@ test("a clear conversational add command authorizes only its exact prepared Loca
           ([productId, quantity]) => ({ productId, quantity }),
         ),
       }),
+      deleteShoppingList: async (listId: number) => {
+        shoppingLists.delete(listId);
+      },
       addShoppingListToCart: async (listId: number) => {
         writes++;
         const items = shoppingLists.get(listId) ?? new Map();

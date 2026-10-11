@@ -143,6 +143,9 @@ const catalogue = {
       })),
     };
   },
+  deleteShoppingList: async (listId: number) => {
+    shoppingLists.delete(listId);
+  },
   addShoppingListToCart: async (listId: number) => {
     const list = shoppingLists.get(listId);
     if (!list) {
@@ -323,7 +326,7 @@ document.getElementById('run').onclick = async () => {
   transcript=recovered; initialized=false; frame.src='/viewer';
   await wait(()=>initialized&&button('Submit to Nemlig')&&!button('Add to Nemlig basket'));
   status.textContent='PASS: quantity flush, all-row exact prepare, durable restart recovery without authority, zero provider writes';
- } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally {run.disabled=false;}
+ } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls)+' | widget results: '+JSON.stringify(widgetResults);} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
  const run=document.getElementById('flow'); run.disabled=true;

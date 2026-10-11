@@ -462,12 +462,17 @@ test("a submitted basket names skipped products without claiming they were added
     review: {},
     verified_additions: 0,
     skipped_products: [{ product_id: 7, name: "Banan" }],
+    cleanup_warning: "Temporary shopping-list deletion could not be confirmed.",
   };
   pageProps.model.screen.review.submissionAttempted = true;
   pageProps.model.submitBlocked = true;
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /No products were added/u);
   assert.match(html, /Unavailable products were skipped: Banan/u);
+  assert.match(
+    html,
+    /Temporary shopping-list deletion could not be confirmed/u,
+  );
   assert.doesNotMatch(html, /Only the prepared products were added/u);
   assert.doesNotMatch(html, /A previous addition needs checking/u);
   assert.match(html, /Choose another Local basket/u);
