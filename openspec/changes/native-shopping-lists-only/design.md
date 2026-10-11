@@ -175,19 +175,17 @@ submission and explain the residual items. Cleanup failure does not change a
 verified transfer into a failed transfer and never invites resubmission.
 
 The inspected provider API has no demonstrated conditional transfer or delete.
-A final read and an assistant lock cannot exclude a concurrent edit in Nemlig's
-own app. Contract characterization must determine whether conditional operations
-exist. If not, an approved transfer snapshot is an option only after demonstrating that it
-cannot be changed between validation and transfer. Creating another ordinary
-account-visible list does not establish isolation. Without conditional transfer
-or demonstrated snapshot isolation, fail closed before dispatch and treat this
-as an unresolved release gate. A proven snapshot is temporary transfer state,
-with the selected list remaining the sole saved shopping workspace. Never delete a concurrently changed source. Do not claim a final
-read makes source deletion atomic: automatic cleanup of shared/manual lists
-must remain disabled unless a provider precondition or another demonstrated
-mechanism prevents deleting new edits. The default fallback is verified transfer
-plus a clear retained-list warning and explicit later deletion, not data loss.
-This is a release gate, not a reason to keep Local basket content persistence.
+The owner accepts the possible concurrent Nemlig-side edit between the final
+contents read and native transfer, provided the implementation revalidates the
+exact source and basket baseline, sends one transfer, verifies additive basket
+readback, and keeps the durable no-replay fence. A mismatch before dispatch
+rejects the action; an unexpected readback after dispatch remains uncertain and
+must never invite retry. Automatic source deletion is a separate pending user
+decision. A final read cannot make deletion atomic, so keep the source list
+unless a conditional delete or equivalent race protection is demonstrated and
+the user has approved cleanup. Do not create another account-visible list to
+claim isolation. Retaining the source with a clear warning is the default
+fallback; this is not a reason to keep Local basket content persistence.
 
 ## Removal and reuse map
 

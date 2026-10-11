@@ -3,7 +3,7 @@
 - [x] 1.1 Rebase the implementation branch on current main containing merged PR #294; verify its successful-transfer cleanup and warning tests remain present. Record the issue, branch and integration owner.
 - [ ] 1.2 Capture sanitized native inventory, pagination, account/list identity and not-found fixtures; implement enumeration in the existing client and test empty, multiple-page, duplicate-name, malformed, unauthorized and unavailable responses.
 - [ ] 1.3 Characterize absolute list quantities, removal and partial replacement with focused client tests; demonstrate writes are not automatically retried.
-- [ ] 1.4 Resolve the concurrent native-edit gate: prove conditional transfer/deletion or prove an immutable/isolated approved transfer snapshot and retain unsafe-to-delete source lists; a normal copied list is not sufficient, and unavailable guarantees block dispatch. Verify exact payload and preservation of post-review edits with race fixtures; record supported cleanup behavior before wiring it into the UI.
+- [x] 1.4 Record the provider's lack of conditional transfer and the owner's acceptance of the possible native-edit race when exact source and basket checks, one transfer, additive readback, and a durable no-replay fence are used. Keep the source list after transfer; automatic deletion awaits a separate user decision.
 
 ## 2. Add explicit saving and move saved selections to native lists
 
@@ -20,7 +20,7 @@
 
 - [ ] 3.1 Implement the minimum durable attempt receipt in existing hosting storage with a narrow authenticated interface; test atomic fence acquisition, failed storage writes, spoofed owner/account binding and no product-line persistence.
 - [ ] 3.2 Bind preparation and approval to the exact clean native source, fingerprint and current basket baseline; reject dirty/in-flight/uncertain edits and test stale external changes, wrong conversation, unavailable products and missing lists before dispatch.
-- [ ] 3.3 Integrate one native transfer and verified-success-before-cleanup; test repeated submission, two-chat contention, process restart after dispatch, lost response, failed final readback and cleanup warning without another transfer.
+- [ ] 3.3 Finish the transfer receipt lifecycle: exact transfer, additive readback, replay prevention, restart and uncertain-outcome checks are implemented; resolve the separate source-list cleanup decision and test its warning/retention behavior without another transfer.
 - [ ] 3.4 Define and test receipt retention: expired approval cannot replay, attempted/uncertain receipts never expire into new authority, and resource limits fail closed rather than evict safety evidence.
 - [ ] 3.5 Extend the representative MCP fixture to 55 distinct products plus an existing basket item; assert one transfer, additive exact readback and only safe corresponding-list cleanup, with no per-product fallback.
 
