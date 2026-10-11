@@ -1,6 +1,6 @@
 ## 1. Establish provider contracts and delivery baseline
 
-- [ ] 1.1 Rebase the implementation branch on current main containing merged PR #294; verify its successful-transfer cleanup and warning tests remain present. Record the issue, branch and integration owner.
+- [x] 1.1 Rebase the implementation branch on current main containing merged PR #294; verify its successful-transfer cleanup and warning tests remain present. Record the issue, branch and integration owner.
 - [ ] 1.2 Capture sanitized native inventory, pagination, account/list identity and not-found fixtures; implement enumeration in the existing client and test empty, multiple-page, duplicate-name, malformed, unauthorized and unavailable responses.
 - [ ] 1.3 Characterize absolute list quantities, removal and partial replacement with focused client tests; demonstrate writes are not automatically retried.
 - [ ] 1.4 Resolve the concurrent native-edit gate: prove conditional transfer/deletion or prove an immutable/isolated approved transfer snapshot and retain unsafe-to-delete source lists; a normal copied list is not sufficient, and unavailable guarantees block dispatch. Verify exact payload and preservation of post-review edits with race fixtures; record supported cleanup behavior before wiring it into the UI.

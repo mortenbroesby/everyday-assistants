@@ -14,6 +14,13 @@ import type {
   ViewerScreen,
 } from "./viewer-page.js";
 
+export const LONG_OPERATION_TIMEOUT_MS = 660_000;
+export const viewerToolCallOptions = (signal: AbortSignal) => ({
+  signal,
+  timeout: LONG_OPERATION_TIMEOUT_MS,
+  maxTotalTimeout: LONG_OPERATION_TIMEOUT_MS,
+});
+
 declare global {
   interface Window {
     openai?: { toolOutput?: unknown };
@@ -373,6 +380,7 @@ export function ProductViewer() {
     screen.kind === "review" ? screen.review : undefined,
   );
   const callLock = useRef(false);
+  const activeToolController = useRef<AbortController | undefined>(undefined);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
       (screen.review.submissionAttempted === true ||
@@ -441,6 +449,7 @@ export function ProductViewer() {
     if (selectedBasketIdRef.current === basketId) {
       return;
     }
+    activeToolController.current?.abort();
     selectionEpoch.current++;
     selectedBasketIdRef.current = basketId;
     setSelectedBasketId(basketId);
@@ -646,6 +655,7 @@ export function ProductViewer() {
       host.ontoolresult = (result) => applyPayload(result);
       host.ontoolcancelled = () => {
         cancellationEpoch.current++;
+        activeToolController.current?.abort();
         ignorePassivePayloads.current = true;
         deactivateReview();
         setScreen({ kind: "cancelled" });
@@ -667,6 +677,7 @@ export function ProductViewer() {
   useHostStyles(connectedApp, connectedApp?.getHostContext());
   useEffect(
     () => () => {
+      activeToolController.current?.abort();
       if (quantityTimer.current) {
         clearTimeout(quantityTimer.current);
       }
@@ -780,15 +791,17 @@ export function ProductViewer() {
     const requestEpoch = cancellationEpoch.current;
     const requestSelectionEpoch =
       expectedSelection?.epoch ?? selectionEpoch.current;
+    const requestController = new AbortController();
+    activeToolController.current = requestController;
     if (!background) {
       setBusy(true);
       setMessage("Updating…");
     }
     try {
-      const result = await connectedApp.callServerTool({
-        name,
-        arguments: requestArgs,
-      });
+      const result = await connectedApp.callServerTool(
+        { name, arguments: requestArgs },
+        viewerToolCallOptions(requestController.signal),
+      );
       if (
         requestEpoch !== cancellationEpoch.current ||
         requestSelectionEpoch !== selectionEpoch.current
@@ -854,6 +867,9 @@ export function ProductViewer() {
       }
       return false;
     } finally {
+      if (activeToolController.current === requestController) {
+        activeToolController.current = undefined;
+      }
       callLock.current = false;
       if (!background) {
         setBusy(false);

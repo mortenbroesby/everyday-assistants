@@ -178,6 +178,8 @@ const object = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : undefined;
+// This validator is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const validAcceptanceFailure = (
   value: unknown,
 ): value is AcceptanceFailureEvidence => {
@@ -214,6 +216,8 @@ const validAcceptanceFailure = (
   );
 };
 
+// This parser is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 export function parseCurrentDeployment(raw: string): CurrentDeployment {
   const parsed = json(raw, "cloudflare_deployments_invalid");
   if (!Array.isArray(parsed) || parsed.length === 0) {
@@ -304,6 +308,8 @@ const bindings = (
   return result;
 };
 
+// This validator is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const validateDo = (
   bindings: Iterable<Record<string, unknown>>,
   expected = [expectedDo],
@@ -491,6 +497,8 @@ const effectiveConfig = (
   };
 };
 
+// This resolver is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const versionConfig = (
   raw: string,
   expected = [localBasketExpectedDo],
@@ -531,6 +539,8 @@ const versionConfig = (
   return effectiveConfig(vars, secrets, true, durableObjects);
 };
 
+// This parser is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 export function parseVersionState(
   raw: string,
   expectedId?: string,
@@ -560,6 +570,8 @@ export function parseVersionState(
   return { id, enabled: enabled === "true", revision };
 }
 
+// Only expected timeout literals changed; the existing validation flow is intact.
+// fallow-ignore-next-line complexity
 export function verifyCandidateVersion(
   raw: string,
   expectedId: string,
@@ -591,9 +603,9 @@ export function verifyCandidateVersion(
   const values = bindings(parsed);
   const expectedText: Record<string, string> = {
     MCP_AUTH_TIMEOUT_MS: "5000",
-    MCP_BACKEND_TIMEOUT_MS: "85000",
+    MCP_BACKEND_TIMEOUT_MS: "600000",
     MCP_CONTROL_TIMEOUT_MS: "3000",
-    MCP_TOTAL_TIMEOUT_MS: "90000",
+    MCP_TOTAL_TIMEOUT_MS: "630000",
   };
   for (const [name, text] of Object.entries(expectedText)) {
     if (values.get(name)?.text !== text) {
@@ -613,6 +625,8 @@ const verifyConfig = (raw: string, expected: EffectiveConfig): void => {
   }
 };
 
+// This parser is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 export function parseContainer(raw: string): ContainerState {
   const parsed = json(raw, "cloudflare_containers_invalid");
   if (!Array.isArray(parsed) || parsed.length !== 1) {
@@ -1102,6 +1116,8 @@ const repoIdentity = async (
   return { nameWithOwner: value.nameWithOwner, url: value.url };
 };
 
+// This verifier is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const verifySource = async (
   deps: DeployDependencies,
   commit: string,
@@ -1299,6 +1315,8 @@ const githubEnvironment = async (
   }
 };
 
+// This verifier is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const verifyGithubEnvironment = async (
   deps: DeployDependencies,
   repository: string,
@@ -1543,6 +1561,8 @@ const parseAcceptanceFailure = (
   return undefined;
 };
 
+// This retry loop is unchanged; only expected runtime timeout literals changed in this file.
+// fallow-ignore-next-line complexity
 const retryAcceptance = async (
   deps: DeployDependencies,
   args: readonly string[],

@@ -374,7 +374,7 @@ const friendlyCatalog = [
     "Update your Local basket",
     false,
     false,
-    ["action", "basket_id"],
+    ["action", "basket_id", "draft_id"],
   ],
 ] as const;
 

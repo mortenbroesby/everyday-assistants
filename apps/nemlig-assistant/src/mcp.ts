@@ -96,6 +96,19 @@ export const serviceAcceptanceResourceInventory = [
 ] as const;
 
 const reviewSnapshotSchema = z.object({
+  draftId: z.string().uuid().optional(),
+  draftExpiresAt: z.number().int().nonnegative().optional(),
+  shoppingListId: z.number().int().positive().optional(),
+  shoppingListName: z.string().optional(),
+  saveStatus: z.enum(["saving", "saved", "partial", "uncertain"]).optional(),
+  saveProgress: z
+    .object({
+      completed: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+    })
+    .strict()
+    .optional(),
+  actionNotice: z.string().max(300).optional(),
   basketId: z.string().uuid().optional(),
   revision: z.number().int().nonnegative().optional(),
   submissionAttempted: z.boolean().optional(),
@@ -158,6 +171,10 @@ const addReviewActionSchema = z.object({
 const prepareReviewActionSchema = z.object({
   kind: z.literal("prepare_submission"),
 });
+const saveReviewActionSchema = z.object({
+  kind: z.literal("save"),
+  name: z.string().trim().min(1).max(30),
+});
 const removeReviewActionSchema = z.object({
   kind: z.literal("remove"),
   product_ids: z
@@ -172,7 +189,7 @@ const quantityReviewActionSchema = z.object({
 });
 const navigateReviewActionSchema = z.object({
   kind: z.literal("navigate"),
-  destination: z.enum(["ready", "alternatives"]),
+  destination: z.enum(["needs-review", "ready", "alternatives"]),
 });
 const alternativesReviewActionSchema = z.object({
   kind: z.literal("alternatives"),
@@ -190,6 +207,7 @@ const modelReviewActionSchema = z.discriminatedUnion("kind", [
   endReviewActionSchema,
   ...localActionSchema.options,
   addReviewActionSchema,
+  saveReviewActionSchema,
   prepareReviewActionSchema,
   removeReviewActionSchema,
   quantityReviewActionSchema,
@@ -203,6 +221,7 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   endReviewActionSchema,
   ...localActionSchema.options,
   addReviewActionSchema,
+  saveReviewActionSchema,
   z.object({
     kind: z.literal("revisit"),
     product_ids: z
@@ -699,13 +718,14 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     owner: string,
     action: z.infer<typeof reviewActionSchema>,
     signal: AbortSignal,
+    draftId?: string,
   ) => {
     if (action.kind === "show") {
-      const review = reviews.active(owner);
+      const review = reviews.active(owner, draftId);
       return review ? { review } : { unavailable: true as const };
     }
     if (action.kind === "end") {
-      reviews.end(owner);
+      reviews.end(owner, draftId);
       return { ended: true as const };
     }
     if (
@@ -718,9 +738,22 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
     }
     const review =
       action.kind === "prepare_submission"
-        ? await reviews.prepare(owner, signal)
-        : await reviews.update(owner, action, signal);
+        ? await reviews.prepare(owner, signal, draftId)
+        : await reviews.update(owner, action, signal, draftId);
     return { review };
+  };
+  const updateUnsavedDraft = async (
+    owner: string,
+    action: z.infer<typeof reviewActionSchema>,
+    signal: AbortSignal,
+    draftId: string | undefined,
+    unavailableText: string,
+  ) => {
+    const result = await updateDraft(owner, action, signal, draftId);
+    return success(
+      result,
+      result.unavailable ? unavailableText : JSON.stringify(result),
+    );
   };
 
   const runAuthenticatedRead = async <Result>(
@@ -1035,6 +1068,11 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
             .describe(
               "Exact Local basket ID supplied by the current review card.",
             ),
+          draft_id: z
+            .string()
+            .uuid()
+            .optional()
+            .describe("Exact process-local unsaved draft ID from this card."),
           action: modelReviewActionSchema.describe(
             "The Local basket change, navigation, refresh, or preparation requested by the user.",
           ),
@@ -1044,20 +1082,19 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ action, basket_id }, ctx) => {
+    ({ action, basket_id, draft_id }, ctx) => {
       const repository = localBasketRepository(ctx.mcpReq.signal);
       // Ordered branches preserve the distinction between conversation selection and an explicit card ID.
       // fallow-ignore-next-line complexity
       const perform = async () => {
         const owner = reviewOwner(ctx);
         if (!repository) {
-          return updateDraft(owner, action, ctx.mcpReq.signal).then((result) =>
-            success(
-              result,
-              result.unavailable
-                ? "No active Local basket remains. Ask before starting a new list; previous choices and approval are not restored."
-                : JSON.stringify(result),
-            ),
+          return updateUnsavedDraft(
+            owner,
+            action,
+            ctx.mcpReq.signal,
+            draft_id,
+            "No active Local basket remains. Ask before starting a new list; previous choices and approval are not restored.",
           );
         }
         const key = selectionKey(ctx);
@@ -1172,6 +1209,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       return action.kind === "add" ||
         action.kind === "alternatives" ||
         action.kind === "replace" ||
+        action.kind === "save" ||
         action.kind === "prepare_submission"
         ? runAuthenticatedRead("update_product_review_conversation", perform)
         : runMcpOperation("update_product_review_conversation", perform);
@@ -1194,6 +1232,11 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
             .describe(
               "Exact Local basket ID supplied by the current review card.",
             ),
+          draft_id: z
+            .string()
+            .uuid()
+            .optional()
+            .describe("Exact process-local unsaved draft ID from this card."),
           action: reviewActionSchema,
         })
         .strict(),
@@ -1201,7 +1244,9 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
-    ({ action, basket_id }, ctx) => {
+    // Model may resolve a conversation target; widget mutations are tied to this card's exact list ID.
+    // fallow-ignore-next-line code-duplication
+    ({ action, basket_id, draft_id }, ctx) => {
       const repository = localBasketRepository(ctx.mcpReq.signal);
       // The widget adapter is a fail-closed state machine for stale and ID-less cards.
       // fallow-ignore-next-line complexity
@@ -1258,6 +1303,15 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
             selectedBasketId: target,
           });
         }
+        if (!repository) {
+          return updateUnsavedDraft(
+            owner,
+            action,
+            ctx.mcpReq.signal,
+            draft_id,
+            "Unsaved draft expired or is unavailable. Start a new draft; old cards cannot restore it.",
+          );
+        }
         if (repository) {
           const target = basket_id;
           if (!target) {
@@ -1281,6 +1335,7 @@ In the hosted deployment, Local baskets are durable owner data; use the opaque b
       return action.kind === "add" ||
         action.kind === "alternatives" ||
         action.kind === "replace" ||
+        action.kind === "save" ||
         action.kind === "prepare_submission"
         ? runAuthenticatedRead("update_product_review", perform)
         : runMcpOperation("update_product_review", perform);

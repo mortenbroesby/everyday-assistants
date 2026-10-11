@@ -255,8 +255,14 @@ https://developers.cloudflare.com/durable-objects/reference/durable-objects-migr
 
 ## Evidence still needed during implementation
 
-- Exact inventory endpoint, pagination, stable account/list identity and not-found
-  response shape: inspect the native client/fixtures; do not guess an endpoint.
+- First-party public client evidence captured 2026-10-11 from
+  `https://www.nemlig.com/scom/dist/main.js?v=b1.0.0.0` (SHA256
+  `57cbe33511fd50de1cd2faf33b8e03f66aafc179799816a70ee5829be80886d8`):
+  inventory is `GET /webapi/ShoppingList/GetShoppingLists?skip=<n>&take=<n>`;
+  the overview response uses `ShoppingListOverViewViewModels` and
+  `NumberOfPages`, with `Id`, `Name`, `ProductsCount`, and `TotalAmount` rows.
+  This is source-derived evidence, not a live account response. Authenticated
+  not-found behavior and live pagination consistency remain unverified.
 - Conditional write/transfer/delete support and tested snapshot behavior at the
   concurrency gate above.
 - Existing Container storage access and narrow receipt transport, checked with a

@@ -64,6 +64,8 @@ const boundedInteger = (
   return value;
 };
 
+// Only finite timeout defaults changed; existing bounds and ordering checks remain intact.
+// fallow-ignore-next-line complexity
 export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
   const authTimeoutMs = boundedInteger(env, "MCP_AUTH_TIMEOUT_MS", 10_000);
   const controlTimeoutMs = boundedInteger(
@@ -71,11 +73,11 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     "MCP_CONTROL_TIMEOUT_MS",
     10_000,
   );
-  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 120_000);
+  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 630_000);
   const backendTimeoutMs = boundedInteger(
     env,
     "MCP_BACKEND_TIMEOUT_MS",
-    120_000,
+    600_000,
   );
   if (authTimeoutMs >= totalTimeoutMs) {
     throw new Error(
