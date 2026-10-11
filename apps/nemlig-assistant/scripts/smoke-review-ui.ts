@@ -193,6 +193,9 @@ const uncertainProposals = {
   prepareShoppingListAdditions: (
     ...args: Parameters<BasketProposalService["prepareShoppingListAdditions"]>
   ) => proposalService.prepareShoppingListAdditions(...args),
+  transferNativeShoppingList: (
+    ...args: Parameters<BasketProposalService["transferNativeShoppingList"]>
+  ) => proposalService.transferNativeShoppingList(...args),
   apply: async (...args: Parameters<BasketProposalService["apply"]>) => {
     simulatedSubmissions++;
     if (nextSubmissionStatus === "uncertain") {
@@ -271,6 +274,7 @@ let transcript, offline = false, initialized = false, conversationMessages = 0;
 const widgetCalls = [], widgetResults = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
+const waitForStats=async predicate=>{const until=Date.now()+15000;while(Date.now()<until){const stats=await fetch('/stats').then(r=>r.json());if(predicate(stats))return stats;await new Promise(r=>setTimeout(r,25));}throw new Error('Timed out waiting for provider stats');};
 document.getElementById('start').onclick = async () => {
  transcript = await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
  publish();
@@ -323,22 +327,39 @@ document.getElementById('run').onclick = async () => {
   await saveList('Regression list');
   await wait(()=>title()==='Regression list');
   const savedReview=widgetResults.at(-1).structuredContent.review;
-  check(button('Submit to Nemlig basket').disabled,'Unsupported native-list transfer was not blocked');
-  check(text().includes('cannot guarantee this saved list stays unchanged through transfer'),'Native-list limitation was not explained');
-  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Disabled Submit action reached preparation');
-  check(!button('Add 4 products to Nemlig basket'),'Unsupported transfer path offered basket confirmation');
-  const stats=await fetch('/stats').then(r=>r.json()); check(stats.shoppingListCount===1&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review created a duplicate transfer list'); check(stats.basketReads===0&&stats.nativeTransfers===0&&stats.basketWrites===0,'Blocked review crossed the provider basket boundary');
+  check(!button('Submit to Nemlig basket').disabled,'Saved native-list Submit was unavailable');
+  await fetch('/change-list',{method:'POST'});
+  click('Submit to Nemlig basket');
+  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.isError));
+  const staleResult=widgetResults.findLast(result=>result.name==='submit_product_review');
+  check(staleResult.text.includes('Nemlig changed this list'),'Stale list rejection did not explain the refresh requirement');
+  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===0,'Changed list reached the basket transfer boundary');
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===2&&item.quantity===3)));
+  const refreshed=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
+  check(JSON.stringify(refreshed.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,2],[2,3]]),'Refreshing did not show the current native-list contents');
+  check(text().includes('Nemlig changed this list'),'Changed-list rejection was not shown after refresh');
+  check(!button('Submit to Nemlig basket').disabled,'Refreshed native list was unavailable for deliberate submission');
+  click('Submit to Nemlig basket');
+  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
+  const submitted=widgetResults.findLast(result=>result.name==='submit_product_review');
+  check(submitted.structuredContent.review.submission?.status==='submitted','Native-list transfer receipt was not returned');
+  const submittedStats=await waitForStats(stats=>stats.nativeTransfers===1);
+  check(submittedStats.shoppingListCount===1,'Submission removed its source list');
+  check(submittedStats.basketReads>=3&&submittedStats.basketWrites===0,'Transfer skipped basket readback or used a direct basket write');
+  check(JSON.stringify(submittedStats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,2],[2,3]]),'Basket readback did not contain the exact refreshed quantities');
+  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
+  const stats=await fetch('/stats').then(r=>r.json()); check(stats.shoppingListCount===1&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review created a duplicate transfer list'); check(stats.nativeTransfers===1&&stats.basketWrites===0,'Submit did not use one native-list transfer');
   check(widgetCalls.every(c=>!('representation' in c.arguments)),'Viewer sent a representation selector');
   await fetch('/restart',{method:'POST'});
   const recovered=await call({name:'start_product_review',arguments:{shopping_list_id:savedReview.shoppingListId}});
   check(recovered.structuredContent.review.shoppingListId===savedReview.shoppingListId,'Restart lost the saved Nemlig shopping list');
-  check(recovered.structuredContent.review.items.length===2&&!recovered.structuredContent.review.submission,'Restart restored prepared authority or lost rows');
+  check(recovered.structuredContent.review.items.length===2&&recovered.structuredContent.review.submission?.status==='submitted','Restart lost the completed transfer receipt or list rows');
   const stale=await call({name:'submit_product_review',arguments:{shopping_list_id:savedReview.shoppingListId,submission_id:'00000000-0000-4000-8000-000000000000'}});
   check(stale.isError===true,'Restart accepted a submission without prepared authority');
-  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===0,'Restart recovery crossed provider write boundary');
+  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===0,'Restart recovery replayed a completed transfer');
   transcript=recovered; initialized=false; frame.src='/viewer';
-  await wait(()=>initialized&&title()==='Regression list'&&button('Submit to Nemlig basket')?.disabled);
-  status.textContent='PASS: draft Save, saved-list restart recovery, conditional-transfer gate blocks duplicate list and basket writes';
+  await wait(()=>initialized&&text().includes('Nemlig confirmed the addition'));
+  status.textContent='PASS: saved list transferred once, basket readback matched, source retained, and restart blocked replay';
  } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls)+' | widget results: '+JSON.stringify(widgetResults);} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
@@ -358,13 +379,13 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>title()==='Unsaved shopping list'&&doc().querySelectorAll('.product-list article').length===2);
   await saveList('Unknown price list');
   await wait(()=>text().includes('Unknown price'));
-  check(button('Submit to Nemlig basket').disabled,'Unsupported native-list transfer was not blocked');
-  check(text().includes('cannot guarantee this saved list stays unchanged through transfer'),'Native-list limitation was not explained');
-  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Disabled Submit action reached preparation');
-  const stats=await fetch('/stats').then(r=>r.json());
+  check(!button('Submit to Nemlig basket').disabled,'Unknown-price native-list Submit was unavailable');
+  click('Submit to Nemlig basket');
+  const stats=await waitForStats(value=>value.nativeTransfers===1);
   check(stats.shoppingListCount===1&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review created a duplicate transfer list');
-  check(stats.basketReads===0&&stats.nativeTransfers===0&&stats.basketWrites===0,'Blocked review crossed the provider basket boundary');
-  status.textContent='PASS: unknown-price list is saved; unsupported conditional transfer fails closed without a duplicate list or basket write';
+  check(stats.basketReads>=3&&stats.basketWrites===0&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,1],[2,2]]),'Unknown-price transfer did not complete with exact basket readback');
+  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
+  status.textContent='PASS: unknown-price list submitted once with basket readback and no duplicate list';
  } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
@@ -391,9 +412,9 @@ document.getElementById('alternatives').onclick = async () => {
   Object.getOwnPropertyDescriptor(doc().defaultView.HTMLInputElement.prototype,'value').set.call(query,'unavailable');
   query.dispatchEvent(new Event('input',{bubbles:true})); query.form.requestSubmit();
   await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
-  const back=button('Back to Local basket'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Unsaved shopping list');
+  const back=button('Back to shopping list'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Unsaved shopping list');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');
-  status.textContent='PASS: alternative search/back leaves basket unchanged; provider basket writes 0';
+  status.textContent='PASS: alternative search/navigation leaves shopping list unchanged; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 </script></body></html>`;
@@ -458,6 +479,15 @@ const server = createServer((req, res) => {
       res.end("enabled");
       return;
     }
+    if (req.url === "/change-list" && req.method === "POST") {
+      const list = shoppingLists.get(1);
+      if (!list) {
+        throw new Error("Synthetic shopping list is missing");
+      }
+      list.items.set(2, 3);
+      res.end("changed");
+      return;
+    }
     if (req.url === "/uncertain-next" && req.method === "POST") {
       nextSubmissionStatus = "uncertain";
       res.end("enabled");
@@ -471,6 +501,7 @@ const server = createServer((req, res) => {
           basketReads,
           basketWrites: directWrites,
           nativeTransfers,
+          basketItems: currentBasket.items,
           shoppingListCount: shoppingLists.size,
           shoppingListCreates,
           shoppingListUpdates,
@@ -577,5 +608,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: draft save, native-list restart, blocked unsafe transfer, alternatives, and zero fake basket writes.",
+  "MCP adapter browser smoke passed: saved-list transfer, basket readback, restart replay guard, alternatives, and zero direct basket writes.",
 );

@@ -797,6 +797,14 @@ export function ProductViewer() {
   ) => {
     ignorePassivePayloads.current = true;
     const text = cause instanceof Error ? cause.message : "Update failed";
+    if (/Nemlig changed this list/iu.test(text)) {
+      submissionFailure.current =
+        "Nemlig changed this list. Review its refreshed contents before submitting again.";
+      submitBlockedRef.current = false;
+      setSubmitBlocked(false);
+      setMessage(submissionFailure.current);
+      return;
+    }
     if (/no basket write was sent/iu.test(text)) {
       setMessage(text);
       return;

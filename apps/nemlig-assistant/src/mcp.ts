@@ -917,10 +917,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       return success({ review: await reviews.prepare(owner, signal) });
     }
     if (action.kind === "show") {
-      const current = reviews.active(owner);
-      if (current?.shoppingListId === listId) {
-        return success({ review: current });
-      }
       return openNativeShoppingList(owner, listId, signal);
     }
     if (action.kind === "select") {

@@ -142,6 +142,38 @@ test("an empty picker offers shopping-list draft starter actions", () => {
   assert.match(expiredMarkup, /Start a shopping-list draft/u);
 });
 
+test("only saved Nemlig shopping lists can be submitted to the basket", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.basketId =
+    "12345678-1234-4234-8234-123456789abc";
+  const localMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  const localSubmit = localMarkup.match(
+    /<button[^>]*>[\s\S]*?Submit to Nemlig basket[\s\S]*?<\/button>/u,
+  )?.[0];
+  assert.ok(localSubmit);
+  assert.match(localSubmit, /\sdisabled(?:="")?/u);
+  assert.match(
+    localMarkup,
+    /Open or save a Nemlig shopping list before submitting it/u,
+  );
+
+  pageProps.model.screen.review.shoppingListId = 44;
+  pageProps.model.screen.review.saveStatus = "saved";
+  const savedMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  const savedSubmit = savedMarkup.match(
+    /<button[^>]*>[\s\S]*?Submit to Nemlig basket[\s\S]*?<\/button>/u,
+  )?.[0];
+  assert.ok(savedSubmit);
+  assert.doesNotMatch(savedSubmit, /\sdisabled(?:="")?/u);
+});
+
 test("interrupted updates show current rows separately from pending rows", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {

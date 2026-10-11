@@ -662,6 +662,12 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       ? view.missing === true
       : view.product.available === false,
   );
+  const canSubmitSavedList = Boolean(
+    review?.shoppingListId !== undefined &&
+    review.saveStatus === "saved" &&
+    !review.shoppingListDirty &&
+    review.updateStatus === undefined,
+  );
   const alternatives = review?.alternatives;
   const showingAlternatives = Boolean(
     review && active && destination === "alternatives" && alternatives,
@@ -1394,6 +1400,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   block
                   disabled={
                     Boolean(review.draftId) ||
+                    !canSubmitSavedList ||
                     review.shoppingListDirty === true ||
                     review.updateStatus !== undefined ||
                     editsBlocked ||
@@ -1410,6 +1417,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               {review.shoppingListDirty && (
                 <p className="status" role="status">
                   Update the saved shopping list before submitting it.
+                </p>
+              )}
+              {review.shoppingListId === undefined && !review.draftId && (
+                <p className="status" role="status">
+                  Open or save a Nemlig shopping list before submitting it.
                 </p>
               )}
               {hasUnreadyItem && review.submission?.status !== "prepared" && (
