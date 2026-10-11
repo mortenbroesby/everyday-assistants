@@ -203,6 +203,10 @@ actions, alternatives, exact whole-list preparation, failure recovery, and the
 packaged viewer. They use fake products and deny provider basket writes; no
 credentials are required.
 
+Use the [native ChatGPT smoke test](../../docs/nemlig-chatgpt-smoke-test.md)
+for repeatable host testing, including a 55-product Local basket, cross-chat
+recovery, and a separately authorized real-basket addition with exact readback.
+
 For a reproducible visual review of the current viewer, run:
 
 ```sh
