@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Butter package">
+  <rect width="320" height="320" fill="#f6f0df"/>
+  <rect x="34" y="88" width="252" height="144" rx="8" fill="#e6c33f"/>
+  <rect x="34" y="88" width="252" height="30" rx="8" fill="#1d7251"/>
+  <path d="M74 163h172" stroke="#fff6bd" stroke-width="12" stroke-linecap="round"/>
+  <text x="160" y="151" fill="#173e30" font-family="Arial, sans-serif" font-size="28" font-weight="700" text-anchor="middle">SMØRBAR</text>
+  <text x="160" y="202" fill="#173e30" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle">200 g</text>
+</svg>
