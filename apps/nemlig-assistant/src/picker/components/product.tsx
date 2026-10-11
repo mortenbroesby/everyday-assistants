@@ -440,7 +440,11 @@ function selectAdjacentFact(
   setActiveFact: (key: string) => void,
 ) {
   const direction =
-    event.key === "ArrowRight" ? 1 : event.key === "ArrowLeft" ? -1 : 0;
+    event.key === "ArrowRight" || event.key === "ArrowDown"
+      ? 1
+      : event.key === "ArrowLeft" || event.key === "ArrowUp"
+        ? -1
+        : 0;
   if (direction === 0) {
     return;
   }
@@ -463,6 +467,7 @@ function ProductFactTabs({ facts }: { facts: ProductFact[] }) {
       <div
         className="product-fact-tablist"
         role="tablist"
+        aria-orientation="vertical"
         aria-label="Product information sections"
       >
         {facts.map((fact, index) => {
