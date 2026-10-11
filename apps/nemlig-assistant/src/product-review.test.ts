@@ -419,6 +419,10 @@ test("native-list transfer preparation fails closed without verified exact-trans
 
   await service.openShoppingList("owner", 44);
   await assert.rejects(
+    service.submit("owner", "private"),
+    /Select the exact saved Nemlig shopping list/u,
+  );
+  await assert.rejects(
     service.prepare("owner"),
     /cannot verify Nemlig will transfer the exact reviewed list unchanged.*No basket write was sent/u,
   );

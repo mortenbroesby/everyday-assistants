@@ -1880,6 +1880,38 @@ export class ProductReviewService {
     return stored;
   }
 
+  private rejectNativeListTransfer(
+    owner: string,
+    stored: StoredReview,
+    expectedShoppingListId: number | undefined,
+    requireExactTarget: boolean,
+  ): never {
+    if (
+      stored.snapshot.shoppingListDirty ||
+      stored.snapshot.updateStatus !== undefined
+    ) {
+      throw new NemligError(
+        "Update the saved Nemlig shopping list and confirm the readback before submitting.",
+      );
+    }
+    const listId = stored.snapshot.shoppingListId;
+    if (listId === undefined || stored.snapshot.saveStatus !== "saved") {
+      throw new NemligError(
+        "Save this draft as a Nemlig shopping list before reviewing basket additions.",
+      );
+    }
+    if (requireExactTarget && listId !== expectedShoppingListId) {
+      throw new NemligError(
+        "Select the exact saved Nemlig shopping list before adding it to the basket.",
+      );
+    }
+    stored.snapshot.submission = undefined;
+    stored.proposalId = undefined;
+    stored.snapshot.actionNotice = nativeListTransferUnavailable;
+    this.touch(owner, stored);
+    throw new NemligError(nativeListTransferUnavailable);
+  }
+
   async prepare(
     owner: string,
     _signal?: AbortSignal,
@@ -1887,27 +1919,7 @@ export class ProductReviewService {
   ): Promise<ProductReviewSnapshot> {
     const stored = this.lock(owner, expectedDraftId);
     try {
-      if (
-        stored.snapshot.shoppingListDirty ||
-        stored.snapshot.updateStatus !== undefined
-      ) {
-        throw new NemligError(
-          "Update the saved Nemlig shopping list and confirm the readback before submitting.",
-        );
-      }
-      if (
-        stored.snapshot.shoppingListId === undefined ||
-        stored.snapshot.saveStatus !== "saved"
-      ) {
-        throw new NemligError(
-          "Save this draft as a Nemlig shopping list before reviewing basket additions.",
-        );
-      }
-      stored.snapshot.submission = undefined;
-      stored.proposalId = undefined;
-      stored.snapshot.actionNotice = nativeListTransferUnavailable;
-      this.touch(owner, stored);
-      throw new NemligError(nativeListTransferUnavailable);
+      return this.rejectNativeListTransfer(owner, stored, undefined, false);
     } finally {
       stored.busy = false;
     }
@@ -1925,32 +1937,12 @@ export class ProductReviewService {
     }
     const stored = this.lock(owner);
     try {
-      if (
-        stored.snapshot.shoppingListDirty ||
-        stored.snapshot.updateStatus !== undefined
-      ) {
-        throw new NemligError(
-          "Update the saved Nemlig shopping list and confirm the readback before submitting.",
-        );
-      }
-      if (
-        stored.snapshot.shoppingListId === undefined ||
-        stored.snapshot.saveStatus !== "saved"
-      ) {
-        throw new NemligError(
-          "Save this draft as a Nemlig shopping list before reviewing basket additions.",
-        );
-      }
-      if (stored.snapshot.shoppingListId !== expectedShoppingListId) {
-        throw new NemligError(
-          "Select the exact saved Nemlig shopping list before adding it to the basket.",
-        );
-      }
-      stored.snapshot.submission = undefined;
-      stored.proposalId = undefined;
-      stored.snapshot.actionNotice = nativeListTransferUnavailable;
-      this.touch(owner, stored);
-      throw new NemligError(nativeListTransferUnavailable);
+      return this.rejectNativeListTransfer(
+        owner,
+        stored,
+        expectedShoppingListId,
+        true,
+      );
     } finally {
       stored.busy = false;
     }
