@@ -1483,13 +1483,28 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
     { match: "/login$", response: json({ RedirectUrl: "/" }) },
     ...sessionRequests(),
     {
-      match: "/ShoppingList/CreateShoppingList\\?name=Nemlig\\+Assistant$",
-      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      match: "/ShoppingList/CreateShoppingList\\?name=Nemlig%20Assistant$",
+      inspect: (_url, init) => {
+        assert.equal(init?.method, "POST");
+        assert.equal(init?.body, undefined);
+        const headers = new Headers(init?.headers);
+        for (const name of [
+          "accept",
+          "user-agent",
+          "referer",
+          "version",
+          "platform",
+          "device-size",
+          "authorization",
+          "cookie",
+          "origin",
+          "x-xsrf-token",
+        ]) {
+          assert.equal(headers.has(name), true, `Missing ${name} header`);
+        }
+        assert.equal(headers.has("content-type"), false);
+      },
       response: json({ ListId: 44 }),
-    },
-    {
-      match: "/ShoppingList/getShoppingList\\?listId=44$",
-      response: json({ Id: 44, Name: "Nemlig Assistant", Products: [] }),
     },
     {
       match:
@@ -1520,14 +1535,56 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
   const client = new NemligClient(mockFetch(requests));
   await client.login("person@example.test", "secret");
 
-  const list = await client.createShoppingList("Nemlig Assistant");
-  await client.updateShoppingListProduct(list.id, 7, 2);
-  assert.deepEqual(await client.getShoppingList(list.id), {
+  const listId = await client.createShoppingList("Nemlig Assistant");
+  assert.equal(listId, 44);
+  await client.updateShoppingListProduct(listId, 7, 2);
+  assert.deepEqual(await client.getShoppingList(listId), {
     id: 44,
     name: "Nemlig Assistant",
     items: [{ productId: 7, quantity: 2 }],
   });
-  await client.addShoppingListToCart(list.id);
+  await client.addShoppingListToCart(listId);
+  assert.equal(requests.length, 0);
+});
+
+test("shopping-list creation does not retry a rejected POST", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match: "/ShoppingList/CreateShoppingList\\?name=Nemlig%20Assistant$",
+      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      response: json({}, { status: 400 }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+
+  await assert.rejects(
+    client.createShoppingList("Nemlig Assistant"),
+    (error: unknown) => error instanceof NemligError && error.status === 400,
+  );
+  assert.equal(requests.length, 0);
+});
+
+test("shopping-list creation rejects an invalid ID without reading another list", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match: "/ShoppingList/CreateShoppingList\\?name=Nemlig%20Assistant$",
+      response: json({}),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+
+  await assert.rejects(
+    client.createShoppingList("Nemlig Assistant"),
+    /Create shopping list failed: invalid response data\./u,
+  );
   assert.equal(requests.length, 0);
 });
 

@@ -122,11 +122,7 @@ async function fixture() {
           return product(id);
         },
         searchProducts: async () => [product(3)],
-        createShoppingList: async () => ({
-          id: 1,
-          name: "fixture",
-          items: [],
-        }),
+        createShoppingList: async () => 1,
         updateShoppingListProduct: async () => undefined,
         getShoppingList: async () => ({
           id: 1,
@@ -203,11 +199,7 @@ test("durable submission fails closed instead of falling back to individual bask
     {
       getProduct: async (id) => product(id),
       searchProducts: async () => [product(1)],
-      createShoppingList: async () => ({
-        id: 1,
-        name: "fixture",
-        items: [],
-      }),
+      createShoppingList: async () => 1,
       updateShoppingListProduct: async () => undefined,
       getShoppingList: async () => ({
         id: 1,
@@ -262,7 +254,7 @@ test("durable preparation builds and verifies one provider shopping list", async
       searchProducts: async () => [product(3)],
       createShoppingList: async () => {
         calls.push("create");
-        return { id: 17, name: "Nemlig Assistant", items: [] };
+        return 17;
       },
       updateShoppingListProduct: async (_listId, productId, quantity) => {
         calls.push(`update:${productId}:${quantity}`);

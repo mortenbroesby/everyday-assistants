@@ -1739,11 +1739,7 @@ test("only an actual missing basket opens the picker on repository failures", as
         },
       }),
       {
-        createShoppingList: async () => ({
-          id: 1,
-          name: "fixture",
-          items: [],
-        }),
+        createShoppingList: async () => 1,
         updateShoppingListProduct: async () => undefined,
         getShoppingList: async () => ({
           id: 1,
@@ -1871,9 +1867,9 @@ test("a clear conversational add command authorizes only its exact prepared Loca
       },
     }),
     {
-      createShoppingList: async (name: string) => {
+      createShoppingList: async () => {
         shoppingLists.set(1, new Map());
-        return { id: 1, name, items: [] };
+        return 1;
       },
       updateShoppingListProduct: async (
         listId: number,

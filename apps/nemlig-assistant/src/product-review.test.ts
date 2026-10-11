@@ -38,7 +38,7 @@ const product = (id: number): Product => ({
 const client = {
   getProduct: async (id: number) => product(id),
   searchProducts: async () => [product(3)],
-  createShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
+  createShoppingList: async () => 1,
   updateShoppingListProduct: async () => undefined,
   getShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
   addShoppingListToCart: async () => undefined,

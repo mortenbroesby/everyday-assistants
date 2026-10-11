@@ -126,9 +126,9 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     addToCart: async () => {
       throw new Error("Direct basket writes must not be used.");
     },
-    createShoppingList: async (name) => {
+    createShoppingList: async () => {
       shoppingLists.set(1, new Map());
-      return { id: 1, name, items: [] };
+      return 1;
     },
     updateShoppingListProduct: async (listId, id, quantity) => {
       shoppingLists.get(listId)?.set(id, quantity);

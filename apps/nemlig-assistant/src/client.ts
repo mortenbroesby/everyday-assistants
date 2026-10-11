@@ -825,15 +825,15 @@ export class NemligClient {
     );
   }
 
-  async createShoppingList(name: string): Promise<ShoppingList> {
+  async createShoppingList(name: string): Promise<number> {
     this.requireLogin("create a shopping list");
     const normalized = name.trim();
     if (!normalized || normalized.length > 30) {
       throw new NemligError("Shopping list name must contain 1–30 characters.");
     }
-    const params = new URLSearchParams({ name: normalized });
+    const query = `name=${encodeURIComponent(normalized)}`;
     const value = await this.json(
-      `${API_BASE_URL}/ShoppingList/CreateShoppingList?${params}`,
+      `${API_BASE_URL}/ShoppingList/CreateShoppingList?${query}`,
       { method: "POST" },
       "Create shopping list",
       false,
@@ -845,7 +845,7 @@ export class NemligClient {
         "Create shopping list failed: invalid response data.",
       );
     }
-    return this.getShoppingList(id);
+    return id;
   }
 
   async updateShoppingListProduct(
@@ -1345,7 +1345,13 @@ export class NemligClient {
           headers.set("Origin", "https://www.nemlig.com");
           headers.set("X-Correlation-Id", randomUUID());
         } else if (api) {
-          headers.set("Content-Type", "application/json");
+          if (
+            init.body !== undefined &&
+            init.body !== null &&
+            !headers.has("Content-Type")
+          ) {
+            headers.set("Content-Type", "application/json");
+          }
           headers.set("version", "11.201.0");
           headers.set("platform", "web");
           headers.set("device-size", "desktop");

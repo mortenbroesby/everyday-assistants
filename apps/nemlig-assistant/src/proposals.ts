@@ -422,14 +422,14 @@ export class BasketProposalService {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
     try {
-      const list = await prepareShoppingListStage("create_list", () =>
+      const listId = await prepareShoppingListStage("create_list", () =>
         createShoppingList.call(this.client, shoppingListName),
       );
       for (const line of stored.operation.lines) {
         await prepareShoppingListStage("populate_list", () =>
           updateShoppingListProduct.call(
             this.client,
-            list.id,
+            listId,
             line.product_id,
             line.quantity,
           ),
@@ -438,7 +438,7 @@ export class BasketProposalService {
       const confirmed = await prepareShoppingListStage(
         "verify_list",
         async () => {
-          const current = await getShoppingList.call(this.client, list.id);
+          const current = await getShoppingList.call(this.client, listId);
           this.assertExactApprovedList(current.items, stored.operation.lines);
           return current;
         },

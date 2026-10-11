@@ -264,7 +264,7 @@ test("provider shopping-list submission transfers a 38-item review once", async 
         "Direct basket writes must not be used for a list transfer.",
       );
     },
-    createShoppingList: async () => structuredClone(list),
+    createShoppingList: async () => list.id,
     updateShoppingListProduct: async () => undefined,
     getShoppingList: async () => structuredClone(list),
     addShoppingListToCart: async () => {
@@ -317,11 +317,7 @@ test("provider shopping-list preparation rejects a changed list before reviewing
     },
     getCart: async () => emptyBasket(),
     addToCart: async () => emptyBasket(),
-    createShoppingList: async () => ({
-      id: 44,
-      name: "Nemlig Assistant test",
-      items: [],
-    }),
+    createShoppingList: async () => 44,
     updateShoppingListProduct: async () => undefined,
     getShoppingList: async () => ({
       id: 44,
@@ -349,23 +345,33 @@ test("provider shopping-list preparation rejects a changed list before reviewing
 test("provider shopping-list preparation logs a sanitized failing stage", async () => {
   const diagnostics: string[] = [];
   const originalWarn = console.warn;
+  let updates = 0;
+  let reads = 0;
+  let transfers = 0;
+  let basketWrites = 0;
   console.warn = (message: string) => diagnostics.push(message);
   try {
     const service = new BasketProposalService({
       getProduct: async () => product,
       getFreshProduct: async () => product,
       getCart: async () => emptyBasket(),
-      addToCart: async () => emptyBasket(),
+      addToCart: async () => {
+        basketWrites += 1;
+        return emptyBasket();
+      },
       createShoppingList: async () => {
         throw new NemligError("private provider response", 400);
       },
-      updateShoppingListProduct: async () => undefined,
-      getShoppingList: async () => ({
-        id: 44,
-        name: "Nemlig Assistant test",
-        items: [],
-      }),
-      addShoppingListToCart: async () => undefined,
+      updateShoppingListProduct: async () => {
+        updates += 1;
+      },
+      getShoppingList: async () => {
+        reads += 1;
+        return { id: 44, name: "Nemlig Assistant test", items: [] };
+      },
+      addShoppingListToCart: async () => {
+        transfers += 1;
+      },
     });
 
     await assert.rejects(
@@ -380,11 +386,87 @@ test("provider shopping-list preparation logs a sanitized failing stage", async 
   } finally {
     console.warn = originalWarn;
   }
+  assert.deepEqual(
+    { updates, reads, transfers, basketWrites },
+    {
+      updates: 0,
+      reads: 0,
+      transfers: 0,
+      basketWrites: 0,
+    },
+  );
   assert.deepEqual(diagnostics, [
     JSON.stringify({
       schema_version: 1,
       event: "shopping_list_preparation_failed",
       stage: "create_list",
+      error_class: "provider",
+      provider_status: 400,
+    }),
+  ]);
+});
+
+test("provider-list readback failure stops preparation without a basket write", async () => {
+  const diagnostics: string[] = [];
+  const originalWarn = console.warn;
+  let creates = 0;
+  let updates = 0;
+  let reads = 0;
+  let transfers = 0;
+  let basketWrites = 0;
+  console.warn = (message: string) => diagnostics.push(message);
+  try {
+    const service = new BasketProposalService({
+      getProduct: async () => product,
+      getFreshProduct: async () => product,
+      getCart: async () => emptyBasket(),
+      addToCart: async () => {
+        basketWrites += 1;
+        return emptyBasket();
+      },
+      createShoppingList: async () => {
+        creates += 1;
+        return 44;
+      },
+      updateShoppingListProduct: async () => {
+        updates += 1;
+      },
+      getShoppingList: async () => {
+        reads += 1;
+        throw new NemligError("private provider response", 400);
+      },
+      addShoppingListToCart: async () => {
+        transfers += 1;
+      },
+    });
+
+    await assert.rejects(
+      service.prepareShoppingListAdditions(
+        "connection",
+        [{ product_id: 7, quantity: 1 }],
+        "Nemlig Assistant test",
+        { kind: "exact_review" },
+      ),
+      /failed at verify_list; no Nemlig basket write was sent/u,
+    );
+  } finally {
+    console.warn = originalWarn;
+  }
+  assert.deepEqual(
+    { creates, updates, reads, transfers, basketWrites },
+    {
+      creates: 1,
+      updates: 1,
+      reads: 1,
+      transfers: 0,
+      basketWrites: 0,
+    },
+  );
+  assert.deepEqual(diagnostics, [
+    JSON.stringify({
+      schema_version: 1,
+      event: "shopping_list_preparation_failed",
+      stage: "verify_list",
       error_class: "provider",
       provider_status: 400,
     }),
@@ -408,7 +490,7 @@ test("provider shopping-list transfer rejects an unexpected final basket line", 
         "Direct basket writes must not be used for a list transfer.",
       );
     },
-    createShoppingList: async () => structuredClone(list),
+    createShoppingList: async () => list.id,
     updateShoppingListProduct: async () => undefined,
     getShoppingList: async () => structuredClone(list),
     addShoppingListToCart: async () => {
@@ -444,11 +526,7 @@ test("provider shopping-list preparation skips unavailable products before list 
     getFreshProduct: async (id) => ({ ...product, id, available: id !== 1 }),
     getCart: async () => emptyBasket(),
     addToCart: async () => emptyBasket(),
-    createShoppingList: async () => ({
-      id: 44,
-      name: "Nemlig Assistant test",
-      items: [],
-    }),
+    createShoppingList: async () => 44,
     updateShoppingListProduct: async (_listId, productId, quantity) => {
       items.set(productId, quantity);
     },
