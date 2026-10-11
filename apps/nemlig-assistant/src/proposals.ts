@@ -410,11 +410,12 @@ export class BasketProposalService {
     if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
-    const proposal = await prepareShoppingListStage("fresh_review", () =>
-      this.prepareAdditions(connectionId, items, authorization, {
-        ...options,
-        requireAllAvailable: false,
-      }),
+    // Fresh-review errors already have deliberate user-facing semantics.
+    const proposal = await this.prepareAdditions(
+      connectionId,
+      items,
+      authorization,
+      { ...options, requireAllAvailable: false },
     );
     const stored = this.proposals.get(proposal.proposal_id);
     if (!stored || stored.operation.kind !== "additions") {
