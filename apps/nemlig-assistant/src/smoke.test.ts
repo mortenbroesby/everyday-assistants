@@ -25,6 +25,7 @@ type ShoppingListTransferClient = Pick<
   | "createShoppingList"
   | "updateShoppingListProduct"
   | "getShoppingList"
+  | "deleteShoppingList"
   | "addShoppingListToCart"
 >;
 
