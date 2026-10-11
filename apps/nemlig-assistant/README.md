@@ -5,9 +5,8 @@
 </p>
 
 <p align="center">
-  Search and compare in conversation. Every real basket change uses exact
-  preparation and user authorization; a clear request to add the current Local
-  basket is that authorization for all unchanged rows only.
+  Search and compare in conversation, save native Nemlig shopping lists, and
+  inspect the actual basket. Shopping-list-to-basket transfer is currently gated.
 </p>
 
 <p align="center">
@@ -27,12 +26,12 @@
 ## Your grocery copilot, with you still in charge
 
 Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
-nemlig.com. It helps you move from “we need groceries” to a reviewed proposal
-with current products, prices, a temporary Local basket, and exact quantities.
+nemlig.com. It helps you find current products, collect them in an unsaved
+draft, and save or update shopping lists owned by Nemlig.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
-are deliberately split into prepare, approve, and apply steps.
+are unavailable until exact transfer and concurrent-edit guarantees are verified.
 
 It has no recipe, order, payment, or checkout capability. It is not affiliated
 with or endorsed by nemlig.com or OpenAI.
@@ -44,16 +43,16 @@ with or endorsed by nemlig.com or OpenAI.
 Once connected, try prompts like:
 
 - “Find organic milk and show the current detailed results, compared by unit price.”
-- “Put these products in my Local basket.”
-- “Find an alternative to the cheese in my Local basket.”
+- “Start a shopping-list draft with these products.”
+- “Show my Nemlig shopping lists.”
+- “Update my Family shopping list with these changes.”
 - “Show my Nemlig basket.”
-- “Add everything in my Local basket to my Nemlig basket.”
 - “Which Nemlig Assistant version and codename are running?”
 
-Search and Nemlig basket reads remain read-only. A clear conversational request to
-add the unchanged current Local basket authorizes that exact prepared
-payload without a redundant second approval; presence in the Local basket alone does not. Other
-additions require exact approval, with final revalidation and verified readback.
+Product search and Nemlig basket reads are read-only. Draft changes stay
+temporary until you explicitly save a shopping list. Saved-list edits stay
+staged until you explicitly update that list. Adding a shopping list to the
+Nemlig basket is disabled in this version.
 
 <a id="what-you-can-do"></a>
 
@@ -76,20 +75,19 @@ additions require exact approval, with final revalidation and verified readback.
 - Use one shared product presentation when the host supports it, with a
   structured and plain-text fallback for headless clients.
 
-### Review the basket safely
+### Work with shopping lists and the basket
 
 - Inspect the current basket without changing it.
-- Read the actual Nemlig basket as structured data and text; this read does not
-  open a separate visual card.
-- Prepare exact additions from every row in the Local basket by building and
-  verifying a temporary Nemlig shopping list before the protected transfer.
-- Transfer that verified list once through Nemlig's native list-to-basket
-  action. The hosted Local-basket flow never falls back to individual product
-  basket writes. After exact basket readback verifies the addition, the app
-  deletes that temporary provider list; an unconfirmed cleanup is shown as a
-  warning and does not retry the basket transfer.
-- Preview the final quantity and price after adding the requested positive
-  quantity to each existing line.
+- Discover native Nemlig shopping lists and reopen them in the shared product
+  viewer.
+- Keep a new selection as an unsaved draft until you choose **Save shopping
+  list**. Saving writes the displayed products and quantities to Nemlig and
+  verifies the saved list.
+- Stage changes to an existing list locally in the viewer. **Update shopping
+  list** writes those changes and checks the provider readback.
+- Use the actual basket view to inspect Nemlig's basket. Shopping-list-to-basket
+  transfer is blocked until provider guarantees for concurrent edits and exact
+  transfer are established.
 
 ### Use the interface that fits
 
@@ -117,220 +115,54 @@ architecture, cost controls, deployment, rollback, and emergency procedures.
 Use the [production-readiness gate](../../docs/nemlig-production-readiness.md)
 for one repeatable credential-free repository and CI check.
 
-## 🧭 How product search works
+## 🧭 Product discovery and review
 
 ChatGPT searches with short Danish catalogue terms and receives current exact
-details for every selected result. Results retain provider order and identify
-partial or unavailable detail reads explicitly. The MCP search result includes
-the supported exact product facts; additions from the Local basket stay behind
-whole-list preparation and protected submission.
+details for selected results. Results retain provider order and identify partial
+or unavailable detail reads explicitly. Provider descriptions and declarations
+are converted from HTML to bounded plain text; scripts, styles, images, and link
+destinations are omitted.
 
-Provider descriptions, declarations, and item details are converted from HTML
-to bounded plain text, including Danish characters and entities. Scripts,
-styles, images and link destinations are omitted; conversion does not fetch
-additional resources.
-The shared product viewer opens directly to one **Local basket** list. Every
-row is Ready for whole-list submission; there are no To decide/Ready tabs,
-checkboxes, or acceptance step. Tap a product to open its full-screen details,
-or swipe from right to left to replace that row with inline controls: trash and
-a two-arrow **Find alternatives** icon on the left, and minus/quantity/plus on the
-right, all on one line.
-Full-screen product details use a product-page layout: a back control, centered
-product image, name and package metadata, and the three familiar product-information
-sections. Local controls stay fixed beneath that information. The controls follow
-Nemlig’s familiar basket layout; the rest of the basket stays visible.
-Gesture tracking and tap filtering use `@use-gesture/react`.
-Left-to-right swipes, vertical scrolling, short drags, and canceled gestures do not
-open actions. Keyboard users can press
-Shift+F10 on a product. The details view shows the same controls, so touch and
-screen-reader users can reach the same actions without swiping.
-Close the inline controls with × or Escape to restore the product row. Product
-details close with the back control, Escape, or a tap outside.
-The inline controls open on release; swiping alone changes no basket state. ChatGPT mobile
-gesture handling still needs real-host acceptance. If swipe remains unreliable,
-[the tap-layout fallback](https://github.com/mortenbroesby/everyday-assistants/issues/283)
-tracks the alternative interaction.
-The Local basket scrolls longer lists; large Local baskets render visible rows with
-TanStack Virtual while shorter lists stay fully rendered. Product details use the
-available app frame height rather than a nested fixed-height panel.
-Removing or replacing a row changes only the Local basket, never Nemlig. The
-alternative view has Back, the current product, search, selectable results,
-and selection: tap a result, then choose **Use selected alternative** to start
-the authoritative local replacement. Back and search preserve the original row.
-Replacement preserves its quantity and stays Ready. Unavailable results cannot
-be selected. Full-screen details use the
-three tabs **Varebeskrivelse**, **Varedeklaration**, and **Detaljer om varen**.
+The shared product viewer supports unsaved drafts and selected native shopping
+lists. It reuses product details, alternatives, quantity, remove, and accessible
+touch and keyboard controls. New product choices stay in a process-local draft
+until explicit Save. Saved-list changes stay staged until explicit Update. Save
+and Update use a durable, owner-scoped journal so an interrupted provider write
+can be inspected without blindly replaying it. Recovery storage is bounded; if
+it fills, the action fails closed and existing recovery evidence is retained.
 
-The MCP routing map separates catalogue discovery, the actual Nemlig basket,
-the Local basket, protected submission and recovery. Reopening uses `show`, not
-new searches or a second start. Rows show product, package, quantity and line
-price first. The details modal contains product facts. **Submit to Nemlig** prepares every current Local basket row for exact
-review before any provider addition. Confirmed unavailable rows are excluded
-and reported while available rows proceed. Unresolved identity or availability
-details block preparation. Missing price, package, category, or descriptive
-fields may remain unknown. Empty Local baskets
-introduce the distinction from the real Nemlig basket and offer conversational
-shopping starters; they do not call Nemlig or change provider state.
-**Submit to Nemlig** is full width; **Clear** is full width at the
-bottom of the list and asks for confirmation before discarding the Local basket.
+Old Local Basket cards route to native shopping-list discovery. Their saved data
+and storage namespace have not been deleted, but Local Basket mutations are no
+longer active. A shopping-list transfer to the actual Nemlig basket remains
+disabled pending proof of exact transfer and safe handling of concurrent edits.
 
-In the hosted deployment, Local baskets are durable data owned by the authenticated
-principal, independent of credentials and individual chat sessions. Direct stdio
-use is process-local and text-only. Each owner can keep up to 50 unnamed
-baskets; each basket can hold up to 500 distinct product lines and expires 24 hours
-after explicit activity. The host may remember the selected basket only when it
-provides a stable conversation identifier. Without one, the viewer asks the user
-to pick a basket. Reconnecting credentials recovers the same non-authorizing
-product snapshots, but never a prepared submission or provider authority.
-**Clear** asks for confirmation, then deletes only the selected Local basket and
-shows the picker. Expired and evicted baskets are unavailable and are never
-silently recreated. ChatGPT does not provide a reliable notification when a
-conversation is closed.
-The baskets are unnamed and are not saved shopping plans. Starting a new basket
-does not replace another basket or invalidate its supported cards. Historical
-messages must carry their basket ID for mutations; missing or stale IDs lead back
-to the picker rather than targeting another basket. Remounts require the current
-supported viewer bundle; already-mounted older bundles may not work. After a
-local action, the viewer ignores unsolicited host snapshots that could roll it
-back, but offers a read-only refresh. Failed mutations are never replayed.
-Submitted, uncertain, or known-partial outcomes direct you to inspect the actual
-Nemlig basket; a known partial result says how many additions were verified and
-that no later write was sent.
-The viewer uses the permanent `ui://nemlig/shell.html` identity. The previous
-`ui://nemlig/draft-list.html` address and every earlier product-viewer address
-resolve only to an inert, read-only notice, so historical cards cannot regain
-shopping controls. The stable shell loads the current fixed-origin,
-content-addressed UI bundle when it mounts; an active card never swaps code or
-replays shopping work. ChatGPT may retain previously cached documents; the
-server cannot remove those transcript cards. A release, resource read, and
-native rendered build are separate facts: the supported recovery path is an
-operator-managed clean connection cutover followed by a new chat.
-
-Run `pnpm nemlig:smoke:review-ui` from the repository root. Its synthetic
-browser checks exercise the real MCP adapter, one shared Local basket, right-to-left swipe
-actions, alternatives, exact whole-list preparation, failure recovery, and the
-packaged viewer. They use fake products and deny provider basket writes; no
-credentials are required.
-
-Use the [native ChatGPT smoke test](../../docs/nemlig-chatgpt-smoke-test.md)
-for repeatable host testing, including a 55-product Local basket, cross-chat
-recovery, and a separately authorized real-basket addition with exact readback.
-
-For a reproducible visual review of the current viewer, run:
-
-```sh
-pnpm nemlig:ui:mockup
-```
-
-It builds the viewer and uses the same synthetic MCP host as the browser smoke
-to write `local-basket.png`, `local-basket-actions.png`, `alternatives.png`,
-and `confirmation.png` beneath
-`apps/nemlig-assistant/.codex/ui-mockups/`. These images are local and ignored:
-they contain only fixture products, make no external requests, and never access
-the real Nemlig basket. This is a design-review bootstrap, not ChatGPT-host
-acceptance.
-
-For component-level visual review, run:
-
-```sh
-pnpm nemlig:storybook
-```
-
-The local Storybook uses deterministic product fixtures for the shared viewer
-pages, including bare production-page stories and two click-through Local-basket
-simulators: an embedded-conversation card and a ChatGPT app tab. The host
-frames are Storybook-only approximations; the inner page is the same
-`ViewerPage` used in production. Host chrome is deliberately not part of the
-app UI. A long Local basket story demonstrates scrolling and virtual rows.
-`pnpm nemlig:build:storybook` checks that those stories
-build. It is not evidence of native ChatGPT rendering: retain the built-viewer
-smoke and post-release host smoke for host-owned framing and variables.
-
-Product disclosures, navigation and ordinary local edits do not fetch Nemlig;
-adding new exact products hydrates only those products, and
-explicit alternatives searches hydrate every unique eligible result in the
-single provider response with three concurrent reads and bounded provider
-deadlines/retries. This does not enumerate the whole catalogue.
-
-Choose **Submit to Nemlig** to prepare current price estimates and exact quantities for
-every Local basket row, verify the same lines in a temporary Nemlig shopping
-list, and show the separate on-screen confirmation. The confirmed submission
-uses one native list-to-basket transfer, never a sequence of individual basket
-updates. Unavailable
-products are named and excluded while available products can proceed; unresolved
-product details still require a fresh review. Inspect the full prepared list,
-then choose **Add to Nemlig basket** and
-confirm that exact addition in the viewer. In conversation, a clear instruction
-to add the unchanged current Local basket authorizes only those prepared lines;
-if you only ask to prepare/inspect, or any item or quantity changed, the
-assistant must ask before submitting. Preparing or showing confirmation does
-not submit. The quantities are added in Nemlig; unrelated Nemlig lines stay
-unchanged. Editing the Local basket invalidates the pending submission. Verified
-success has its own screen and deletes that Local basket. Start or select another
-basket for continued shopping. If the result is uncertain or partial, the
-attempted basket is inspect-or-delete only. Inspect the actual Nemlig basket;
-after confirming the outcome, create a new Local basket and obtain fresh exact
-authorization before another submission. The attempted record is never retried.
-A known partial result records the verified count and stops before any later
-write. There is no automatic retry.
-
-Interactive ChatGPT hosts use their tool bridge. Other hosts retain the complete
-structured/text results and equivalent conversational requests; the viewer never
-pretends a local action succeeded when no bridge is available.
-
-<a id="how-basket-changes-work"></a>
+Run `pnpm nemlig:smoke:review-ui` and `pnpm nemlig:build:storybook` from the
+repository root for synthetic viewer coverage. These checks use fixtures and do
+not write to a Nemlig account. They do not prove native ChatGPT rendering or
+production acceptance.
 
 ## 🛡️ How basket changes work
 
 ```text
-Read → prepare the exact intended change → confirm user authorization → apply once → read back the basket
+Search and review → explicitly Save or Update a Nemlig shopping list → verify its readback
 ```
 
-- Search and Nemlig basket inspection are read-only; they never authorize or
-  change the Nemlig basket. Local basket edits are local only.
-- Every real Nemlig basket change is a positive addition. It starts with
-  an exact submission prepared from every current Local basket row.
-- A clear instruction to add the unchanged Local basket authorizes only
-  those exact additions; the viewer retains its exact on-screen confirmation.
-  Other additions require approval for the exact reviewed products and
-  additional quantities. No approval authorizes removing, decreasing,
-  replacing, swapping, or clearing real basket contents.
-  The provider basket is add-only; no approval authorizes removing, decreasing,
-  replacing, swapping, or clearing real basket contents. Manage removals on
-  Nemlig.com directly.
-- Ordinary summaries show names, quantities, useful package distinctions, and
-  prices without internal IDs, expiry times, or protocol status fields. Ask for
-  “technical details” when those internals are useful for troubleshooting.
-- An additions review is connection-bound, short-lived, single-use, and tied to
-  exact products, additional and resulting quantities, and the current basket
-  contents. Reviewed prices and totals are estimates, not approval limits.
-- The default 15-minute review window accommodates a normal ChatGPT approval
-  round-trip without weakening final revalidation.
-- Product identity, quantity, or basket-content changes invalidate the
-  approval. Missing prices do not block an addition; a product confirmed
-  unavailable is skipped and reported while other approved products continue.
-- The approved action freshly resolves every affected product upstream and
-  revalidates the review and current basket state before writing. A failed
-  lookup that cannot confirm unavailability stops before any write.
-- Additions re-read the basket immediately before writing and verify exact
-  resulting lines and quantities afterward. Nemlig may return lower, higher,
-  or missing prices; an unavailable total is shown as unknown. This does not
-  place an order or charge a payment method.
-- Writes are never automatically retried after an uncertain result.
-- Cold login follows Nemlig's ordinary website flags; if Nemlig requires a
-  basket decision, the assistant stops rather than selecting a remove/save
-  option. Resolve the prompt directly on Nemlig.com.
-  Each addition uses the absolute-quantity provider endpoint as a positive
-  delta, after a fresh snapshot check; sequential writes verify each readback
-  and preserve previously verified lines. The provider has no atomic increment
-  or compare-and-set, so a simultaneous edit on Nemlig.com can race the final
-  read/write boundary.
-- Repeated completed actions return the stored sanitized result without writing again.
-- The assistant never orders, checks out, or pays.
+- Product search and actual Nemlig basket inspection are read-only.
+- Saving a draft creates a native Nemlig shopping list. Updating a saved list
+  writes only the staged changes to that selected list.
+- Save and Update do not authorize or perform a basket addition. The
+  shopping-list-to-basket action is disabled until exact transfer behavior and
+  concurrent-edit handling are verified.
+- An interrupted or uncertain Save or Update is inspected through its durable
+  recovery record. The assistant does not blindly replay it. If recovery storage
+  is full, it fails closed and keeps existing records.
+- Old Local Basket identifiers do not identify native lists. Historical cards
+  route to shopping-list discovery; the legacy Local Basket data and namespace
+  have not been deleted by this change.
+- The assistant never removes basket items, checks out, places an order, or pays.
 
-Repository work, choosing products, or review
-preparation never authorizes a basket mutation. Operators must read
-[`AGENTS.md`](AGENTS.md) and the
+Repository work, choosing products, or review preparation never authorizes a
+basket mutation. Operators must read [`AGENTS.md`](AGENTS.md) and the
 [`nemlig-basket` skill](.codex/skills/nemlig-basket/SKILL.md).
 
 <a id="run-it"></a>
@@ -495,21 +327,16 @@ of the repository.
 
 ## 🧪 Owner alpha exercise
 
-1. Search for a product phrase that needs Danish normalization and inspect all
+1. Search for a product phrase that needs Danish normalization and inspect the
    returned detailed results.
-2. Confirm a partial detail failure is labeled unavailable while other results
-   remain in provider order.
-3. Inspect the current Nemlig basket and confirm the Local basket remains distinct.
-4. Start a Local basket, swipe a product from right to left to reveal its inline controls,
-   then choose an action or change quantity; also open and close full-screen
-   details and use Shift+F10, confirming edits leave Nemlig unchanged.
-5. Prepare the entire Local basket and confirm unavailable products are named
-   and excluded while available products proceed; unresolved identity or
-   availability details block preparation. Missing price, package, category, or
-   descriptive fields may remain unknown. Submission requires a clear instruction
-   to add the unchanged list
-   or approval of the exact prepared effect. Use fixtures for mutation tests; live basket changes need
-   separate authorization.
+2. Start an unsaved draft, change quantities, and verify that drafting does not
+   create or edit a Nemlig shopping list.
+3. Save the draft explicitly, inspect the native list readback, reopen that list,
+   stage a change, and choose Update shopping list.
+4. Inspect the actual Nemlig basket and confirm that list saving and updating did
+   not change it. Shopping-list-to-basket transfer is gated in this version.
+5. Use fixtures for interrupted and uncertain write scenarios. Do not use live
+   account mutations to test basket transfer while the gate remains closed.
 
 <a id="development"></a>
 
@@ -633,29 +460,21 @@ This README is the user-facing inventory of shipped feature sets:
 
 - account access
 - product and department discovery
-- fresh Nemlig authentication before every provider-backed MCP task
-- rich individual short-query product discovery and refinement
-- one shared product presentation with a headless fallback
-- voice/touch one-list Local basket with a right-to-left swipe row replacement and accessible
-  full-screen details, full-page alternatives, and scannable comparisons
-- persistent in-place review navigation, compact rows, and confirmed local removal
-- complete-per-search alternative results, deliberate follow-up search, and conversation-only Local basket edits
-- explicit protected submission of every validated Local basket row
-- on-screen exact submission confirmation with conversational fallback
-- CLI favorites, department browsing, and exact product details
-- seven MCP tools for live profile/release identity, connection check, detailed
-  search, actual basket read, Local basket start/update, and protected whole-list
-  submission
-- exact prepare/authorize/submit basket additions
-- easy-to-understand ChatGPT tool names and descriptions
-- human-friendly basket reviews and verified results
+- native Nemlig shopping-list discovery
+- temporary unsaved drafts with explicit Save
+- staged native-list edits with explicit Update and verified readback
+- owner-scoped durable recovery journal for interrupted Save and Update actions
+- shared product presentation with accessible details and alternatives
+- read-only actual Nemlig basket inspection
+- blocked shopping-list-to-basket transfer pending provider concurrency guarantees
 - CLI, MCP, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
 - private package and guarded SemVer release policy
 - deployed version and codename identity
 
-Update this inventory and the relevant section above whenever a shipped feature
-set is added, removed, or materially changed. Planned work belongs in
+The old Local Basket mutation flow is inactive. Its backing data and namespace
+remain untouched pending a separately reviewed migration and retirement plan.
+Update this inventory whenever shipped behavior changes. Planned work belongs in
 [`BACKLOG.md`](BACKLOG.md) or an active OpenSpec change.
 
 ## 🗂️ Project map

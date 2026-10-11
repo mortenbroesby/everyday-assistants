@@ -143,6 +143,7 @@ export type ViewerPageActions = {
   ) => void | Promise<boolean | void>;
   onSaveDraft: (name: string) => void;
   onUpdateShoppingList: () => void;
+  onDiscardPendingUpdate: () => void;
   onSubmit: () => void;
   onConfirmSubmit: () => void;
   onContinueSubmitted: () => void;
@@ -480,7 +481,7 @@ function ProductCard({
                   {productName(view, item?.product_id)}
                 </Dialog.Title>
                 <Dialog.Close asChild>
-                  <button type="button" aria-label="Back to Local basket">
+                  <button type="button" aria-label="Back to shopping list">
                     ←
                   </button>
                 </Dialog.Close>
@@ -503,9 +504,11 @@ function ProductCard({
 function BasketList({
   items,
   renderItem,
+  title,
 }: {
   items: ReviewItem[];
   renderItem: (item: ReviewItem) => ReactNode;
+  title?: string;
 }) {
   // Keep virtual rows mounted as the basket shrinks so removal does not drop focus.
   const [virtual, setVirtual] = useState(() => items.length > 8);
@@ -544,8 +547,9 @@ function BasketList({
     <section
       ref={listRef}
       className="product-list"
-      aria-label="Local basket products"
+      aria-label="Shopping list products"
     >
+      {title && <h2>{title}</h2>}
       {virtual ? (
         <div
           style={{ height: virtualizer.getTotalSize(), position: "relative" }}
@@ -717,7 +721,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     uncertainSubmission ||
     partialSubmission ||
     (confirmedSubmission && !continueSubmitted);
-  const nativeTransferBlocked = review?.shoppingListId !== undefined;
   const resumableNativeUpdate =
     review?.updateStatus === "partial" &&
     (review.conflictItems !== undefined || review.actionNotice === undefined);
@@ -726,7 +729,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       <button
         type="button"
         className="basket-menu-trigger"
-        aria-label="Local basket options"
+        aria-label="Shopping list options"
         aria-expanded={basketMenuOpen}
         onClick={() => setBasketMenuOpen((open) => !open)}
       >
@@ -736,9 +739,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         <div
           className="basket-menu-options"
           role="menu"
-          aria-label="Local basket actions"
+          aria-label="Shopping list actions"
         >
-          <p>Local basket</p>
+          <p>Shopping list</p>
           <Button
             color="secondary"
             role="menuitem"
@@ -748,7 +751,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             }}
           >
             <Layers3 aria-hidden="true" size={16} />
-            Choose another basket
+            Choose another shopping list
           </Button>
         </div>
       )}
@@ -774,11 +777,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         : basket
           ? "Actual Nemlig basket"
           : screen.kind === "picker"
-            ? "Local baskets"
+            ? "Shopping lists"
             : screen.kind === "unavailable"
-              ? "Local basket unavailable"
+              ? "Shopping list unavailable"
               : screen.kind === "review"
-                ? "Your Local basket"
+                ? review?.shoppingListId !== undefined
+                  ? "Your shopping list"
+                  : "Your shopping list draft"
                 : "Products";
   const intro = !terminalSubmission
     ? review && active
@@ -845,13 +850,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           <DraftListStarters
             message={
               screen.selectedBasketId
-                ? "That Local basket is unavailable or expired. Start a new one in conversation."
+                ? "That saved list is unavailable. Choose another shopping list or start a new draft in conversation."
                 : undefined
             }
             onChoose={actions.onSendFollowUp}
           />
         ) : (
-          <section className="basket-picker" aria-label="Local baskets">
+          <section className="basket-picker" aria-label="Shopping lists">
             <ul>
               {baskets.map((basket) => (
                 <li key={basket.basketId}>
@@ -867,7 +872,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                         ·{" "}
                       </>
                     )}
-                    {basket.productCount} unique products
+                    {basket.productCount} products
                   </span>
                   {basket.submissionAttempted && (
                     <span className="basket-picker-status" role="status">
@@ -876,7 +881,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   )}
                   <Button
                     color="primary"
-                    aria-label={`Open basket ${basket.basketId.slice(0, 8)}`}
+                    aria-label={`Open shopping list ${basket.shoppingListName ?? basket.basketId.slice(0, 8)}`}
                     disabled={busy}
                     onClick={() => actions.onSelectBasket(basket.basketId)}
                   >
@@ -890,7 +895,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                         aria-label={`Confirm deletion of basket ${basket.basketId.slice(0, 8)}`}
                       >
                         <p>
-                          Delete this Local basket? This does not change your
+                          Delete this temporary list? This does not change your
                           real Nemlig basket.
                         </p>
                         <Button
@@ -940,9 +945,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "error" && (
         <section className="status">
           <p role="alert">{screen.message}</p>
-          <p>Continue in conversation to inspect the current Local basket.</p>
+          <p>Continue in conversation to inspect your current shopping list.</p>
           <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
-            Refresh Local basket
+            Refresh shopping list
           </Button>
         </section>
       )}
@@ -950,21 +955,21 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         <section className="status">
           <p>
             Request cancelled. Continue in conversation to confirm the current
-            Local basket before continuing.
+            shopping list before continuing.
           </p>
         </section>
       )}
       {screen.kind === "review" && review && !active && !terminalSubmission && (
         <section className="status">
           <p>
-            This Local basket card is inactive.{" "}
+            This old list card is inactive.{" "}
             {review.items.length
-              ? "The current Local basket is shown read-only."
-              : "No current Local basket is available."}
+              ? "The current shopping list is shown read-only."
+              : "No current shopping list is available."}
           </p>
           {review.items.length > 0 && (
             <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
-              Refresh Local basket
+              Refresh shopping list
             </Button>
           )}
           {message && <p role="status">{message}</p>}
@@ -973,7 +978,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review && !active && !terminalSubmission && review.items.length > 0 && (
         <section
           className="product-list"
-          aria-label="Current Local basket, read only"
+          aria-label="Current shopping list, read only"
         >
           {review.items.map((item) => (
             <ProductCard
@@ -988,15 +993,24 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "unavailable" && (
         <section className="status">
           <p>
-            This temporary Local basket is no longer available. Ask in chat
-            before starting a new Local basket. Previous choices or submission
-            approval are not restored.
+            This unsaved shopping-list draft is no longer available. Ask in chat
+            before starting a new draft. Previous choices or submission approval
+            are not restored.
           </p>
           <Button color="secondary" disabled={busy} onClick={actions.onRefresh}>
-            Refresh Local basket
+            Refresh shopping list
           </Button>
         </section>
       )}
+      {review &&
+        active &&
+        !terminalSubmission &&
+        visibleProductCount === 0 &&
+        review.actionNotice && (
+          <p className="status" role="status">
+            {review.actionNotice}
+          </p>
+        )}
       {review &&
         active &&
         !terminalSubmission &&
@@ -1009,7 +1023,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 disabled={uncertainSubmission}
                 onClick={() => actions.onNavigate("ready")}
               >
-                Back to Local basket
+                Back to shopping list
               </Button>
               <section
                 className="alternatives-current"
@@ -1225,8 +1239,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               onClick={actions.onContinueSubmitted}
             >
               {review.submissionAttempted
-                ? "Choose another Local basket"
-                : "Continue with Local basket"}
+                ? "Choose another shopping list"
+                : "Continue with shopping list"}
             </Button>
           </OutcomeSurface>
         )}
@@ -1244,9 +1258,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           {message && !busy && <p role="status">{message}</p>}
           <p role="status">
             {model.knownNoWrite
-              ? "The known result is that no product was sent. This Local basket remains fenced and cannot be retried; inspect the basket before continuing."
+              ? "The known result is that no product was sent. This submission remains fenced and cannot be retried; inspect the basket before continuing."
               : review.submissionAttempted
-                ? "A prior addition may have reached Nemlig. Inspect the actual basket before continuing; this Local basket cannot be submitted again."
+                ? "A prior addition may have reached Nemlig. Inspect the actual basket before continuing; this submission cannot be repeated."
                 : "Inspect the actual Nemlig basket before making another request. Nemlig Assistant will not retry automatically."}
           </p>
           <Button
@@ -1299,9 +1313,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </p>
                 ))}
                 <p>
-                  Your staged edits remain pending. Reopen the list before
-                  updating.
+                  These current rows may differ from the pending changes below.
                 </p>
+                {review.updateStatus === "partial" && (
+                  <Button
+                    color="secondary"
+                    disabled={busy}
+                    onClick={actions.onDiscardPendingUpdate}
+                  >
+                    Discard pending changes and use current list
+                  </Button>
+                )}
               </OutcomeSurface>
             )}
             {review.saveProgress && (
@@ -1374,7 +1396,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                     Boolean(review.draftId) ||
                     review.shoppingListDirty === true ||
                     review.updateStatus !== undefined ||
-                    nativeTransferBlocked ||
                     editsBlocked ||
                     hasUnreadyItem
                   }
@@ -1389,12 +1410,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               {review.shoppingListDirty && (
                 <p className="status" role="status">
                   Update the saved shopping list before submitting it.
-                </p>
-              )}
-              {nativeTransferBlocked && (
-                <p className="status" role="status">
-                  Nemlig cannot guarantee this saved list stays unchanged
-                  through transfer, so basket submission is unavailable.
                 </p>
               )}
               {hasUnreadyItem && review.submission?.status !== "prepared" && (
@@ -1484,21 +1499,21 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             {confirmEnd && (
               <section className="submission">
                 <p>
-                  Discard this Local basket? The Nemlig basket will not change.
+                  Discard this unsaved draft? The Nemlig basket will not change.
                 </p>
                 <Button
                   color="secondary"
                   disabled={busy}
                   onClick={actions.onCancelEnd}
                 >
-                  Keep Local basket
+                  Keep draft
                 </Button>
                 <Button
                   color="secondary"
                   disabled={busy}
                   onClick={actions.onConfirmEnd}
                 >
-                  Confirm discard Local basket
+                  Confirm discard draft
                 </Button>
               </section>
             )}

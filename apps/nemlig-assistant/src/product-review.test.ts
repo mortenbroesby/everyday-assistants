@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { type BasketProposalService } from "./proposals.js";
+import { BasketProposalService } from "./proposals.js";
 import { NemligError, type Product } from "./client.js";
 import {
   DRAFT_IDLE_TIMEOUT_MS,
@@ -92,10 +92,11 @@ const createDurableReviewJournal = (ownerId: string) => {
           operationId,
         })) as Awaited<ReturnType<ReviewOperationJournal["read"]>>;
       },
-      async claim(operationId: string) {
+      async claim(operationId: string, generation: string) {
         return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
           kind: "review-operation-claim",
           operationId,
+          generation,
         })) as boolean;
       },
       async write(operation: ReviewOperation) {
@@ -551,68 +552,106 @@ test("reopening a changed native list preserves staged edits and shows current r
   assert.equal(writes, 1);
 });
 
-test("native-list transfer preparation fails closed without verified exact-transfer semantics", async () => {
+test("saved native list submits once with a durable fence and retained source", async () => {
   const native = {
     id: 44,
     name: "Family",
     items: [{ productId: 1, quantity: 1 }],
   };
+  const baseline = {
+    items: [
+      { id: 1, name: "Product 1", quantity: 2, total: 10 },
+      { id: 99, name: "Existing", quantity: 1, total: 6 },
+    ],
+    productsPrice: 16,
+    deliveryPrice: 0,
+    numberOfProducts: 3,
+    deliveryTime: undefined,
+  };
+  let basket = structuredClone(baseline);
   let listCreates = 0;
   let listUpdates = 0;
-  let proposalPrepares = 0;
+  const listDeletes = 0;
   let transfers = 0;
-  const service = new ProductReviewService(
-    {
-      ...client,
-      providerIdentity: () => "account-1",
-      listShoppingLists: async () => [
-        { id: 44, name: "Family", productCount: native.items.length },
-      ],
-      getShoppingList: async () => structuredClone(native),
-      createShoppingList: async () => {
-        listCreates++;
-        return 45;
-      },
-      updateShoppingListProduct: async () => {
-        listUpdates++;
-      },
+  const nativeClient = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    createShoppingList: async () => {
+      listCreates++;
+      return 45;
     },
-    {
-      proposals: withShoppingList({
-        prepareAdditions: async () => {
-          proposalPrepares++;
-          return {
-            applicable: true as const,
-            proposal_id: "private",
-            operation: "additions" as const,
-            connection_bound: true as const,
-            issued_at: new Date(0).toISOString(),
-            expires_at: new Date(Date.now() + 900_000).toISOString(),
-            basket_fingerprint: "private",
-            review: { lines: [{ product_id: 1, quantity: 1, item_price: 5 }] },
-          };
-        },
-        apply: async () => {
-          transfers++;
-          throw new Error("Changed source list must not be transferred.");
-        },
-      }),
+    updateShoppingListProduct: async () => {
+      listUpdates++;
     },
+    getCart: async () => structuredClone(basket),
+    addShoppingListToCart: async (listId: number) => {
+      assert.equal(listId, 44);
+      transfers++;
+      basket = {
+        ...baseline,
+        items: [
+          { id: 1, name: "Product 1", quantity: 3, total: 15 },
+          { id: 99, name: "Existing", quantity: 1, total: 6 },
+        ],
+        productsPrice: 21,
+        numberOfProducts: 4,
+      };
+    },
+  };
+  const proposals = new BasketProposalService({
+    getProduct: async (id) => product(id),
+    getFreshProduct: async (id) => product(id),
+    getCart: async () => structuredClone(basket),
+    addToCart: async () => {
+      throw new Error("Submit must use Nemlig's native list transfer.");
+    },
+    getShoppingList: nativeClient.getShoppingList,
+    createShoppingList: nativeClient.createShoppingList,
+    updateShoppingListProduct: nativeClient.updateShoppingListProduct,
+    addShoppingListToCart: nativeClient.addShoppingListToCart,
+  });
+  const service = new ProductReviewService(nativeClient, { proposals });
+  const { journal, read } = createDurableReviewJournal("owner");
+  await service.openShoppingList("owner", 44, undefined, journal);
+
+  const submitted = await service.submit(
+    "owner",
+    "attempt-1",
+    44,
+    undefined,
+    journal,
   );
 
-  await service.openShoppingList("owner", 44);
-  await assert.rejects(
-    service.submit("owner", "private"),
-    /Select the exact saved Nemlig shopping list/u,
+  assert.equal(submitted.review.submission?.status, "submitted");
+  assert.equal(submitted.result.basket.number_of_products, 4);
+  assert.equal(basket.items[0]?.quantity, 3);
+  assert.equal(basket.items[1]?.id, 99);
+  assert.equal(native.items[0]?.quantity, 1);
+  assert.deepEqual(
+    [transfers, listCreates, listUpdates, listDeletes],
+    [1, 0, 0, 0],
   );
-  await assert.rejects(
-    service.prepare("owner"),
-    /cannot verify Nemlig will transfer the exact reviewed list unchanged.*No basket write was sent/u,
+  const receipt = (await read("native-list-submit:44")) as
+    ReviewOperation | undefined;
+  assert.equal(receipt?.kind, "submit");
+  assert.equal(receipt?.dispatchAttempted, true);
+  assert.equal(receipt?.completed, true);
+
+  const restarted = new ProductReviewService(nativeClient, { proposals });
+  const reopened = await restarted.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
   );
-  assert.equal(listCreates, 0);
-  assert.equal(listUpdates, 0);
-  assert.equal(proposalPrepares, 0);
-  assert.equal(transfers, 0);
+  assert.equal(reopened.submission?.status, "submitted");
+  await assert.rejects(
+    restarted.submit("owner", "attempt-2", 44, undefined, journal),
+    /exact shopping-list snapshot was already transferred/u,
+  );
+  assert.equal(transfers, 1);
 });
 
 test("dirty and in-flight native-list updates cannot prepare submission", async () => {
@@ -668,16 +707,19 @@ test("dirty and in-flight native-list updates cannot prepare submission", async 
     /Update the saved Nemlig shopping list/u,
   );
   await assert.rejects(
-    service.submit("owner", "attempt"),
+    service.submit("owner", "attempt", 44),
     /Update the saved Nemlig shopping list/u,
   );
 
   updating = true;
   const update = service.updateShoppingList("owner", 44, { kind: "update" });
   await new Promise((resolve) => setImmediate(resolve));
-  await assert.rejects(service.prepare("owner"), /operation is in progress/u);
   await assert.rejects(
-    service.submit("owner", "attempt"),
+    service.prepare("owner"),
+    /Update the saved Nemlig shopping list/u,
+  );
+  await assert.rejects(
+    service.submit("owner", "attempt", 44),
     /operation is in progress/u,
   );
   releaseUpdate();
@@ -685,7 +727,7 @@ test("dirty and in-flight native-list updates cannot prepare submission", async 
   assert.equal(saved.shoppingListDirty, false);
   await assert.rejects(
     service.prepare("owner"),
-    /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+    /Submit the confirmed saved shopping list directly/u,
   );
 });
 
@@ -734,7 +776,7 @@ test("an unconfirmed native-list update stays dirty and blocks submission", asyn
     /Update the saved Nemlig shopping list/u,
   );
   await assert.rejects(
-    service.submit("owner", "attempt"),
+    service.submit("owner", "attempt", 44),
     /Update the saved Nemlig shopping list/u,
   );
 });
@@ -795,6 +837,81 @@ test("native shopping-list edits stage locally until Update writes and reads bac
     [2],
   );
   assert.deepEqual(native.items, [{ productId: 2, quantity: 1 }]);
+});
+
+test("journal write failures leave drafts recoverable and make no provider writes", async () => {
+  const journal: ReviewOperationJournal = {
+    read: async () => undefined,
+    claim: async () => false,
+    write: async () => {
+      throw new Error("journal storage unavailable");
+    },
+    complete: async () => undefined,
+  };
+  let providerWrites = 0;
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async () => {
+      providerWrites += 1;
+    },
+    createShoppingList: async () => {
+      providerWrites += 1;
+      return 55;
+    },
+  });
+  await service.openShoppingList("owner", 44);
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  await assert.rejects(
+    service.updateShoppingList(
+      "owner",
+      44,
+      { kind: "update" },
+      undefined,
+      journal,
+    ),
+    /could not be recorded safely/u,
+  );
+  const activeList = service.active("owner");
+  assert.equal(activeList?.updateStatus, "partial");
+  assert.equal(activeList?.items[0]?.quantity, 2);
+  assert.match(activeList?.actionNotice ?? "", /No products were changed/u);
+
+  const draftService = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [],
+    createShoppingList: async () => {
+      providerWrites += 1;
+      return 55;
+    },
+  });
+  const draft = await draftService.start("draft-owner", [
+    { product_id: 1, quantity: 1 },
+  ]);
+  await assert.rejects(
+    draftService.save(
+      "draft-owner",
+      "Family",
+      draft.draftId,
+      undefined,
+      journal,
+    ),
+    /Could not record this save safely/u,
+  );
+  assert.equal(draftService.active("draft-owner")?.saveStatus, undefined);
+  assert.equal(providerWrites, 0);
 });
 
 test("completed native-list updates can be followed by edits using the durable journal", async () => {
@@ -952,7 +1069,18 @@ test("interrupted native-list updates resume the intended diff after restart", a
     ],
   );
   assert.equal(recovered.actionNotice, undefined);
-  assert.equal(recovered.conflictItems, undefined);
+  assert.deepEqual(
+    new Map(
+      recovered.conflictItems?.map(({ product_id, quantity }) => [
+        product_id,
+        quantity,
+      ]),
+    ),
+    new Map([
+      [1, 2],
+      [2, 1],
+    ]),
+  );
   const saved = await restarted.updateShoppingList(
     "owner",
     44,
@@ -1034,6 +1162,159 @@ test("external edits during an interrupted update preserve intent until explicit
   assert.equal(native[0]?.quantity, 2);
   assert.ok(operation?.completedUntil);
   assert.equal(writes, 1);
+});
+
+test("discarding an interrupted update holds its lock through renamed-list readback", async () => {
+  const { journal } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-update:44",
+    generation: "update-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  });
+  let blockInventory = false;
+  let inventoryStarted!: () => void;
+  let releaseInventory!: () => void;
+  const started = new Promise<void>((resolve) => {
+    inventoryStarted = resolve;
+  });
+  const pendingInventory = new Promise<void>((resolve) => {
+    releaseInventory = resolve;
+  });
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => {
+      if (blockInventory) {
+        inventoryStarted();
+        await pendingInventory;
+      }
+      return [{ id: 44, name: "Renamed family" }];
+    },
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Renamed family",
+      items: [{ productId: 1, quantity: 1 }],
+    }),
+  });
+  const opened = await service.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
+  );
+  assert.equal(opened.updateStatus, "partial");
+  blockInventory = true;
+  const discarding = service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "discard_pending_update" },
+    undefined,
+    journal,
+  );
+  await started;
+  await assert.rejects(
+    service.updateShoppingList("owner", 44, {
+      kind: "quantity",
+      product_id: 1,
+      quantity: 3,
+    }),
+    /operation is in progress/u,
+  );
+  releaseInventory();
+  const discarded = await discarding;
+  assert.equal(discarded.updateStatus, undefined);
+  assert.equal(discarded.shoppingListName, "Renamed family");
+  assert.equal(
+    (await journal.read("native-list-update:44"))?.completedUntil !== undefined,
+    true,
+  );
+});
+
+test("discarding a pending update retires only a confirmed deleted list", async () => {
+  const { journal } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-update:44",
+    generation: "update-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  });
+  let lists = [{ id: 44, name: "Family" }];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => lists,
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Family",
+      items: [{ productId: 1, quantity: 1 }],
+    }),
+  });
+  await service.openShoppingList("owner", 44, undefined, journal);
+  lists = [];
+  const recovered = await service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "discard_pending_update" },
+    undefined,
+    journal,
+  );
+  assert.equal(recovered.shoppingListId, undefined);
+  assert.equal(recovered.items.length, 0);
+  assert.match(recovered.actionNotice ?? "", /deleted in Nemlig/u);
+  assert.equal(
+    (await journal.read("native-list-update:44"))?.completedUntil !== undefined,
+    true,
+  );
+});
+
+test("a pending update from another account cannot be retired", async () => {
+  const { journal } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-update:44",
+    generation: "update-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  });
+  let accountIdentity = "account-1";
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => accountIdentity,
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Family",
+      items: [{ productId: 1, quantity: 1 }],
+    }),
+  });
+  await service.openShoppingList("owner", 44, undefined, journal);
+  accountIdentity = "account-2";
+  await assert.rejects(
+    service.updateShoppingList(
+      "owner",
+      44,
+      { kind: "discard_pending_update" },
+      undefined,
+      journal,
+    ),
+    /Refresh this shopping list/u,
+  );
+  assert.equal(
+    (await journal.read("native-list-update:44"))?.completedUntil,
+    undefined,
+  );
 });
 
 test("native list update never adopts readback from another account or list", async () => {

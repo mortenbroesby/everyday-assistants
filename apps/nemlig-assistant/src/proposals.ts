@@ -113,6 +113,10 @@ export class VerifiedPartialAdditionsError extends NemligError {
   }
 }
 
+export class BasketTransferNotDispatchedError extends NemligError {
+  override readonly name = "BasketTransferNotDispatchedError";
+}
+
 export interface BasketPayload extends Record<string, unknown> {
   items: Basket["items"];
   products_price: number | undefined;
@@ -806,6 +810,81 @@ export class BasketProposalService {
     return completed;
   }
 
+  async transferNativeShoppingList(
+    listId: number,
+    fingerprint: string,
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
+    baseline: Basket,
+    beforeDispatch: () => Promise<void>,
+    signal?: AbortSignal,
+  ): Promise<ApplyResult> {
+    return this.mutex.run(async () => {
+      const { getShoppingList, addShoppingListToCart } = this.client;
+      if (!getShoppingList || !addShoppingListToCart) {
+        throw new NemligError("Shopping-list submission is unavailable.");
+      }
+      const currentList = await getShoppingList(listId, signal);
+      const expected = new Map(
+        activeLines.map(({ product_id, quantity }) => [product_id, quantity]),
+      );
+      if (
+        currentList.id !== listId ||
+        shoppingListFingerprint(currentList) !== fingerprint ||
+        currentList.items.length !== expected.size ||
+        currentList.items.some(
+          ({ productId, quantity }) => expected.get(productId) !== quantity,
+        )
+      ) {
+        throw new BasketSnapshotChangedError();
+      }
+      if (
+        basketFingerprint(await this.client.getCart(signal)) !==
+        basketFingerprint(baseline)
+      ) {
+        throw new BasketSnapshotChangedError();
+      }
+      if (signal?.aborted) {
+        throw new BasketTransferNotDispatchedError(
+          "Submission was cancelled before the basket transfer. No basket write was sent.",
+        );
+      }
+      await beforeDispatch();
+      if (signal?.aborted) {
+        throw new BasketTransferNotDispatchedError(
+          "Submission was cancelled before the basket transfer. No basket write was sent.",
+        );
+      }
+      try {
+        await addShoppingListToCart(listId, signal);
+        const result = await this.client.getCart(signal);
+        this.assertShoppingListTransferReadback(baseline, result, activeLines);
+        return {
+          status: "completed",
+          operation: "additions",
+          replayed: false,
+          basket: basketPayload(result),
+        };
+      } catch {
+        throw new NemligError(
+          "Basket transfer may have completed. Inspect the basket and do not retry.",
+        );
+      }
+    });
+  }
+
+  matchesNativeShoppingListTransfer(
+    baseline: Basket,
+    result: Basket,
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
+  ): boolean {
+    try {
+      this.assertShoppingListTransferReadback(baseline, result, activeLines);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private shoppingListTransferDetails(operation: AddOperation): {
     listId: number;
     fingerprint: string;
@@ -848,7 +927,7 @@ export class BasketProposalService {
   private assertShoppingListTransferReadback(
     baseline: Basket,
     result: Basket,
-    activeLines: readonly ProposalLine[],
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
   ): void {
     const additions = new Map(
       activeLines.map((line) => [line.product_id, line.quantity]),
@@ -903,7 +982,7 @@ export class BasketProposalService {
   private assertExactBasketLines(
     baseline: Basket,
     result: Basket,
-    activeLines: readonly ProposalLine[],
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
   ): void {
     const expected = new Map(
       [...this.validateAdditionBasket(baseline)].map(([id, item]) => [
@@ -933,7 +1012,7 @@ export class BasketProposalService {
   private assertExpectedProductCount(
     baseline: Basket,
     result: Basket,
-    activeLines: readonly ProposalLine[],
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
   ): void {
     const expectedCount =
       (baseline.numberOfProducts ?? 0) +

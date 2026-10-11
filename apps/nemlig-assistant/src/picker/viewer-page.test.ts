@@ -79,6 +79,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onReplace: noop,
     onSaveDraft: noop,
     onUpdateShoppingList: noop,
+    onDiscardPendingUpdate: noop,
     onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
@@ -90,15 +91,13 @@ const props = (thumbnail?: string): ViewerPageProps => ({
   },
 });
 
-test("basket picker shows only a compact prefix, activity date, and product count", () => {
+test("shopping-list picker shows native names and product counts without delete", () => {
   const pageProps = props();
   const inventory = [
     {
-      basketId: "12345678-1234-4234-8234-123456789abc",
-      createdAt: Date.parse("2026-10-01T10:00:00.000Z"),
-      lastActivityAt: Date.parse("2026-10-09T10:00:00.000Z"),
-      expiresAt: Date.parse("2026-10-10T10:00:00.000Z"),
-      revision: 3,
+      basketId: "44",
+      nativeShoppingList: true as const,
+      shoppingListName: "Family groceries",
       productCount: 4,
       submissionAttempted: false,
     },
@@ -109,26 +108,26 @@ test("basket picker shows only a compact prefix, activity date, and product coun
   };
   pageProps.model.baskets = inventory;
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Local baskets/u);
-  assert.match(markup, /Basket 12345678/u);
-  assert.match(markup, /4 unique products/u);
-  assert.doesNotMatch(markup, /12345678-1234-4234-8234-123456789abc/u);
+  assert.match(markup, /Shopping lists/u);
+  assert.match(markup, /Family groceries/u);
+  assert.match(markup, /4 products/u);
+  assert.match(markup, /Open shopping list Family groceries/u);
   assert.match(markup, />Open</u);
-  assert.match(markup, />Delete</u);
-  assert.doesNotMatch(markup, /Choose a Local basket to continue/u);
-  assert.doesNotMatch(markup, /Local basket options|Choose basket/u);
+  assert.doesNotMatch(markup, />Delete</u);
+  assert.doesNotMatch(markup, /Choose a shopping list to continue/u);
+  assert.doesNotMatch(markup, /Shopping list options|Choose another/u);
   assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
 });
 
-test("an empty picker offers the Local basket starter actions", () => {
+test("an empty picker offers shopping-list draft starter actions", () => {
   const pageProps = props();
   pageProps.model.screen = { kind: "picker", baskets: [] };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Start your Local basket/u);
+  assert.match(markup, /Start a shopping-list draft/u);
   assert.match(markup, /Plan groceries for the week/u);
   assert.match(markup, /Find ingredients for dinner/u);
   assert.match(markup, /Find a product/u);
-  assert.doesNotMatch(markup, /No active Local baskets/u);
+  assert.doesNotMatch(markup, /No active shopping lists/u);
   assert.doesNotMatch(markup, /Submit to Nemlig/u);
 
   pageProps.model.screen = {
@@ -139,8 +138,53 @@ test("an empty picker offers the Local basket starter actions", () => {
   const expiredMarkup = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(expiredMarkup, /Local basket is unavailable or expired/u);
-  assert.match(expiredMarkup, /Start your Local basket/u);
+  assert.match(expiredMarkup, /saved list is unavailable/u);
+  assert.match(expiredMarkup, /Start a shopping-list draft/u);
+});
+
+test("interrupted updates show current rows separately from pending rows", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    ...pageProps.model.screen.review,
+    shoppingListId: 44,
+    shoppingListName: "Family",
+    updateStatus: "partial",
+    shoppingListDirty: true,
+    conflictItems: [
+      {
+        product_id: 7,
+        quantity: 1,
+        state: "ready",
+        view: product,
+      },
+    ],
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /Current Nemlig shopping list/u);
+  assert.match(markup, /Discard pending changes and use current list/u);
+  assert.match(
+    markup,
+    /These current rows may differ from the pending changes below/u,
+  );
+});
+
+test("retired deleted-list updates show the next recovery action", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    destination: "ready",
+    items: [],
+    actionNotice:
+      "This shopping list was deleted in Nemlig. Its pending update was retired; choose another list or start a draft.",
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /deleted in Nemlig/u);
+  assert.match(markup, /choose another list or start a draft/u);
 });
 
 test("a recovered submission fence explains the uncertainty without inventing an id", () => {
@@ -231,7 +275,7 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   );
   assert.match(markup, />Select</u);
   assert.doesNotMatch(markup, /Use selected alternative/u);
-  assert.match(markup, /Back to Local basket/u);
+  assert.match(markup, /Back to shopping list/u);
   assert.doesNotMatch(markup, />Clear</u);
 });
 
@@ -365,9 +409,9 @@ test("dirty native shopping-list edits require Update before Submit", () => {
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, />Update shopping list<\/button>/u);
   assert.match(html, /Update the saved shopping list before submitting it/u);
-  assert.match(
+  assert.doesNotMatch(
     html,
-    /Nemlig cannot guarantee this saved list stays unchanged/u,
+    /Basket submission is unavailable while we verify/u,
   );
   assert.match(
     html,
@@ -504,7 +548,7 @@ test("a recovered native-list review exposes and runs its Resume update action",
     journal,
   );
   assert.equal(recovered.updateStatus, "partial");
-  assert.equal(recovered.conflictItems, undefined);
+  assert.equal(recovered.conflictItems?.[0]?.quantity, 1);
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
   }
@@ -666,6 +710,6 @@ test("a submitted basket names skipped products without claiming they were added
   );
   assert.doesNotMatch(html, /Only the prepared products were added/u);
   assert.doesNotMatch(html, /A previous addition needs checking/u);
-  assert.match(html, /Choose another Local basket/u);
-  assert.doesNotMatch(html, /Continue with Local basket/u);
+  assert.match(html, /Choose another shopping list/u);
+  assert.doesNotMatch(html, /Continue with shopping list/u);
 });

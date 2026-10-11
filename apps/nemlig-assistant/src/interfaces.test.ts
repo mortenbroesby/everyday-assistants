@@ -25,7 +25,16 @@ import {
   serviceAcceptanceToolInventory,
 } from "./mcp.js";
 import { productionToolInventory } from "./production-acceptance.js";
-import type { ProductReviewSnapshot } from "./product-review.js";
+import {
+  ProductReviewService,
+  type ProductReviewSnapshot,
+} from "./product-review.js";
+import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
+import {
+  mutateOwnerLocalBasketInventory,
+  type LocalBasketInventoryStorage,
+  type LocalBasketStorageAccess,
+} from "./local-basket-storage.js";
 import { BasketProposalService } from "./proposals.js";
 import {
   PRODUCT_VIEWER_RESOURCE_URI,
@@ -33,7 +42,6 @@ import {
 } from "./product-viewer.js";
 import { RETIRED_PRODUCT_VIEWER_RESOURCE_URIS } from "./product-viewer-identity.js";
 import { NEMLIG_CODENAME, NEMLIG_VERSION } from "./runtime.js";
-import { createProductView } from "./product-presentation.js";
 
 const expectedProductViewerResources = [
   {
@@ -364,7 +372,7 @@ const friendlyCatalog = [
   ],
   [
     "submit_product_review_conversation",
-    "Submit the exact Local basket to Nemlig",
+    "Submit the exact shopping list to Nemlig",
     false,
     false,
     ["basket_id", "shopping_list_id", "submission_id"],
@@ -1011,7 +1019,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /Respect an explicit instruction not to create or edit a Local basket/u,
+        /Honor explicit requests not to start a draft, save a list, or edit/u,
       );
       assert.doesNotMatch(
         JSON.stringify({ tools, instructions: mcp.getInstructions() }),
@@ -1080,15 +1088,13 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
         ]),
       );
       const instructions = mcp.getInstructions() ?? "";
-      assert.match(instructions, /durable Local baskets/u);
+      assert.match(instructions, /native Nemlig shopping lists/u);
+      assert.match(instructions, /New products start in an unsaved draft/u);
       assert.match(
         instructions,
-        /ask whether to append the finds to that basket or create a separate basket/u,
+        /only explicit Save creates a native shopping list/u,
       );
-      assert.match(
-        instructions,
-        /explicit instruction.*already makes that choice/u,
-      );
+      assert.match(instructions, /Existing Local basket cards are stale/u);
       assert.match(instructions, /real Nemlig basket is add-only/u);
       assert.match(
         instructions,
@@ -1096,16 +1102,13 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         instructions,
-        /After an uncertain or partial write, the fenced basket is inspect-or-delete only/u,
+        /Only an explicit Submit action from a clean, saved native shopping list/u,
       );
       assert.match(
         tools.get("find_groceries") ?? "",
         /current Nemlig catalogue independently/u,
       );
-      assert.match(
-        tools.get("show_my_basket") ?? "",
-        /actual Nemlig basket, not the Local basket/u,
-      );
+      assert.match(tools.get("show_my_basket") ?? "", /actual Nemlig basket/u);
       assert.match(
         tools.get("start_product_review") ?? "",
         /Omit items to list native Nemlig shopping lists/u,
@@ -1116,7 +1119,7 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
-        /Inspection, local edits, and preparation are not authorization/u,
+        /Add the exact contents of the selected saved Nemlig shopping list/u,
       );
       assert.equal(
         (await mcp.listResources()).resources[0]?.uri,
@@ -1436,24 +1439,10 @@ test("MCP basket viewer uses basket summaries without fetching product details",
   assert.equal(productReads, 0);
 });
 
-test("widget Local basket actions use top-level basket_id and never guess a selection", async () => {
+test("legacy Local basket widget cards open native lists without legacy storage access", async () => {
   const basketId = "00000000-0000-4000-8000-000000000099";
-  const commands: Array<Record<string, unknown>> = [];
-  const storedBasket = {
-    basketId,
-    createdAt: 1,
-    lastActivityAt: 2,
-    expiresAt: 86_400_002,
-    revision: 1,
-    lines: [
-      {
-        productId: 7,
-        quantity: 2,
-        view: createProductView(product, { kind: "details" }),
-      },
-    ],
-  };
   const originalFetch = globalThis.fetch;
+  let legacyStorageRequests = 0;
   globalThis.fetch = async (input, init) => {
     const url =
       typeof input === "string"
@@ -1461,99 +1450,40 @@ test("widget Local basket actions use top-level basket_id and never guess a sele
         : input instanceof URL
           ? input.href
           : input.url;
-    if (!url.startsWith("http://local-basket-state.internal/")) {
-      return originalFetch(input, init);
+    if (url.startsWith("http://local-basket-state.internal/")) {
+      legacyStorageRequests += 1;
     }
-    const command = JSON.parse(String(init?.body)) as Record<string, unknown>;
-    commands.push(command);
-    if (command.kind === "list") {
-      return Response.json([
-        {
-          basketId,
-          createdAt: 1,
-          lastActivityAt: 2,
-          expiresAt: 86_400_002,
-          revision: 1,
-          productCount: 1,
-          submissionAttempted: false,
-        },
-      ]);
-    }
-    if (command.kind === "selection") {
-      return Response.json(basketId);
-    }
-    return Response.json(storedBasket);
+    return originalFetch(input, init);
   };
   try {
-    const context = {
-      principalKey: "p".repeat(32),
-      policyRevision: "policy-1",
-      localBasketCapability: "capability-for-this-request",
+    const client = {
+      ...fakeClient(),
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => [
+        { id: 44, name: "Family", productCount: 2 },
+      ],
     };
     await withMcpClient(
-      createMcpServer(
-        fakeClient(),
-        async () => undefined,
-        undefined,
-        undefined,
-        context,
-      ),
+      createMcpServer(client, testCredentials),
       async (mcp) => {
-        const selected = await mcp.callTool({
-          name: "update_product_review",
-          _meta: { "openai/session": "widget-scope" },
-          arguments: {
-            basket_id: basketId,
-            action: { kind: "select" },
-          },
-        });
-        assert.equal(selected.isError, undefined, toolText(selected));
-        assert.equal(
-          (selected.structuredContent as { selectedBasketId: string })
-            .selectedBasketId,
-          basketId,
-        );
-        assert.ok(commands.some((command) => command.kind === "select"));
-
-        commands.length = 0;
-        const idless = await mcp.callTool({
-          name: "update_product_review",
-          arguments: { action: { kind: "show" } },
-        });
-        assert.equal(idless.isError, undefined, toolText(idless));
-        const result = idless.structuredContent as {
-          selectionRequired?: boolean;
-          review?: unknown;
-        };
-        assert.equal(result.selectionRequired, true);
-        assert.equal(result.review, undefined);
-        assert.ok(commands.every((command) => command.kind !== "read"));
-
-        commands.length = 0;
-        const oldCard = await mcp.callTool({
-          name: "update_product_review",
-          _meta: { "openai/session": "widget-scope" },
-          arguments: {
-            action: { kind: "quantity", product_id: 7, quantity: 9 },
-          },
-        });
-        assert.equal(oldCard.isError, undefined, toolText(oldCard));
-        assert.equal(
-          (oldCard.structuredContent as { selectionRequired: boolean })
-            .selectionRequired,
-          true,
-        );
-        assert.ok(
-          commands.every(
-            (command) =>
-              command.kind !== "read" &&
-              command.kind !== "edit" &&
-              command.kind !== "selection",
-          ),
-          "an idless historical card never resolves the new remembered selection",
-        );
+        for (const action of [
+          { kind: "show" },
+          { kind: "quantity", product_id: 7, quantity: 9 },
+        ]) {
+          const result = await mcp.callTool({
+            name: "update_product_review",
+            arguments: { basket_id: basketId, action },
+          });
+          assert.equal(result.isError, undefined, toolText(result));
+          assert.deepEqual(
+            (result.structuredContent as { shoppingLists: unknown[] })
+              .shoppingLists,
+            [{ id: 44, name: "Family", productCount: 2 }],
+          );
+        }
       },
     );
+    assert.equal(legacyStorageRequests, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1613,17 +1543,16 @@ test("MCP opens the Local basket picker when a session has no selection", async 
           selectionRequired: true,
         });
 
-        const localBaskets = await mcp.callTool({
+        const picker = await mcp.callTool({
           name: "update_product_review_conversation",
           _meta: requestMeta,
           arguments: { action: { kind: "show" } },
         });
-        assert.equal(localBaskets.isError, undefined, toolText(localBaskets));
-        assert.deepEqual(localBaskets.structuredContent, {
-          baskets: [],
-          selectedBasketId: null,
+        assert.equal(picker.isError, undefined, toolText(picker));
+        assert.deepEqual(picker.structuredContent, {
+          shoppingLists: [],
+          selectedShoppingListId: null,
           selectionRequired: true,
-          unavailable: true,
         });
       },
     );
@@ -1632,11 +1561,10 @@ test("MCP opens the Local basket picker when a session has no selection", async 
   }
 });
 
-test("only an actual missing basket opens the picker on repository failures", async () => {
+test("native shopping-list inventory failures stay visible for legacy cards", async () => {
   const basketId = "00000000-0000-4000-8000-000000000099";
   const originalFetch = globalThis.fetch;
-  let responseMode: "missing" | "conflict" | "network" | "provider404" =
-    "missing";
+  let legacyStorageRequests = 0;
   globalThis.fetch = async (input, init) => {
     const url =
       typeof input === "string"
@@ -1644,145 +1572,35 @@ test("only an actual missing basket opens the picker on repository failures", as
         : input instanceof URL
           ? input.href
           : input.url;
-    if (!url.startsWith("http://local-basket-state.internal/")) {
-      return originalFetch(input, init);
+    if (url.startsWith("http://local-basket-state.internal/")) {
+      legacyStorageRequests += 1;
     }
-    const command = JSON.parse(String(init?.body)) as {
-      kind?: string;
-    };
-    if (command.kind === "list") {
-      return Response.json([]);
-    }
-    if (responseMode === "provider404" && command.kind === "read") {
-      return Response.json({
-        basketId,
-        createdAt: 1,
-        lastActivityAt: 2,
-        expiresAt: 86_400_002,
-        revision: 1,
-        lines: [
-          {
-            productId: 7,
-            quantity: 2,
-            view: createProductView(product, { kind: "details" }),
-          },
-        ],
-      });
-    }
-    if (responseMode === "network") {
-      throw new Error("private host or owner detail");
-    }
-    if (responseMode === "missing") {
-      return new Response("Local basket is unavailable.", { status: 404 });
-    }
-    return new Response("Local basket changed. Refresh it.", { status: 409 });
+    return originalFetch(input, init);
   };
-
   try {
-    const context = {
-      principalKey: "p".repeat(32),
-      policyRevision: "policy-1",
-      localBasketCapability: "capability-for-this-request",
+    const client = {
+      ...fakeClient(),
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () => {
+        throw new NemligError("Nemlig shopping-list inventory is unavailable.");
+      },
     };
     await withMcpClient(
-      createMcpServer(
-        fakeClient(),
-        async () => undefined,
-        undefined,
-        undefined,
-        context,
-      ),
+      createMcpServer(client, testCredentials),
       async (mcp) => {
-        const call = (action: Record<string, unknown>) =>
-          mcp.callTool({
-            name: "update_product_review_conversation",
-            arguments: { basket_id: basketId, action },
-          });
-        const missing = await call({ kind: "show" });
-        assert.equal(missing.isError, undefined, toolText(missing));
-        assert.equal(
-          (missing.structuredContent as { unavailable?: boolean }).unavailable,
-          true,
-        );
-        assert.equal(
-          (missing.structuredContent as { selectionRequired?: boolean })
-            .selectionRequired,
-          true,
-        );
-
-        responseMode = "conflict";
-        const conflict = await call({ kind: "show" });
-        assert.equal(conflict.isError, true);
-        assert.match(toolText(conflict), /changed or is busy/u);
-        assert.doesNotMatch(toolText(conflict), /unavailable|deleted/u);
-        assert.equal(conflict.structuredContent, undefined);
-
-        const staleEdit = await call({
-          kind: "quantity",
-          product_id: 7,
-          quantity: 3,
-        });
-        assert.equal(staleEdit.isError, true);
-        assert.match(toolText(staleEdit), /changed or is busy/u);
-        assert.doesNotMatch(toolText(staleEdit), /unavailable|deleted/u);
-
-        responseMode = "network";
-        const offline = await call({ kind: "show" });
-        assert.equal(offline.isError, true);
-        assert.match(toolText(offline), /temporarily unavailable/u);
-        assert.doesNotMatch(
-          toolText(offline),
-          /private host|owner detail|deleted/u,
-        );
-        assert.equal(offline.structuredContent, undefined);
-      },
-    );
-
-    responseMode = "provider404";
-    const providerMissingClient = Object.assign(
-      fakeClient({
-        getCart: async () => ({
-          ...basket,
-          items: [{ id: 99, name: "Existing item", quantity: 1, total: 5 }],
-        }),
-        getFreshProduct: async () => {
-          throw new NemligError("Provider product not found", 404);
-        },
-      }),
-      {
-        createShoppingList: async () => 1,
-        updateShoppingListProduct: async () => undefined,
-        getShoppingList: async () => ({
-          id: 1,
-          name: "fixture",
-          items: [],
-        }),
-        deleteShoppingList: async () => undefined,
-        addShoppingListToCart: async () => undefined,
-      },
-    );
-    await withMcpClient(
-      createMcpServer(
-        providerMissingClient,
-        async () => undefined,
-        undefined,
-        undefined,
-        context,
-      ),
-      async (mcp) => {
-        const providerMissing = await mcp.callTool({
+        const result = await mcp.callTool({
           name: "update_product_review_conversation",
-          arguments: {
-            basket_id: basketId,
-            action: { kind: "prepare_submission" },
-          },
+          arguments: { basket_id: basketId, action: { kind: "show" } },
         });
-        assert.equal(providerMissing.isError, true);
-        assert.match(toolText(providerMissing), /Provider product not found/u);
-        assert.doesNotMatch(toolText(providerMissing), /unavailable|deleted/u);
-        assert.equal(providerMissing.structuredContent, undefined);
+        assert.equal(result.isError, true);
+        assert.match(
+          toolText(result),
+          /shopping-list inventory is unavailable/u,
+        );
+        assert.equal(result.structuredContent, undefined);
       },
     );
+    assert.equal(legacyStorageRequests, 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1861,7 +1679,7 @@ test("legacy raw visual chooser is unavailable", async () => {
   );
 });
 
-test("a clear conversational add command cannot bypass the native-list transfer gate", async () => {
+test("conversation-side preparation cannot submit a native shopping list", async () => {
   let writes = 0;
   const shoppingLists = new Map<number, Map<number, number>>();
   let current: Basket = {
@@ -1962,7 +1780,7 @@ test("a clear conversational add command cannot bypass the native-list transfer 
       assert.equal(prepared.isError, true);
       assert.match(
         toolText(prepared),
-        /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+        /Submit the confirmed saved shopping list directly/u,
       );
       assert.equal(writes, 0);
       assert.equal(review.saveStatus, "saved", JSON.stringify(review));
@@ -2047,6 +1865,355 @@ test("supported draft cards share owner state and reject retired identifiers", a
   );
   assert.equal(basketReads, 0);
   assert.equal(basketWrites, 0);
+});
+
+test("legacy Local basket cards route to native lists without changing old or draft state", async () => {
+  let basketWrites = 0;
+  const client = fakeClient({
+    getCart: async () => {
+      basketWrites++;
+      throw new Error("legacy basket path was used");
+    },
+    addToCart: async () => {
+      basketWrites++;
+      throw new Error("legacy basket path was used");
+    },
+  });
+  const reviews = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 12, name: "Weekly shop", productCount: 3 },
+    ],
+  });
+  await withMcpClient(
+    createMcpServer(
+      client,
+      testCredentials,
+      undefined,
+      undefined,
+      undefined,
+      reviews,
+    ),
+    async (mcp) => {
+      const started = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 1 }] },
+      });
+      const original = (
+        started.structuredContent as { review: ProductReviewSnapshot }
+      ).review;
+      const update = await mcp.callTool({
+        name: "update_product_review",
+        arguments: {
+          basket_id: "00000000-0000-4000-8000-000000000001",
+          action: { kind: "delete" },
+        },
+      });
+      assert.equal(update.isError, undefined, toolText(update));
+      assert.match(toolText(update), /native Nemlig shopping list/u);
+      assert.deepEqual(
+        (
+          update.structuredContent as {
+            shoppingLists: Array<{ id: number }>;
+          }
+        ).shoppingLists.map(({ id }) => id),
+        [12],
+      );
+      const current = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: {
+          draft_id: original.draftId,
+          action: { kind: "show" },
+        },
+      });
+      assert.deepEqual(
+        (current.structuredContent as { review: ProductReviewSnapshot }).review,
+        original,
+      );
+      const submit = await mcp.callTool({
+        name: "submit_product_review",
+        arguments: {
+          basket_id: "00000000-0000-4000-8000-000000000001",
+          submission_id: "00000000-0000-4000-8000-000000000002",
+        },
+      });
+      assert.equal(submit.isError, true);
+      assert.match(
+        toolText(submit),
+        /Local basket submission is no longer supported/u,
+      );
+    },
+  );
+  assert.equal(basketWrites, 0);
+});
+
+test("start_product_review reopens an interrupted update through durable storage", async () => {
+  const storageValues = new Map<string, unknown>();
+  const storage: LocalBasketInventoryStorage = {
+    async get<T>(key: string) {
+      return structuredClone(storageValues.get(key)) as T | undefined;
+    },
+    async put<T>(key: string, value: T) {
+      storageValues.set(key, structuredClone(value));
+    },
+    async delete(key: string) {
+      storageValues.delete(key);
+    },
+    async setAlarm() {},
+    async deleteAlarm() {},
+    async transaction<T>(
+      action: (transaction: LocalBasketStorageAccess) => Promise<T>,
+    ) {
+      const before = structuredClone(storageValues);
+      try {
+        return await action(storage);
+      } catch (error) {
+        storageValues.clear();
+        for (const [key, value] of before) {
+          storageValues.set(key, value);
+        }
+        throw error;
+      }
+    },
+  };
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [
+      { productId: 7, quantity: 1 },
+      { productId: 8, quantity: 1 },
+    ],
+  };
+  let listExists = true;
+  let failSecondUpdate = true;
+  const client = {
+    ...fakeClient({
+      getProduct: async (id: number) => ({ ...product, id }),
+      getFreshProduct: async (id: number) => ({ ...product, id }),
+    }),
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () =>
+      listExists ? [{ id: 44, name: native.name }] : [],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (
+      _listId: number,
+      productId: number,
+      quantity: number,
+    ) => {
+      if (productId === 8 && failSecondUpdate) {
+        failSecondUpdate = false;
+        throw new Error("provider timed out");
+      }
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("http://local-basket-state.internal/")) {
+      return originalFetch(input, init);
+    }
+    return handleLocalBasketStateRequest(
+      new Request(input, init),
+      {
+        idFromName: (ownerId) => ownerId,
+        get: () => ({
+          mutate: (ownerId, command) =>
+            mutateOwnerLocalBasketInventory(storage, ownerId, command),
+        }),
+      },
+      async (capability) =>
+        capability === "journal-test-capability" ? "owner" : undefined,
+    );
+  };
+  const requestContext = {
+    principalKey: "owner",
+    policyRevision: "test-v1",
+    localBasketCapability: "journal-test-capability",
+  };
+  try {
+    await withMcpClient(
+      createMcpServer(
+        client,
+        testCredentials,
+        undefined,
+        undefined,
+        requestContext,
+        new ProductReviewService(client),
+      ),
+      async (mcp) => {
+        const opened = await mcp.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 44 },
+        });
+        assert.equal(opened.isError, undefined, toolText(opened));
+        const update = async (action: Record<string, unknown>) => {
+          const result = await mcp.callTool({
+            name: "update_product_review_conversation",
+            arguments: { shopping_list_id: 44, action },
+          });
+          assert.equal(result.isError, undefined, toolText(result));
+          return (result.structuredContent as { review: ProductReviewSnapshot })
+            .review;
+        };
+        await update({ kind: "quantity", product_id: 7, quantity: 2 });
+        await update({ kind: "quantity", product_id: 8, quantity: 2 });
+        const partial = await update({ kind: "update" });
+        assert.equal(partial.updateStatus, "partial");
+      },
+    );
+
+    await withMcpClient(
+      createMcpServer(
+        client,
+        testCredentials,
+        undefined,
+        undefined,
+        requestContext,
+        new ProductReviewService(client),
+      ),
+      async (mcp) => {
+        native.name = "Renamed family";
+        const reopened = await mcp.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 44 },
+        });
+        assert.equal(reopened.isError, undefined, toolText(reopened));
+        const review = (
+          reopened.structuredContent as { review: ProductReviewSnapshot }
+        ).review;
+        assert.equal(review.updateStatus, "partial");
+        assert.equal(review.shoppingListName, "Renamed family");
+        assert.deepEqual(
+          review.items.map(({ product_id, quantity }) => [
+            product_id,
+            quantity,
+          ]),
+          [
+            [7, 2],
+            [8, 2],
+          ],
+        );
+        assert.deepEqual(
+          new Map(
+            review.conflictItems?.map(({ product_id, quantity }) => [
+              product_id,
+              quantity,
+            ]),
+          ),
+          new Map([
+            [7, 2],
+            [8, 1],
+          ]),
+        );
+        assert.deepEqual(
+          new Map(
+            native.items.map(({ productId, quantity }) => [
+              productId,
+              quantity,
+            ]),
+          ),
+          new Map([
+            [7, 2],
+            [8, 1],
+          ]),
+        );
+        const update = async (action: Record<string, unknown>) => {
+          const result = await mcp.callTool({
+            name: "update_product_review_conversation",
+            arguments: { shopping_list_id: 44, action },
+          });
+          assert.equal(result.isError, undefined, toolText(result));
+          return (result.structuredContent as { review: ProductReviewSnapshot })
+            .review;
+        };
+        const discarded = await update({ kind: "discard_pending_update" });
+        assert.equal(discarded.updateStatus, undefined);
+        assert.equal(discarded.shoppingListDirty, false);
+        assert.deepEqual(
+          new Map(
+            discarded.items.map(({ product_id, quantity }) => [
+              product_id,
+              quantity,
+            ]),
+          ),
+          new Map([
+            [7, 2],
+            [8, 1],
+          ]),
+        );
+        await update({ kind: "quantity", product_id: 7, quantity: 3 });
+        const supersedingUpdate = await update({ kind: "update" });
+        assert.equal(supersedingUpdate.saveStatus, "saved");
+        assert.deepEqual(
+          new Map(
+            native.items.map(({ productId, quantity }) => [
+              productId,
+              quantity,
+            ]),
+          ),
+          new Map([
+            [7, 3],
+            [8, 1],
+          ]),
+        );
+        failSecondUpdate = true;
+        await update({ kind: "quantity", product_id: 8, quantity: 2 });
+        const interruptedAgain = await update({ kind: "update" });
+        assert.equal(interruptedAgain.updateStatus, "partial");
+        listExists = false;
+      },
+    );
+
+    await withMcpClient(
+      createMcpServer(
+        client,
+        testCredentials,
+        undefined,
+        undefined,
+        requestContext,
+        new ProductReviewService(client),
+      ),
+      async (mcp) => {
+        const reopened = await mcp.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 44 },
+        });
+        assert.equal(reopened.isError, undefined, toolText(reopened));
+        const review = (
+          reopened.structuredContent as { review: ProductReviewSnapshot }
+        ).review;
+        assert.equal(review.shoppingListId, undefined);
+        assert.match(review.actionNotice ?? "", /deleted in Nemlig/u);
+        const operation = await mutateOwnerLocalBasketInventory(
+          storage,
+          "owner",
+          {
+            kind: "review-operation-read",
+            operationId: "native-list-update:44",
+          },
+        );
+        assert.notEqual(
+          (operation as { completedUntil?: number } | undefined)
+            ?.completedUntil,
+          undefined,
+        );
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("MCP Local basket opens alternatives for any item and rejects obsolete basket navigation", async () => {
@@ -2349,11 +2516,18 @@ test("empty and unavailable results retain safe routes and unsaved drafts cannot
   assert.equal(writes, 0);
 });
 
-test("lost and ended review recovery reports absence and only acts on explicitly restarted state", async () => {
+test("lost unsaved drafts fail closed while a new draft opens native lists", async () => {
   const noWrite = async (): Promise<never> => {
-    throw new Error("Recovery must not touch the provider basket");
+    throw new Error("Draft recovery must not touch the provider basket");
   };
-  const provider = fakeClient({ getCart: noWrite, addToCart: noWrite });
+  const provider = {
+    ...fakeClient({
+      getCart: noWrite,
+      addToCart: noWrite,
+    }),
+    providerIdentity: () => "nemlig:test-account",
+    listShoppingLists: async () => [],
+  };
   let stale: ProductReviewSnapshot;
   await withMcpClient(
     createMcpServer(provider, testCredentials),
@@ -2366,42 +2540,31 @@ test("lost and ended review recovery reports absence and only acts on explicitly
         .review;
     },
   );
-  // A new server models loss of the in-memory draft while the host keeps its old card.
   await withMcpClient(
     createMcpServer(provider, testCredentials),
     async (mcp) => {
-      const edit = await mcp.callTool({
+      const oldCard = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
+          draft_id: stale.draftId,
           action: { kind: "quantity", product_id: 7, quantity: 3 },
         },
       });
-      assert.equal(edit.isError, true);
-      assert.match(toolText(edit), /Local basket unavailable/u);
-      assert.match(toolText(edit), /never replay/iu);
-      const show = () =>
-        mcp.callTool({
-          name: "update_product_review_conversation",
-          arguments: { action: { kind: "show" } },
-        });
-      const absent = await show();
-      assert.equal(absent.isError, undefined, toolText(absent));
-      assert.deepEqual(absent.structuredContent, { unavailable: true });
-      assert.match(toolText(absent), /Ask before starting a new list/u);
-      const unavailableWidgetRefresh = await mcp.callTool({
-        name: "update_product_review",
+      assert.equal(oldCard.isError, true);
+      assert.match(toolText(oldCard), /Unsaved draft is unavailable/u);
+
+      const picker = await mcp.callTool({
+        name: "update_product_review_conversation",
         arguments: { action: { kind: "show" } },
       });
-      assert.equal(
-        unavailableWidgetRefresh.isError,
-        undefined,
-        toolText(unavailableWidgetRefresh),
-      );
-      assert.deepEqual(
-        unavailableWidgetRefresh.structuredContent,
-        { unavailable: true },
-        "refresh silently recreated a lost draft",
-      );
+      assert.equal(picker.isError, undefined, toolText(picker));
+      assert.deepEqual(picker.structuredContent, {
+        shoppingLists: [],
+        selectedShoppingListId: null,
+        selectionRequired: true,
+      });
+      assert.match(toolText(picker), /native Nemlig shopping list/u);
+
       const restarted = await mcp.callTool({
         name: "start_product_review",
         arguments: {
@@ -2414,33 +2577,41 @@ test("lost and ended review recovery reports absence and only acts on explicitly
       const current = (
         restarted.structuredContent as { review: ProductReviewSnapshot }
       ).review;
+      assert.notEqual(current.draftId, stale.draftId);
       assert.equal(current.items[0]?.quantity, 2);
       assert.equal(current.items[0]?.state, "ready");
       assert.equal(current.submission, undefined);
-      assert.deepEqual((await show()).structuredContent, { review: current });
+
       const earlierCardEdit = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
+          draft_id: stale.draftId,
           action: { kind: "quantity", product_id: 7, quantity: 3 },
         },
       });
-      assert.equal(
-        earlierCardEdit.isError,
-        undefined,
+      assert.equal(earlierCardEdit.isError, true);
+      assert.match(
         toolText(earlierCardEdit),
+        /Unsaved draft (?:is unavailable|changed)/u,
       );
-      const edited = (await show()).structuredContent as {
-        review: ProductReviewSnapshot;
-      };
-      assert.equal(edited.review.items[0]?.state, "ready");
-      assert.equal(edited.review.items[0]?.quantity, 3);
-      await mcp.callTool({
+      const currentEdit = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {
-          action: { kind: "end" },
+          draft_id: current.draftId,
+          action: { kind: "quantity", product_id: 7, quantity: 3 },
         },
       });
-      assert.deepEqual((await show()).structuredContent, { unavailable: true });
+      assert.equal(currentEdit.isError, undefined, toolText(currentEdit));
+      const ended = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: { draft_id: current.draftId, action: { kind: "end" } },
+      });
+      assert.equal(ended.isError, undefined, toolText(ended));
+      const afterEnd = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "show" } },
+      });
+      assert.deepEqual(afterEnd.structuredContent, picker.structuredContent);
     },
   );
 });

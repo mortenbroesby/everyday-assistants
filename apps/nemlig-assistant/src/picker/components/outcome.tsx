@@ -51,10 +51,10 @@ export function DraftListStarters({
   onChoose: (prompt: string) => void;
 }) {
   return (
-    <OutcomeSurface title="Start your Local basket">
+    <OutcomeSurface title="Start a shopping-list draft">
       <p>
         Find products and collect your choices here. Nothing is added to Nemlig
-        until you explicitly ask to add the current Local basket.
+        until you explicitly save the draft as a Nemlig shopping list.
       </p>
       {message && <p role="status">{message}</p>}
       <Actions>
@@ -62,7 +62,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me plan groceries for the week. Start a new Local basket; do not add anything to Nemlig.",
+              "Help me plan groceries for the week. Start an unsaved shopping-list draft; do not save or add anything to Nemlig.",
             )
           }
         >
@@ -72,7 +72,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find ingredients for dinner. Start a new Local basket; do not add anything to Nemlig.",
+              "Help me find ingredients for dinner. Start an unsaved shopping-list draft; do not save or add anything to Nemlig.",
             )
           }
         >
@@ -82,7 +82,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find a product for a new Local basket. Do not add anything to Nemlig.",
+              "Help me find a product for an unsaved shopping-list draft. Do not save or add anything to Nemlig.",
             )
           }
         >

@@ -131,6 +131,97 @@ test("review operation journal is owner-scoped and stores only exact IDs and qua
   );
 });
 
+test("native submission receipt stays durable and only pre-dispatch release removes it", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "native-list-submit:44",
+    generation: "submit-attempt-one",
+    accountIdentity: "account-1",
+    kind: "submit",
+    name: "Family",
+    listId: 44,
+    items: [
+      { productId: 7, quantity: 2 },
+      { productId: 8, quantity: 1 },
+    ],
+    baseline: [{ productId: 8, quantity: 1 }],
+  };
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation,
+  });
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation: operation.generation,
+    }),
+    true,
+  );
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-release",
+      operationId: operation.operationId,
+      generation: operation.generation,
+    }),
+    true,
+  );
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-read",
+      operationId: operation.operationId,
+    }),
+    undefined,
+  );
+
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation,
+  });
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-claim",
+    operationId: operation.operationId,
+    generation: operation.generation,
+  });
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-complete",
+      operationId: operation.operationId,
+      generation: operation.generation,
+    },
+    1,
+  );
+  const retained = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    { kind: "review-operation-read", operationId: operation.operationId },
+    Number.MAX_SAFE_INTEGER - 1,
+  )) as ReviewOperation;
+  assert.equal(retained.completed, true);
+  assert.equal(retained.dispatchAttempted, true);
+  await assert.rejects(
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-write",
+      operation: {
+        ...operation,
+        generation: "submit-attempt-two",
+        items: [...operation.items].reverse(),
+      },
+    }),
+    /different shopping-list operation/u,
+  );
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation: "submit-attempt-two",
+    }),
+    false,
+  );
+});
+
 test("stale journal writes cannot release the create claim or erase a native ID", async () => {
   const storage = new FakeStorage();
   const initial: ReviewOperation = {
@@ -150,6 +241,7 @@ test("stale journal writes cannot release the create claim or erase a native ID"
     mutateOwnerLocalBasketInventory(storage, "owner-1", {
       kind: "review-operation-claim",
       operationId: initial.operationId,
+      generation: initial.generation,
     });
   const read = () =>
     mutateOwnerLocalBasketInventory(storage, "owner-1", {
@@ -209,6 +301,133 @@ test("stale journal writes cannot release the create claim or erase a native ID"
   );
   assert.equal((await read())?.generation, next.generation);
   assert.deepEqual((await read())?.items, next.items);
+});
+
+test("review-operation claim only fences the generation that wrote its intent", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "draft-claim-generation",
+    generation: "generation-one",
+    accountIdentity: "account-1",
+    kind: "submit",
+    name: "Meal plan",
+    listId: 44,
+    items: [{ productId: 1, quantity: 1 }],
+    baseline: [],
+  };
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation,
+  });
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation: {
+      ...operation,
+      generation: "generation-two",
+      items: [{ productId: 1, quantity: 2 }],
+    },
+  });
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation: "generation-one",
+    }),
+    false,
+  );
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation: "generation-two",
+    }),
+    true,
+  );
+});
+
+test("completed records do not block unresolved operations before the byte bound", async () => {
+  const storage = new FakeStorage();
+  const write = (operationId: string) =>
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-write",
+      operation: {
+        operationId,
+        generation: operationId,
+        accountIdentity: "account-1",
+        kind: "save",
+        name: operationId,
+        items: [{ productId: 1, quantity: 1 }],
+      },
+    });
+  for (let index = 0; index < 8; index += 1) {
+    const operationId = `completed-${index}`;
+    await write(operationId);
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-complete",
+      operationId,
+      generation: operationId,
+    });
+  }
+  for (let index = 0; index < 24; index += 1) {
+    await write(`active-${index}`);
+  }
+  assert.deepEqual(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-read",
+      operationId: "active-23",
+    }),
+    {
+      operationId: "active-23",
+      generation: "active-23",
+      accountIdentity: "account-1",
+      kind: "save",
+      name: "active-23",
+      items: [{ productId: 1, quantity: 1 }],
+    },
+  );
+});
+
+test("oversized recovery journals preserve fences and return an actionable error", async () => {
+  const storage = new FakeStorage();
+  const items = Array.from({ length: 500 }, (_, index) => ({
+    productId: index + 1,
+    quantity: 1,
+  }));
+  let lastWritten: string | undefined;
+  let capacityError: unknown;
+  for (let index = 0; index < 100; index += 1) {
+    const operationId = `large-save-${index}`;
+    try {
+      await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+        kind: "review-operation-write",
+        operation: {
+          operationId,
+          generation: operationId,
+          accountIdentity: "account-1",
+          kind: "save",
+          name: operationId,
+          createAttempted: true,
+          items,
+        },
+      });
+      lastWritten = operationId;
+    } catch (error) {
+      capacityError = error;
+      break;
+    }
+  }
+  assert.ok(lastWritten);
+  assert.match(
+    (capacityError as Error | undefined)?.message ?? "",
+    /recovery storage is full.*did not reach Nemlig.*do not retry an uncertain Save/iu,
+  );
+  assert.ok(
+    await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-read",
+      operationId: lastWritten,
+    }),
+    "the last preserved recovery fence remains readable after capacity failure",
+  );
 });
 
 test("500 product snapshots stay below the Durable Object per-value limit", async () => {

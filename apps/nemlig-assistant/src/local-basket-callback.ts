@@ -69,9 +69,11 @@ const reviewOperationSchema = z
     operationId: z.string().min(1).max(128),
     generation: z.string().min(1).max(128),
     accountIdentity: z.string().min(1).max(512),
-    kind: z.enum(["save", "update"]),
+    kind: z.enum(["save", "update", "submit"]),
     name: z.string().min(1).max(30),
     createAttempted: z.boolean().optional(),
+    dispatchAttempted: z.boolean().optional(),
+    completed: z.boolean().optional(),
     listId: z.number().int().positive().optional(),
     items: z
       .array(
@@ -111,6 +113,12 @@ const callbackCommandSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("review-operation-claim"),
     operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-release"),
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
   }),
   z.object({
     kind: z.literal("review-operation-write"),
@@ -153,6 +161,12 @@ const callbackCommandSchema = z.discriminatedUnion("kind", [
 
 const storageFailureResponse = (error: unknown): Response => {
   const code = serializedLocalBasketFailureCode(error);
+  if (code === "LOCAL_BASKET_OPERATION_CAPACITY") {
+    return new Response(
+      "Shopping-list recovery storage is full. This Save, Update, or Submit did not reach Nemlig; use an existing list and do not retry an uncertain transfer.",
+      { status: 429 },
+    );
+  }
   if (code === "LOCAL_BASKET_NOT_FOUND") {
     return new Response("Local basket is unavailable.", { status: 404 });
   }

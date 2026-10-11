@@ -1,5 +1,6 @@
 import {
   applyLocalBasketCommand,
+  LocalBasketOperationCapacityError,
   LocalBasketNotFoundError,
   type LocalBasket,
   type LocalBasketCommand,
@@ -10,7 +11,6 @@ import {
 
 const INDEX_KEY = "owner-local-basket-index";
 const REVIEW_OPERATION_INDEX_KEY = "owner-review-operation-index";
-const MAX_REVIEW_OPERATIONS = 8;
 const REVIEW_OPERATION_RETENTION_MS = 2 * 60 * 60 * 1000;
 const MAX_DURABLE_VALUE_BYTES = 1024 * 1024;
 
@@ -39,6 +39,13 @@ interface OwnerReviewOperations {
   ownerId: string;
   operations: ReviewOperation[];
 }
+
+const sameReviewItems = (
+  left: ReviewOperation["items"],
+  right: ReviewOperation["items"],
+): boolean =>
+  JSON.stringify([...left].sort((a, b) => a.productId - b.productId)) ===
+  JSON.stringify([...right].sort((a, b) => a.productId - b.productId));
 
 const lineKey = (basketId: string, productId: number): string =>
   `line:${basketId}:${productId}`;
@@ -297,6 +304,7 @@ export const mutateOwnerLocalBasketInventory = async (
     if (
       command.kind === "review-operation-read" ||
       command.kind === "review-operation-claim" ||
+      command.kind === "review-operation-release" ||
       command.kind === "review-operation-write" ||
       command.kind === "review-operation-complete"
     ) {
@@ -324,18 +332,52 @@ export const mutateOwnerLocalBasketInventory = async (
         const current = operations.find(
           ({ operationId }) => operationId === command.operationId,
         );
-        if (!current || current.createAttempted) {
+        if (
+          !current ||
+          current.generation !== command.generation ||
+          current.completed ||
+          (current.kind === "submit"
+            ? current.dispatchAttempted
+            : current.createAttempted)
+        ) {
           return false;
         }
         const updated = operations.map((operation) =>
           operation.operationId === command.operationId
-            ? { ...operation, createAttempted: true }
+            ? operation.kind === "submit"
+              ? { ...operation, dispatchAttempted: true }
+              : { ...operation, createAttempted: true }
             : operation,
         );
         await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
           ownerId,
           operations: updated,
         });
+        return true;
+      }
+      if (command.kind === "review-operation-release") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (
+          !current ||
+          current.kind !== "submit" ||
+          current.generation !== command.generation ||
+          current.completed
+        ) {
+          return false;
+        }
+        const updated = operations.filter(
+          ({ operationId }) => operationId !== command.operationId,
+        );
+        if (updated.length) {
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations: updated,
+          });
+        } else {
+          await transaction.delete(REVIEW_OPERATION_INDEX_KEY);
+        }
         return true;
       }
       if (command.kind === "review-operation-read") {
@@ -353,10 +395,13 @@ export const mutateOwnerLocalBasketInventory = async (
           return false;
         }
         if (current) {
-          const completed = {
-            ...current,
-            completedUntil: now + REVIEW_OPERATION_RETENTION_MS,
-          };
+          const completed =
+            current.kind === "submit"
+              ? { ...current, completed: true }
+              : {
+                  ...current,
+                  completedUntil: now + REVIEW_OPERATION_RETENTION_MS,
+                };
           const updated = operations.map((operation) =>
             operation.operationId === command.operationId
               ? completed
@@ -373,12 +418,19 @@ export const mutateOwnerLocalBasketInventory = async (
       const current = operations.find(
         ({ operationId }) => operationId === operation.operationId,
       );
-      if (!current && operations.length >= MAX_REVIEW_OPERATIONS) {
-        throw new Error("Too many unfinished shopping-list operations.");
-      }
+      const sameCompletedSubmission =
+        current?.kind === "submit" &&
+        current.completed === true &&
+        operation.kind === "submit" &&
+        current.accountIdentity === operation.accountIdentity &&
+        current.listId === operation.listId &&
+        sameReviewItems(current.items, operation.items);
       const replaceCompleted =
-        current?.completedUntil !== undefined &&
-        operation.generation !== current.generation;
+        (current?.completed === true ||
+          current?.completedUntil !== undefined ||
+          (current?.kind === "submit" && !current.dispatchAttempted)) &&
+        operation.generation !== current.generation &&
+        !sameCompletedSubmission;
       if (
         current &&
         !replaceCompleted &&
@@ -387,6 +439,8 @@ export const mutateOwnerLocalBasketInventory = async (
           current.kind !== operation.kind ||
           current.name !== operation.name ||
           JSON.stringify(current.items) !== JSON.stringify(operation.items) ||
+          JSON.stringify(current.baseline) !==
+            JSON.stringify(operation.baseline) ||
           (current.listId !== undefined &&
             operation.listId !== undefined &&
             current.listId !== operation.listId))
@@ -402,6 +456,9 @@ export const mutateOwnerLocalBasketInventory = async (
               ...operation,
               createAttempted:
                 current.createAttempted || operation.createAttempted,
+              dispatchAttempted:
+                current.dispatchAttempted || operation.dispatchAttempted,
+              completed: current.completed || operation.completed,
               ...(current.listId !== undefined
                 ? { listId: current.listId }
                 : {}),
@@ -429,7 +486,11 @@ export const mutateOwnerLocalBasketInventory = async (
         ),
         merged,
       ];
-      enforceValueLimit({ ownerId, operations: updated });
+      try {
+        enforceValueLimit({ ownerId, operations: updated });
+      } catch {
+        throw new LocalBasketOperationCapacityError();
+      }
       await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
         ownerId,
         operations: updated,

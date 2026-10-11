@@ -172,7 +172,7 @@ function isReview(value: unknown): value is Review {
   }
   return true;
 }
-function isBasketId(value: unknown): value is string {
+export function isBasketId(value: unknown): value is string {
   return (
     typeof value === "string" &&
     (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
@@ -420,7 +420,7 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (envelope.ended === true) {
     return {
       kind: "empty",
-      message: "Your Local basket was discarded. Nothing changed in Nemlig.",
+      message: "Your unsaved draft was discarded. Nothing changed in Nemlig.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -602,7 +602,7 @@ export function ProductViewer() {
         setScreen({
           kind: "error",
           message:
-            "Could not load the Local basket. Reconnect Nemlig or try again in conversation.",
+            "Could not load the shopping list. Reconnect Nemlig or try again in conversation.",
         });
         return false;
       }
@@ -774,7 +774,7 @@ export function ProductViewer() {
         setScreen({
           kind: "error",
           message:
-            "The Local basket connection failed. Refresh the Local basket or continue in conversation.",
+            "The shopping-list connection failed. Refresh the list or continue in conversation.",
         });
       };
     },
@@ -815,7 +815,7 @@ export function ProductViewer() {
     setScreen({
       kind: "error",
       message:
-        "We could not confirm this action. Refresh the Local basket to read its current state before continuing.",
+        "We could not confirm this action. Refresh the shopping list to read its current state before continuing.",
     });
   };
   // fallow-ignore-next-line complexity
@@ -833,8 +833,8 @@ export function ProductViewer() {
       if (!background) {
         setMessage(
           error
-            ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
-            : "Connecting to the current Local basket…",
+            ? "The shopping list could not connect. Continue in conversation or reopen it."
+            : "Connecting to the current shopping list…",
         );
       }
       return false;
@@ -889,7 +889,7 @@ export function ProductViewer() {
             ? String(targetArgs.shopping_list_id)
             : (targetArgs.draft_id ?? targetArgs.basket_id);
         if (!isBasketId(targetId)) {
-          setMessage("Choose a Local basket before continuing.");
+          setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
@@ -914,7 +914,7 @@ export function ProductViewer() {
             : targetArgs.basket_id,
         )
       ) {
-        setMessage("Choose a Local basket before continuing.");
+        setMessage("Choose a shopping list before continuing.");
         setScreen({ kind: "picker", baskets, selectedBasketId });
         return false;
       }
@@ -975,7 +975,7 @@ export function ProductViewer() {
           setBaskets(payloadRecord.baskets);
         }
       } else if (!applyPayload(result, true, adoptPresentationDestination)) {
-        throw new Error("Could not confirm the updated Local basket.");
+        throw new Error("Could not confirm the updated shopping list.");
       }
       if (
         !background &&
@@ -996,7 +996,7 @@ export function ProductViewer() {
         if (preserveReviewOnFailure) {
           ignorePassivePayloads.current = true;
           setMessage(
-            "Could not save the pending quantity. Keep this Local basket open and retry before switching.",
+            "Could not save the pending quantity. Keep this shopping list open and retry before switching.",
           );
         } else {
           handleCallFailure(cause, recovery, uncertainOnFailure);
@@ -1299,6 +1299,9 @@ export function ProductViewer() {
   const updateShoppingList = () => {
     afterFlush({ kind: "update" });
   };
+  const discardPendingUpdate = () => {
+    afterFlush({ kind: "discard_pending_update" });
+  };
   const navigate = (next: PresentationDestination) => {
     if (next === "alternatives" && !review?.alternatives) {
       return;
@@ -1308,7 +1311,7 @@ export function ProductViewer() {
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
       setMessage(
-        "Continue in conversation to inspect or start a Local basket.",
+        "Continue in conversation to inspect a shopping list or start a draft.",
       );
       return;
     }
@@ -1323,7 +1326,7 @@ export function ProductViewer() {
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage(
-        "Continue in conversation to inspect or start a Local basket.",
+        "Continue in conversation to inspect a shopping list or start a draft.",
       );
     }
   };
@@ -1380,7 +1383,12 @@ export function ProductViewer() {
     );
   };
   const deleteBasket = async (basketId: string) => {
-    if (!busy && isBasketId(basketId)) {
+    if (
+      !busy &&
+      isBasketId(basketId) &&
+      !baskets.find((basket) => basket.basketId === basketId)
+        ?.nativeShoppingList
+    ) {
       await call(
         "update_product_review",
         { action: { kind: "delete" }, basket_id: basketId },
@@ -1390,15 +1398,20 @@ export function ProductViewer() {
   };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
-      setMessage("Reconnect to read this conversation's current Local basket.");
+      setMessage(
+        "Reconnect to read this conversation's current shopping list.",
+      );
       return;
     }
     if (selectedBasketIdRef.current) {
+      const targetArgs = activeReview.current?.review
+        ? reviewTargetArgs(activeReview.current.review)
+        : { basket_id: selectedBasketIdRef.current };
       await call(
         "update_product_review",
         {
           action: { kind: "show" },
-          basket_id: selectedBasketIdRef.current,
+          ...targetArgs,
         },
         true,
       );
@@ -1412,60 +1425,33 @@ export function ProductViewer() {
       await update({ kind: "end" });
     }
   };
-  // The exact submission comparison is intentionally linear and fail-closed.
-  // fallow-ignore-next-line complexity
+  // Submit the exact saved list in one action; provider checks remain server-side.
   const submitCurrentBasket = async () => {
     const expected = selectionContext();
     const ok = await flushQuantities(expected);
     if (ok) {
       await waitForCallIdle();
     }
-    const submissionSelection = (snapshot: Review) =>
-      JSON.stringify(
-        snapshot.items
-          .map(({ product_id, quantity }) => [product_id, quantity])
-          .sort(([left], [right]) => left - right),
-      );
-    const original = activeReview.current?.review;
+    const review = activeReview.current?.review;
     if (
       !ok ||
       expected.epoch !== selectionEpoch.current ||
       expected.basketId !== selectedBasketIdRef.current ||
-      !original ||
+      !review ||
       callLock.current
     ) {
       setMessage("The shopping list changed. Refresh it before submitting.");
       return;
     }
-    const originalSelection = submissionSelection(original);
-    let confirmed = original;
-    if (confirmed.submission?.status !== "prepared") {
-      if (
-        !(await call(
-          "update_product_review",
-          { action: { kind: "prepare_submission" } },
-          true,
-          false,
-          false,
-          false,
-          expected,
-        ))
-      ) {
-        return;
-      }
-      confirmed = activeReview.current?.review ?? original;
-    }
     if (
-      expected.epoch !== selectionEpoch.current ||
-      expected.basketId !== selectedBasketIdRef.current ||
-      !confirmed.submission ||
-      reviewTargetId(confirmed) !== selectedBasketIdRef.current ||
-      submissionSelection(confirmed) !== originalSelection ||
-      confirmed.submission.status !== "prepared" ||
-      callLock.current
+      review.shoppingListId === undefined ||
+      review.saveStatus !== "saved" ||
+      review.shoppingListDirty ||
+      review.updateStatus !== undefined ||
+      reviewTargetId(review) !== selectedBasketIdRef.current
     ) {
       setMessage(
-        "The shopping list changed during submission preparation. Check the current list before trying again.",
+        "Update and review the saved shopping list before submitting.",
       );
       return;
     }
@@ -1476,7 +1462,10 @@ export function ProductViewer() {
     }
     const success = await call(
       "submit_product_review",
-      { submission_id: confirmed.submission.submission_id },
+      {
+        submission_id: globalThis.crypto.randomUUID(),
+        ...reviewTargetArgs(review),
+      },
       false,
       false,
       true,
@@ -1485,28 +1474,17 @@ export function ProductViewer() {
     );
     if (!success) {
       try {
-        if (
-          selectedBasketIdRef.current &&
-          (await call(
-            "update_product_review",
-            {
-              action: { kind: "show" },
-              ...reviewTargetArgs(confirmed),
-            },
-            true,
-          ))
-        ) {
-          if (activeReview.current?.review.submission?.status === "partial") {
-            setMessage("");
-            return;
-          }
-        }
+        await call(
+          "update_product_review",
+          { action: { kind: "show" }, ...reviewTargetArgs(review) },
+          true,
+        );
       } catch {
-        // The original failure remains safely uncertain when its local state cannot be re-read.
+        // Keep the transfer failure visible if current state cannot be read.
       }
       setMessage(
         submissionFailure.current ??
-          "Nemlig did not confirm whether the complete addition reached the basket.",
+          "Nemlig did not confirm whether the basket addition completed. Inspect the basket; do not retry.",
       );
     }
   };
@@ -1540,7 +1518,7 @@ export function ProductViewer() {
         message,
         connectionMessage: !isConnected
           ? error
-            ? "Could not connect to the Local basket host."
+            ? "Could not connect to the shopping-list host."
             : "Connecting to Nemlig…"
           : undefined,
         busy,
@@ -1585,6 +1563,7 @@ export function ProductViewer() {
           update({ kind: "replace", product_id, replacement_id }),
         onSaveDraft: saveDraft,
         onUpdateShoppingList: updateShoppingList,
+        onDiscardPendingUpdate: discardPendingUpdate,
         onSubmit: () => void submitCurrentBasket(),
         onConfirmSubmit: () => void submitCurrentBasket(),
         onContinueSubmitted: () => {
@@ -1596,7 +1575,7 @@ export function ProductViewer() {
         },
         onInspectBasket: () =>
           void sendFollowUp(
-            "Inspect the actual Nemlig basket for this uncertain Local basket submission. Do not retry or add anything.",
+            "Inspect the actual Nemlig basket for this uncertain submission. Do not retry or add anything.",
           ),
         onSendFollowUp: (text) => void sendFollowUp(text),
         onRequestEnd: () => setConfirmEnd(true),

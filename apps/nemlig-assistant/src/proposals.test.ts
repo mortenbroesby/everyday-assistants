@@ -4,6 +4,7 @@ import {
   NemligClient,
   NemligError,
   ProductNotFoundError,
+  shoppingListFingerprint,
   type Basket,
   type Product,
   type ShoppingClient,
@@ -434,6 +435,78 @@ test("verified transfer keeps success when list cleanup fails and never repeats 
   assert.equal(replayed.replayed, true);
   assert.equal(replayed.cleanup_warning, applied.cleanup_warning);
   assert.deepEqual({ transfers, deletions }, { transfers: 1, deletions: 1 });
+});
+
+test("native-list submit uses the same list and verifies additive basket readback", async () => {
+  const events: string[] = [];
+  const list = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 7, quantity: 1 }],
+  };
+  const baseline: Basket = {
+    items: [
+      { id: 7, name: "Banan", quantity: 2, total: 5 },
+      { id: 99, name: "Existing", quantity: 1, total: 6 },
+    ],
+    productsPrice: 11,
+    deliveryPrice: 0,
+    numberOfProducts: 3,
+    deliveryTime: undefined,
+  };
+  let basket = structuredClone(baseline);
+  const service = new BasketProposalService({
+    getProduct: async () => product,
+    getFreshProduct: async () => product,
+    getCart: async () => {
+      events.push("basket-read");
+      return structuredClone(basket);
+    },
+    addToCart: async () => emptyBasket(),
+    getShoppingList: async (listId) => {
+      events.push(`list-read:${listId}`);
+      return structuredClone(list);
+    },
+    createShoppingList: async () => {
+      events.push("create-list");
+      return 45;
+    },
+    deleteShoppingList: async () => {
+      events.push("delete-list");
+    },
+    addShoppingListToCart: async (listId) => {
+      events.push(`transfer:${listId}`);
+      basket = {
+        ...baseline,
+        items: [
+          { id: 7, name: "Banan", quantity: 3, total: 7.5 },
+          { id: 99, name: "Existing", quantity: 1, total: 6 },
+        ],
+        productsPrice: 13.5,
+        numberOfProducts: 4,
+      };
+    },
+  });
+
+  const result = await service.transferNativeShoppingList(
+    44,
+    shoppingListFingerprint(list),
+    [{ product_id: 7, quantity: 1 }],
+    baseline,
+    async () => {
+      events.push("durable-fence");
+    },
+  );
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.basket.number_of_products, 4);
+  assert.deepEqual(events, [
+    "list-read:44",
+    "basket-read",
+    "durable-fence",
+    "transfer:44",
+    "basket-read",
+  ]);
 });
 
 test("provider shopping-list preparation rejects a changed list before reviewing it", async () => {

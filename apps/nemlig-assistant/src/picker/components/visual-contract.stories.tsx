@@ -211,6 +211,7 @@ const baseProps = (
     onReplace: noop,
     onSaveDraft: noop,
     onUpdateShoppingList: noop,
+    onDiscardPendingUpdate: noop,
     onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,

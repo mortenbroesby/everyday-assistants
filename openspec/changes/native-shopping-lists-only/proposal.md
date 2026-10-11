@@ -22,13 +22,14 @@ created in Nemlig itself.
 - Unsaved products may disappear after inactivity, session loss or restart. Saved
   lists remain discoverable on Nemlig. Reuse the existing draft product UI for
   both the unsaved draft and every selected native shopping list.
-- **BREAKING:** retire durable local basket content, inventory, TTL/heartbeat,
-  eviction, callbacks, capability transport, storage binding and repository
-  abstraction.
-  Old local IDs become unavailable; there is no automatic provider migration.
-- Preserve exact approved, add-only basket submission and the post-success list
-  cleanup from PR #294. Isolate the minimum durable anti-replay submission record
-  from shopping content; do not keep a basket registry to provide this safeguard.
+- **BREAKING:** disable the Local Basket workflow and route historical Local
+  Basket cards to native-list discovery. Keep existing account data, storage
+  bindings, callbacks and namespace intact until a separately reviewed
+  migration and retirement plan. Do not migrate old data automatically.
+- Keep shopping-list-to-basket submission disabled until exact transfer and
+  concurrent-edit behavior are verified. Retain durable Save/Update recovery
+  records; any later transfer fence and source-list cleanup require separate
+  verified semantics.
 
 ## Capabilities
 
@@ -56,11 +57,12 @@ and network access. ChatGPT host metadata is optional convenience, never authori
 
 ### Goal and non-goals
 
-The goal is one native shopping-list model from discovery through editing and
-submission, with no durable local-basket persistence. Temporary unsaved drafts
-remain. This plan does not implement code, mutate provider data, deploy, delete
-old user data, redesign swipe/details controls, add durable/offline drafts, or
-build background synchronization.
+The long-term goal is one native shopping-list model from discovery through
+editing and submission, with no durable local-basket persistence. This PR
+checkpoint implements discovery, draft Save, staged Update, and durable
+Save/Update recovery. Local Basket storage retirement and shopping-list transfer
+remain separately gated. Temporary unsaved drafts remain. This plan does not
+authorize provider data mutation, deployment, or deletion of old user data.
 
 ### Acceptance
 
@@ -74,12 +76,14 @@ build background synchronization.
    never blindly replayed.
 3. Confirmed deletion yields the picker; auth/network errors remain errors and
    cannot masquerade as an empty inventory or missing list.
-4. One exact authorized submission makes at most one native transfer, preserves
-   existing basket items, and deletes only the eligible corresponding source
-   list after verified success. Failure or uncertainty preserves recovery state.
-5. Durable local-basket infrastructure is removed while the draft UI is reused.
-   Tests prove anti-replay after process restart, cross-chat contention, and
-   stale-card fail-closed behavior.
+4. Shopping-list-to-basket submission remains unavailable until exact transfer
+   and concurrent-edit behavior is demonstrated. Enabling it later requires one
+   authorized additive transfer, verified readback, and source-list cleanup that
+   cannot cause replay after an uncertain result.
+5. Local Basket mutations are inactive and stale cards fail closed. Durable
+   Local Basket data, callbacks, bindings, and namespace remain pending an
+   explicit migration and retirement disposition. Save/Update journal tests
+   cover restart recovery and owner scoping.
 6. Storybook, MCP smoke and an explicitly authorized live ChatGPT test cover the
    unsaved/save states, all-list picker, reopening through the draft UI, staged
    edits, explicit Update, external-edit conflicts, failed writes and missing
@@ -89,9 +93,9 @@ build background synchronization.
 ### Delivery and existing work
 
 Implementation is continuing on PR #296's `codex/plan-native-shopping-lists`
-branch with verified checkpoint commits. Keep the accepted local-basket removal
-in its separate stacked PR; do not mix it into PR #294. PR #294 is merged in
-main at `ea56ce3`; preserve its reviewed cleanup behavior.
+branch. Keep Local Basket namespace deletion and any transfer enabling out of
+this checkpoint. PR #294 is merged in main at `ea56ce3`; its cleanup behavior
+does not prove safe cleanup of a user-owned native shopping list.
 This change supersedes the unimplemented sections 2–3 of
 `provider-shopping-list-core-workspace`: its two-list design and mandatory
 workspace registry are rejected. Its shipped list-only submission safeguard and

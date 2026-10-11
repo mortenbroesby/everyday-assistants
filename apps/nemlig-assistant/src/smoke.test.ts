@@ -170,7 +170,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   }
 });
 
-test("discovery saves the exact list and blocks unsupported basket transfer", async () => {
+test("discovery saves the exact list and requires explicit basket submission", async () => {
   const product = (
     id: number,
     name: string,
@@ -343,7 +343,7 @@ test("discovery saves the exact list and blocks unsupported basket transfer", as
     assert.equal(prepared.isError, true);
     assert.match(
       JSON.stringify(prepared.content),
-      /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+      /Submit the confirmed saved shopping list directly/u,
     );
     assert.equal(reads, 0);
     assert.equal(writes, 0);
@@ -454,7 +454,7 @@ test("a saved list with unsupported transfer is blocked before any basket write"
     assert.equal(prepared.isError, true);
     assert.match(
       JSON.stringify(prepared.content),
-      /cannot verify Nemlig will transfer the exact reviewed list unchanged/u,
+      /Submit the confirmed saved shopping list directly/u,
     );
     assert.equal(writes, 0);
   } finally {

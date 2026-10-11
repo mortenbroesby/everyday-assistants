@@ -146,6 +146,91 @@ test("Local basket callback derives storage identity from capability, not reques
   assert.deepEqual(names, [principalKey]);
 });
 
+test("review-operation journal callbacks stay scoped to the request capability", async () => {
+  const values = new Map<string, Map<string, unknown>>();
+  const storage = {
+    idFromName: (ownerId: string) => ownerId,
+    get: (ownerId: string) => ({
+      mutate: async (
+        requestOwner: string,
+        command: { kind: string } & Record<string, unknown>,
+      ) => {
+        assert.equal(requestOwner, ownerId);
+        let ownerValues = values.get(ownerId);
+        if (!ownerValues) {
+          ownerValues = new Map();
+          values.set(ownerId, ownerValues);
+        }
+        if (command.kind === "review-operation-write") {
+          const operation = command.operation as { operationId: string };
+          ownerValues.set(operation.operationId, operation);
+          return;
+        }
+        if (command.kind === "review-operation-read") {
+          return ownerValues.get(command.operationId as string);
+        }
+        throw new Error(`Unexpected journal command: ${command.kind}`);
+      },
+    }),
+  };
+  const ownerByCapability = new Map([
+    ["capability-one", "owner-one"],
+    ["capability-two", "owner-two"],
+  ]);
+  const request = async (capability: string, command: unknown) =>
+    handleLocalBasketStateRequest(
+      attachLocalBasketCapability(
+        new Request("http://local-basket-state.internal/inventory", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(command),
+        }),
+        capability,
+      ),
+      storage,
+      async (value) => ownerByCapability.get(value),
+    );
+  const operation = (accountIdentity: string) => ({
+    kind: "review-operation-write",
+    operation: {
+      operationId: "draft-one",
+      generation: "attempt-one",
+      accountIdentity,
+      kind: "save",
+      name: "Dinner",
+      items: [{ productId: 7, quantity: 2 }],
+    },
+  });
+
+  assert.equal(
+    (await request("capability-one", operation("account-one"))).status,
+    200,
+  );
+  assert.equal(
+    (await request("capability-two", operation("account-two"))).status,
+    200,
+  );
+
+  const first = await request("capability-one", {
+    kind: "review-operation-read",
+    operationId: "draft-one",
+  });
+  const second = await request("capability-two", {
+    kind: "review-operation-read",
+    operationId: "draft-one",
+  });
+  assert.equal(first.status, 200);
+  assert.equal(second.status, 200);
+  assert.equal(
+    ((await first.json()) as { accountIdentity: string }).accountIdentity,
+    "account-one",
+  );
+  assert.equal(
+    ((await second.json()) as { accountIdentity: string }).accountIdentity,
+    "account-two",
+  );
+});
+
 test("Local basket callback rejects credential-bearing egress before storage", async () => {
   let storageCalls = 0;
   const storage = {

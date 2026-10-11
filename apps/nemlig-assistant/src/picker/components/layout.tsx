@@ -61,7 +61,7 @@ export function ViewerShell({
       <Viewer
         className="viewer"
         tabIndex={-1}
-        aria-label={title ? undefined : "Nemlig Assistant Local basket"}
+        aria-label={title ? undefined : "Nemlig Assistant Shopping list"}
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}
       >

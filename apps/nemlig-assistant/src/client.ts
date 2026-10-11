@@ -1033,7 +1033,10 @@ export class NemligClient {
     );
   }
 
-  async addShoppingListToCart(listId: number): Promise<void> {
+  async addShoppingListToCart(
+    listId: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     this.requireLogin("add a shopping list to the basket");
     if (!Number.isSafeInteger(listId) || listId < 1) {
       throw new NemligError("Shopping list ID must be positive.");
@@ -1043,6 +1046,7 @@ export class NemligClient {
       {
         method: "POST",
         body: JSON.stringify({ ListId: listId, ConfirmMissingProducts: false }),
+        signal,
       },
       "Add shopping list to basket",
       false,
