@@ -1,10 +1,12 @@
 ## ADDED Requirements
 
-### Requirement: Provider-backed workspaces require provider authentication
+### Requirement: Provider-list preparation requires provider authentication
 
-Routes that read or synchronize provider-backed workspace contents SHALL require an authenticated provider connection before contacting the provider. Credential-free MCP routes SHALL not expose provider list contents or mutate a list.
+Routes that prepare a Local basket through a provider shopping list SHALL
+require an authenticated provider connection before contacting the provider.
+Credential-free MCP routes SHALL not create, read, or mutate a list.
 
-#### Scenario: Credential-free request targets a workspace
+#### Scenario: Credential-free request prepares a Local basket
 
-- **WHEN** a credential-free request attempts to show or update a provider-backed workspace
+- **WHEN** a credential-free request attempts to prepare a Local basket
 - **THEN** it is rejected before any provider shopping-list request

@@ -62,7 +62,6 @@ interface StoredReview {
   busy: boolean;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
-  shoppingListId?: number;
 }
 type ReviewProposals = Pick<
   BasketProposalService,
@@ -507,7 +506,6 @@ export class ProductReviewService {
     signal: AbortSignal | undefined,
   ): Promise<{
     proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
-    shoppingListId?: number;
   }> {
     const shoppingListId = this.canPrepareShoppingList()
       ? await this.createSubmissionShoppingList(basketId, basket.lines)
@@ -529,7 +527,7 @@ export class ProductReviewService {
             { kind: "exact_review" },
             { signal, freshProducts: true },
           );
-    return { proposal, ...(shoppingListId ? { shoppingListId } : {}) };
+    return { proposal };
   }
 
   // Preparation and provider apply keep separate, visible critical sections with different fence ordering.
@@ -576,8 +574,12 @@ export class ProductReviewService {
             "The Local basket has unresolved product identity or availability.",
           );
         }
-        const { proposal, shoppingListId } =
-          await this.prepareSubmissionProposal(owner, basketId, basket, signal);
+        const { proposal } = await this.prepareSubmissionProposal(
+          owner,
+          basketId,
+          basket,
+          signal,
+        );
         const current = localBasket(
           await repository.mutate({ kind: "read", basketId }),
         );
@@ -590,7 +592,6 @@ export class ProductReviewService {
           );
         }
         stored.proposalId = proposal.proposal_id;
-        stored.shoppingListId = shoppingListId;
         stored.snapshot = {
           ...localBasketSnapshot(current),
           submission: {

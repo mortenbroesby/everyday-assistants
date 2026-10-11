@@ -1,19 +1,29 @@
 ## ADDED Requirements
 
-### Requirement: Ready contents synchronize to an assistant-owned provider list
+### Requirement: Submission preparation builds an exact temporary provider list
 
-For a provider-authenticated workspace, the assistant SHALL make the provider shopping list the durable source of Ready contents. A Ready edit SHALL be acknowledged only after serialized provider-list write and matching readback. Browser snapshots and local presentation caches SHALL NOT be a second durable source of contents.
+For an authenticated Local basket, the assistant SHALL create and verify an
+assistant-named provider shopping list only when the user prepares submission.
+It SHALL add the exact current Ready product IDs and quantities serially, then
+require a matching readback before it can prepare real-basket authority. A
+malformed or mismatched list SHALL fail preparation without a real-basket
+mutation.
 
-#### Scenario: Quantity change is synchronized
+#### Scenario: Prepared list matches Ready products
 
-- **WHEN** a user changes the quantity of a Ready product
-- **THEN** the assistant serializes the provider-list update, confirms exact list readback, and leaves the real basket unchanged
+- **WHEN** a user prepares a Local basket with verified Ready products
+- **THEN** the assistant creates and reads back a provider list with exactly
+  those product IDs and quantities before showing a submittable confirmation
 
-### Requirement: Closing preserves untransferred work without reusing authority
+### Requirement: Local basket remains authoritative before submission
 
-Closing or remounting a workspace SHALL retain its app-owned provider list. Explicit abandonment SHALL delete only that list and invalidate submission authority. A legacy local workspace SHALL NOT be silently uploaded or retain prepared authority during conversion.
+Until a separately approved workspace cutover, normal Local basket edits SHALL
+remain local and SHALL NOT create or synchronize provider shopping lists.
+Closing, reopening, or clearing a Local basket SHALL preserve the existing
+Local-basket behavior and SHALL NOT restore any prepared submission authority.
 
-#### Scenario: Card closes before submission
+#### Scenario: Quantity changes before preparation
 
-- **WHEN** the user closes an active synchronized workspace before submission
-- **THEN** reopening reads its provider-list contents with no real-basket mutation and no restored prepared authority
+- **WHEN** a user changes a Ready quantity before preparing submission
+- **THEN** the Local basket updates under its existing contract and no provider
+  shopping-list request is sent

@@ -81,7 +81,8 @@ additions require exact approval, with final revalidation and verified readback.
 - Inspect the current basket without changing it.
 - Read the actual Nemlig basket as structured data and text; this read does not
   open a separate visual card.
-- Prepare exact additions from every row in the Local basket.
+- Prepare exact additions from every row in the Local basket by building and
+  verifying a temporary Nemlig shopping list before the protected transfer.
 - Preview the final quantity and price after adding the requested positive
   quantity to each existing line.
 
@@ -247,7 +248,8 @@ single provider response with three concurrent reads and bounded provider
 deadlines/retries. This does not enumerate the whole catalogue.
 
 Choose **Submit to Nemlig** to prepare current price estimates and exact quantities for
-every Local basket row and show the separate on-screen confirmation. Unavailable
+every Local basket row, verify the same lines in a temporary Nemlig shopping
+list, and show the separate on-screen confirmation. Unavailable
 products are named and excluded while available products can proceed; unresolved
 product details still require a fresh review. Inspect the full prepared list,
 then choose **Add to Nemlig basket** and
