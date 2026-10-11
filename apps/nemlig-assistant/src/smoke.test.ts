@@ -16,8 +16,17 @@ import {
   type Basket,
   type Product,
   type ShoppingClient,
+  type ShoppingListClient,
 } from "./client.js";
 import { createMcpServer } from "./mcp.js";
+
+type ShoppingListTransferClient = Pick<
+  ShoppingListClient,
+  | "createShoppingList"
+  | "updateShoppingListProduct"
+  | "getShoppingList"
+  | "addShoppingListToCart"
+>;
 
 const execute = promisify(execFile);
 const modernClient = (name: string) =>
@@ -207,6 +216,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
   ]);
   let reads = 0;
   let writes = 0;
+  const shoppingLists = new Map<number, Map<number, number>>();
   let basket: Basket = {
     items: [],
     productsPrice: 0,
@@ -214,7 +224,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     numberOfProducts: 0,
     deliveryTime: undefined,
   };
-  const client: ShoppingClient = {
+  const client: ShoppingClient & ShoppingListTransferClient = {
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
@@ -237,24 +247,37 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
       reads += 1;
       return basket;
     },
-    addToCart: async (id, quantity = 1) => {
+    addToCart: async () => {
+      throw new Error("Direct basket writes must not be used.");
+    },
+    createShoppingList: async (name) => {
+      shoppingLists.set(1, new Map());
+      return { id: 1, name, items: [] };
+    },
+    updateShoppingListProduct: async (listId, id, quantity) => {
+      shoppingLists.get(listId)?.set(id, quantity);
+    },
+    getShoppingList: async (listId) => ({
+      id: listId,
+      name: "Nemlig Assistant Local basket",
+      items: [...(shoppingLists.get(listId) ?? [])].map(
+        ([productId, quantity]) => ({ productId, quantity }),
+      ),
+    }),
+    addShoppingListToCart: async (listId) => {
       writes += 1;
-      const found = products.get(id)!;
-      const existing = basket.items.find((item) => item.id === id);
-      const items = existing
-        ? basket.items.map((item) =>
-            item.id === id
-              ? {
-                  ...item,
-                  quantity: (item.quantity ?? 0) + quantity,
-                  total: (item.total ?? 0) + found.price! * quantity,
-                }
-              : item,
-          )
-        : [
-            ...basket.items,
-            { id, name: found.name, quantity, total: found.price! * quantity },
-          ];
+      const additions = [...(shoppingLists.get(listId) ?? [])].map(
+        ([id, quantity]) => {
+          const found = products.get(id)!;
+          return {
+            id,
+            name: found.name,
+            quantity,
+            total: found.price! * quantity,
+          };
+        },
+      );
+      const items = [...basket.items, ...additions];
       basket = {
         ...basket,
         items,
@@ -267,7 +290,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
           0,
         ),
       };
-      return basket;
+      return;
     },
   };
   const server = createMcpServer(client, async () => ({
@@ -327,7 +350,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
       },
     });
     assert.notEqual(applied.isError, true);
-    assert.equal(writes, 3);
+    assert.equal(writes, 1);
     assert.deepEqual(
       basket.items.map(({ id, quantity }) => [id, quantity]),
       [
@@ -345,7 +368,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
       },
     });
     assert.equal(replay.isError, true);
-    assert.equal(writes, 3);
+    assert.equal(writes, 1);
   } finally {
     await close();
   }
@@ -382,10 +405,11 @@ test("an indeterminate draft submission is attempted once", async () => {
     deliveryTime: undefined,
   };
   let writes = 0;
+  const shoppingLists = new Map<number, Map<number, number>>();
   const unavailable = async (): Promise<never> => {
     throw new Error("unexpected provider operation");
   };
-  const client: ShoppingClient = {
+  const client: ShoppingClient & ShoppingListTransferClient = {
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: unavailable,
@@ -395,7 +419,22 @@ test("an indeterminate draft submission is attempted once", async () => {
     listDepartments: unavailable,
     browseDepartment: unavailable,
     getCart: async () => empty,
-    addToCart: async () => {
+    addToCart: unavailable,
+    createShoppingList: async (name) => {
+      shoppingLists.set(1, new Map());
+      return { id: 1, name, items: [] };
+    },
+    updateShoppingListProduct: async (listId, productId, quantity) => {
+      shoppingLists.get(listId)?.set(productId, quantity);
+    },
+    getShoppingList: async (listId) => ({
+      id: listId,
+      name: "Nemlig Assistant Local basket",
+      items: [...(shoppingLists.get(listId) ?? [])].map(
+        ([productId, quantity]) => ({ productId, quantity }),
+      ),
+    }),
+    addShoppingListToCart: async () => {
       writes += 1;
       throw new Error("indeterminate write");
     },
