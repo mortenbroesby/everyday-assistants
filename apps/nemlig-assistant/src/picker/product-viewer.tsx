@@ -381,6 +381,7 @@ export function ProductViewer() {
   );
   const callLock = useRef(false);
   const activeToolController = useRef<AbortController | undefined>(undefined);
+  const cancelledCallPending = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
       (screen.review.submissionAttempted === true ||
@@ -654,6 +655,7 @@ export function ProductViewer() {
     onAppCreated: (host) => {
       host.ontoolresult = (result) => applyPayload(result);
       host.ontoolcancelled = () => {
+        cancelledCallPending.current = true;
         cancellationEpoch.current++;
         activeToolController.current?.abort();
         ignorePassivePayloads.current = true;
@@ -664,6 +666,9 @@ export function ProductViewer() {
         );
       };
       host.onerror = () => {
+        if (cancelledCallPending.current) {
+          return;
+        }
         ignorePassivePayloads.current = true;
         deactivateReview();
         setScreen({
@@ -785,6 +790,7 @@ export function ProductViewer() {
         expectedSelection?.basketId ?? selectedBasketIdRef.current;
     }
     callLock.current = true;
+    cancelledCallPending.current = false;
     if (name === "submit_product_review") {
       submissionFailure.current = undefined;
     }
