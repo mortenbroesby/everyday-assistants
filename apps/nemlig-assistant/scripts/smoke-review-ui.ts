@@ -344,22 +344,21 @@ document.getElementById('run').onclick = async () => {
   const submitted=widgetResults.findLast(result=>result.name==='submit_product_review');
   check(submitted.structuredContent.review.submission?.status==='submitted','Native-list transfer receipt was not returned');
   const submittedStats=await waitForStats(stats=>stats.nativeTransfers===1);
-  check(submittedStats.shoppingListCount===1,'Submission removed its source list');
+  check(submittedStats.shoppingListCount===0,'Verified submission kept its source list');
   check(submittedStats.basketReads>=3&&submittedStats.basketWrites===0,'Transfer skipped basket readback or used a direct basket write');
   check(JSON.stringify(submittedStats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,2],[2,3]]),'Basket readback did not contain the exact refreshed quantities');
   check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
-  const stats=await fetch('/stats').then(r=>r.json()); check(stats.shoppingListCount===1&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review created a duplicate transfer list'); check(stats.nativeTransfers===1&&stats.basketWrites===0,'Submit did not use one native-list transfer');
+  const stats=await fetch('/stats').then(r=>r.json()); check(stats.shoppingListCount===0&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review did not remove the verified source list'); check(stats.nativeTransfers===1&&stats.basketWrites===0,'Submit did not use one native-list transfer');
   check(widgetCalls.every(c=>!('representation' in c.arguments)),'Viewer sent a representation selector');
   await fetch('/restart',{method:'POST'});
   const recovered=await call({name:'start_product_review',arguments:{shopping_list_id:savedReview.shoppingListId}});
-  check(recovered.structuredContent.review.shoppingListId===savedReview.shoppingListId,'Restart lost the saved Nemlig shopping list');
-  check(recovered.structuredContent.review.items.length===2&&recovered.structuredContent.review.submission?.status==='submitted','Restart lost the completed transfer receipt or list rows');
+  check(recovered.structuredContent.selectedShoppingListId===null&&recovered.structuredContent.shoppingLists.length===0,'Restart did not return to the picker after verified source deletion');
   const stale=await call({name:'submit_product_review',arguments:{shopping_list_id:savedReview.shoppingListId,submission_id:'00000000-0000-4000-8000-000000000000'}});
   check(stale.isError===true,'Restart accepted a submission without prepared authority');
-  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===0,'Restart recovery replayed a completed transfer');
+  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===1,'Restart recovery replayed a completed transfer');
   transcript=recovered; initialized=false; frame.src='/viewer';
-  await wait(()=>initialized&&text().includes('Nemlig confirmed the addition'));
-  status.textContent='PASS: saved list transferred once, basket readback matched, source retained, and restart blocked replay';
+  await wait(()=>initialized&&text().includes('Start a shopping-list draft'));
+  status.textContent='PASS: saved list transferred once, basket readback matched, verified source deleted, and restart blocked replay';
  } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls)+' | widget results: '+JSON.stringify(widgetResults);} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
@@ -382,10 +381,10 @@ document.getElementById('flow').onclick = async () => {
   check(!button('Submit to Nemlig basket').disabled,'Unknown-price native-list Submit was unavailable');
   click('Submit to Nemlig basket');
   const stats=await waitForStats(value=>value.nativeTransfers===1);
-  check(stats.shoppingListCount===1&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Review created a duplicate transfer list');
+  check(stats.shoppingListCount===0&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Unknown-price transfer did not delete its verified source list');
   check(stats.basketReads>=3&&stats.basketWrites===0&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,1],[2,2]]),'Unknown-price transfer did not complete with exact basket readback');
   check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
-  status.textContent='PASS: unknown-price list submitted once with basket readback and no duplicate list';
+  status.textContent='PASS: unknown-price list submitted once, verified, and deleted with no duplicate list';
  } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
@@ -445,7 +444,6 @@ const server = createServer((req, res) => {
       current = makeServer();
       basketReads = 0;
       directWrites = 0;
-      nativeTransfers = 0;
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
@@ -608,5 +606,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: saved-list transfer, basket readback, restart replay guard, alternatives, and zero direct basket writes.",
+  "MCP adapter browser smoke passed: saved-list transfer, basket readback, verified source cleanup, restart replay guard, alternatives, and zero direct basket writes.",
 );

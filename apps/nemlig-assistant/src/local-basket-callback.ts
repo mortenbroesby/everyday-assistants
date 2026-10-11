@@ -74,6 +74,10 @@ const reviewOperationSchema = z
     createAttempted: z.boolean().optional(),
     dispatchAttempted: z.boolean().optional(),
     completed: z.boolean().optional(),
+    cleanupStatus: z
+      .enum(["pending", "deleted", "retained", "uncertain"])
+      .optional(),
+    cleanupWarning: z.string().max(500).optional(),
     listId: z.number().int().positive().optional(),
     items: z
       .array(

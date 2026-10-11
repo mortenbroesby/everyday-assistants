@@ -193,11 +193,14 @@ test("review-operation journal callbacks stay scoped to the request capability",
   const operation = (accountIdentity: string) => ({
     kind: "review-operation-write",
     operation: {
-      operationId: "draft-one",
+      operationId: "native-submit:44",
       generation: "attempt-one",
       accountIdentity,
-      kind: "save",
+      kind: "submit",
       name: "Dinner",
+      cleanupStatus: "pending",
+      cleanupWarning: "Cleanup is pending.",
+      listId: 44,
       items: [{ productId: 7, quantity: 2 }],
     },
   });
@@ -213,18 +216,33 @@ test("review-operation journal callbacks stay scoped to the request capability",
 
   const first = await request("capability-one", {
     kind: "review-operation-read",
-    operationId: "draft-one",
+    operationId: "native-submit:44",
   });
   const second = await request("capability-two", {
     kind: "review-operation-read",
-    operationId: "draft-one",
+    operationId: "native-submit:44",
   });
   assert.equal(first.status, 200);
   assert.equal(second.status, 200);
   assert.equal(
-    ((await first.json()) as { accountIdentity: string }).accountIdentity,
+    (
+      (await first.json()) as {
+        accountIdentity: string;
+        cleanupStatus: string;
+        cleanupWarning: string;
+      }
+    ).accountIdentity,
     "account-one",
   );
+  const firstOperation = (await request("capability-one", {
+    kind: "review-operation-read",
+    operationId: "native-submit:44",
+  }).then((response) => response.json())) as {
+    cleanupStatus: string;
+    cleanupWarning: string;
+  };
+  assert.equal(firstOperation.cleanupStatus, "pending");
+  assert.equal(firstOperation.cleanupWarning, "Cleanup is pending.");
   assert.equal(
     ((await second.json()) as { accountIdentity: string }).accountIdentity,
     "account-two",
