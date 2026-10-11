@@ -223,9 +223,11 @@ test("shared viewer page keeps thumbnails attached to their individual views", (
   assert.match(markup, /data-viewer-component="product-price"/u);
   assert.match(
     markup,
-    /aria-label="Select Alternative yoghurt as the alternative"/u,
+    /aria-label="Use Alternative yoghurt as the alternative"/u,
   );
-  assert.match(markup, />Select</u);
+  assert.match(markup, /alternative-select-action/u);
+  assert.match(markup, /aria-label="Show details for Alternative yoghurt"/u);
+  assert.doesNotMatch(markup, /product-comparison-details/u);
   assert.doesNotMatch(markup, /Use selected alternative/u);
   assert.match(markup, /Back to Local basket/u);
   assert.doesNotMatch(markup, />Clear</u);
@@ -268,6 +270,7 @@ test("full-screen product facts use one visible Nemlig-style information tab", (
     createElement(ProductFacts, { view: detailedProduct, variant: "tabs" }),
   );
   assert.match(markup, /role="tablist"/u);
+  assert.match(markup, /aria-orientation="vertical"/u);
   assert.match(markup, /aria-selected="true"/u);
   assert.match(markup, /A creamy fixture yoghurt./u);
   assert.doesNotMatch(markup, /<details/u);
