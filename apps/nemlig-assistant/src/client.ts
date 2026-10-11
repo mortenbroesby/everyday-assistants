@@ -264,7 +264,7 @@ function normalizeShoppingList(
   const list = asRecord(value);
   const { id, name } = shoppingListIdentity(list, expectedId);
   const items = normalizedShoppingListItems(
-    list.Products ?? list.Items ?? list.ShoppingListProducts,
+    list.Lines ?? list.Products ?? list.Items ?? list.ShoppingListProducts,
   );
   assertUniqueShoppingListItems(items);
   return { id, name, items };
