@@ -464,41 +464,6 @@ export class ProductReviewService {
     );
   }
 
-  private async createSubmissionShoppingList(
-    basketId: string,
-    lines: LocalBasket["lines"],
-  ): Promise<number> {
-    const { createShoppingList, updateShoppingListProduct, getShoppingList } =
-      this.client;
-    if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
-      throw new NemligError("Shopping-list submission is unavailable.");
-    }
-    const list = await this.client.createShoppingList!(
-      `Nemlig Assistant ${basketId.slice(0, 8)}`,
-    );
-    for (const line of lines) {
-      await this.client.updateShoppingListProduct!(
-        list.id,
-        line.productId,
-        line.quantity,
-      );
-    }
-    const confirmed = await this.client.getShoppingList!(list.id);
-    if (
-      confirmed.items.length !== lines.length ||
-      confirmed.items.some(
-        (item) =>
-          lines.find((line) => line.productId === item.productId)?.quantity !==
-          item.quantity,
-      )
-    ) {
-      throw new NemligError(
-        "Shopping-list readback did not match the Local basket; no real basket write was sent.",
-      );
-    }
-    return list.id;
-  }
-
   private async prepareSubmissionProposal(
     owner: string,
     basketId: string,
@@ -507,26 +472,26 @@ export class ProductReviewService {
   ): Promise<{
     proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
   }> {
-    const shoppingListId = this.canPrepareShoppingList()
-      ? await this.createSubmissionShoppingList(basketId, basket.lines)
-      : undefined;
-    const proposal =
-      shoppingListId === undefined
-        ? await this.proposals!.prepareAdditions(
-            owner,
-            basket.lines.map(({ productId, quantity }) => ({
-              product_id: productId,
-              quantity,
-            })),
-            { kind: "exact_review" },
-            { signal, freshProducts: true },
-          )
-        : await this.proposals!.prepareShoppingListAdditions!(
-            owner,
-            shoppingListId,
-            { kind: "exact_review" },
-            { signal, freshProducts: true },
-          );
+    const proposal = this.canPrepareShoppingList()
+      ? await this.proposals!.prepareShoppingListAdditions!(
+          owner,
+          basket.lines.map(({ productId, quantity }) => ({
+            product_id: productId,
+            quantity,
+          })),
+          `Nemlig Assistant ${basketId.slice(0, 8)}`,
+          { kind: "exact_review" },
+          { signal, freshProducts: true },
+        )
+      : await this.proposals!.prepareAdditions(
+          owner,
+          basket.lines.map(({ productId, quantity }) => ({
+            product_id: productId,
+            quantity,
+          })),
+          { kind: "exact_review" },
+          { signal, freshProducts: true },
+        );
     return { proposal };
   }
 

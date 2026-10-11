@@ -29,8 +29,10 @@ the direct per-product real-basket write loop at the final submission boundary.
 ### Temporary list at the submission boundary
 
 The service creates a short assistant-named list, applies every Local basket
-line serially, and reads the list back. Only exact product-ID/quantity equality
-can progress to proposal preparation. This isolates unproven list semantics
+line that remains available after fresh preparation, and reads the list back.
+Unavailable or missing products are reported and omitted before list creation.
+Only exact product-ID/quantity equality can progress to proposal preparation.
+This isolates unproven list semantics
 from the real basket: list preparation failure leaves the Local basket intact
 and sends no transfer.
 
@@ -66,6 +68,9 @@ follow-up cutover.
 - [The native transfer has unobserved behavior with pre-existing basket lines]
   -> The live smoke must inspect an exact prepared basket and readback before
   the provider-list workspace cutover is considered.
+- [A prepared product becomes unavailable before transfer] -> The proof fails
+  closed before transfer and requires a fresh preparation; it does not mutate
+  the temporary list after authorization.
 
 ## Migration Plan
 

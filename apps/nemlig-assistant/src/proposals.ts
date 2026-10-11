@@ -238,7 +238,13 @@ export class BasketProposalService {
       "getProduct" | "getFreshProduct" | "getCart" | "addToCart"
     > &
       Partial<
-        Pick<ShoppingListClient, "getShoppingList" | "addShoppingListToCart">
+        Pick<
+          ShoppingListClient,
+          | "getShoppingList"
+          | "createShoppingList"
+          | "updateShoppingListProduct"
+          | "addShoppingListToCart"
+        >
       >,
     options: ProposalServiceOptions = {},
   ) {
@@ -357,39 +363,48 @@ export class BasketProposalService {
   /** Prepare one exact native provider-list transfer; the list remains mutable until apply revalidates it. */
   async prepareShoppingListAdditions(
     connectionId: string,
-    shoppingListId: number,
+    items: Array<{ product_id: number; quantity: number }>,
+    shoppingListName: string,
     authorization: AdditionAuthorization,
     options: ProposalReadOptions & { freshProducts?: boolean } = {},
   ): Promise<ProposalView> {
-    if (!this.client.getShoppingList) {
+    const { createShoppingList, updateShoppingListProduct, getShoppingList } =
+      this.client;
+    if (!createShoppingList || !updateShoppingListProduct || !getShoppingList) {
       throw new NemligError("Shopping-list submission is unavailable.");
-    }
-    const list = await this.client.getShoppingList(
-      shoppingListId,
-      options.signal,
-    );
-    if (!list.items.length) {
-      throw new NemligError("The Local basket is empty.");
     }
     const proposal = await this.prepareAdditions(
       connectionId,
-      list.items.map(({ productId, quantity }) => ({
-        product_id: productId,
-        quantity,
-      })),
+      items,
       authorization,
-      { ...options, requireAllAvailable: true },
+      { ...options, requireAllAvailable: false },
     );
     const stored = this.proposals.get(proposal.proposal_id);
     if (!stored || stored.operation.kind !== "additions") {
       throw new NemligError("Shopping-list submission is unavailable.");
     }
-    stored.operation = {
-      ...stored.operation,
-      shoppingListId: list.id,
-      shoppingListFingerprint: shoppingListFingerprint(list),
-    };
-    return proposal;
+    try {
+      const list = await createShoppingList.call(this.client, shoppingListName);
+      for (const line of stored.operation.lines) {
+        await updateShoppingListProduct.call(
+          this.client,
+          list.id,
+          line.product_id,
+          line.quantity,
+        );
+      }
+      const confirmed = await getShoppingList.call(this.client, list.id);
+      this.assertExactApprovedList(confirmed.items, stored.operation.lines);
+      stored.operation = {
+        ...stored.operation,
+        shoppingListId: confirmed.id,
+        shoppingListFingerprint: shoppingListFingerprint(confirmed),
+      };
+      return proposal;
+    } catch (error) {
+      this.proposals.delete(proposal.proposal_id);
+      throw error;
+    }
   }
 
   private validateAdditionItems(
@@ -691,6 +706,11 @@ export class BasketProposalService {
     const { listId, fingerprint } = this.shoppingListTransferDetails(
       proposal.operation,
     );
+    if (activeLines.length !== proposal.operation.lines.length) {
+      throw new BasketPreflightError(
+        "A reviewed product is no longer available; no provider transfer was sent.",
+      );
+    }
     const currentList = await this.client.getShoppingList!(listId);
     this.assertExactApprovedList(currentList.items, activeLines);
     const currentBasket = await this.client.getCart();
@@ -744,7 +764,7 @@ export class BasketProposalService {
 
   private assertExactApprovedList(
     listItems: readonly { productId: number; quantity: number }[],
-    activeLines: readonly ProposalLine[],
+    activeLines: readonly Pick<ProposalLine, "product_id" | "quantity">[],
   ): void {
     const approved = new Map(
       activeLines.map((line) => [line.product_id, line.quantity]),
@@ -769,6 +789,7 @@ export class BasketProposalService {
     );
     this.assertBaselineLinesPreserved(baseline, result, additions);
     this.assertNewLinesAdded(result, additions);
+    this.assertExactBasketLines(baseline, result, activeLines);
     this.assertExpectedProductCount(baseline, result, activeLines);
   }
 
@@ -810,6 +831,36 @@ export class BasketProposalService {
           "Basket readback did not confirm the exact approved additions; inspect the basket and do not retry.",
         );
       }
+    }
+  }
+
+  private assertExactBasketLines(
+    baseline: Basket,
+    result: Basket,
+    activeLines: readonly ProposalLine[],
+  ): void {
+    const expected = new Map(
+      [...this.validateAdditionBasket(baseline)].map(([id, item]) => [
+        id,
+        item.quantity!,
+      ]),
+    );
+    for (const line of activeLines) {
+      expected.set(
+        String(line.product_id),
+        (expected.get(String(line.product_id)) ?? 0) + line.quantity,
+      );
+    }
+    const actual = this.validateAdditionBasket(result);
+    if (
+      actual.size !== expected.size ||
+      [...expected].some(
+        ([id, quantity]) => actual.get(id)?.quantity !== quantity,
+      )
+    ) {
+      throw new NemligError(
+        "Basket readback contained an unexpected product line; inspect the basket and do not retry.",
+      );
     }
   }
 

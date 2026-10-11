@@ -231,8 +231,13 @@ test("durable preparation builds and verifies one provider shopping list", async
         prepareAdditions: async () => {
           throw new Error("Direct additions must not prepare this workflow.");
         },
-        prepareShoppingListAdditions: async (_owner, listId) => {
-          assert.equal(listId, 17);
+        prepareShoppingListAdditions: async (_owner, expectedItems, name) => {
+          assert.equal(name.startsWith("Nemlig Assistant"), true);
+          assert.deepEqual(expectedItems, [
+            { product_id: 1, quantity: 2 },
+            { product_id: 2, quantity: 1 },
+          ]);
+          calls.push("prepare-list");
           return {
             applicable: true,
             proposal_id: "provider-list-proposal",
@@ -264,7 +269,7 @@ test("durable preparation builds and verifies one provider shopping list", async
   );
 
   assert.equal(prepared.submission?.status, "prepared");
-  assert.deepEqual(calls, ["create", "update:1:2", "update:2:1", "read"]);
+  assert.deepEqual(calls, ["prepare-list"]);
 });
 
 test("durable fence precedes provider execution and heartbeat cannot prevent success cleanup", async () => {

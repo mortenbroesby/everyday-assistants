@@ -1,7 +1,7 @@
 ## 1. Contract and provider adapter
 
 - [x] 1.1 Add typed provider shopping-list read/create/update/delete/transfer operations with no mutation retries and empty-2xx support.
-- [x] 1.2 Add sanitized client fixtures that characterize list readback and quantity semantics; reject incomplete/mismatched data rather than compensating.
+- [ ] 1.2 Add sanitized HTTP client fixtures that characterize list response parsing, request payloads, and empty-2xx writes.
 - [x] 1.3 Define list fingerprints and exact transfer verification while retaining add-only real-basket checks.
 
 ## 2. Deferred workspace cutover
