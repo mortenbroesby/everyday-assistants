@@ -270,7 +270,7 @@ document.getElementById('run').onclick = async () => {
 document.getElementById('flow').onclick = async () => {
  const run=document.getElementById('flow'); run.disabled=true;
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
- const text=()=>doc()?.querySelector('main')?.textContent||'';
+ const text=()=>doc()?.body?.textContent||'';
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
