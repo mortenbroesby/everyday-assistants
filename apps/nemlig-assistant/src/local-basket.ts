@@ -56,8 +56,23 @@ class LocalBasketConflictError extends Error {
   }
 }
 
+export class LocalBasketOperationCapacityError extends Error {
+  override readonly name = "LocalBasketOperationCapacityError";
+  // Preserve this code when Durable Object RPC reconstructs the error.
+  // fallow-ignore-next-line unused-class-member
+  readonly code = "LOCAL_BASKET_OPERATION_CAPACITY";
+
+  constructor() {
+    super(
+      "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.",
+    );
+  }
+}
+
 type LocalBasketFailureCode =
-  "LOCAL_BASKET_NOT_FOUND" | "LOCAL_BASKET_CONFLICT";
+  | "LOCAL_BASKET_NOT_FOUND"
+  | "LOCAL_BASKET_CONFLICT"
+  | "LOCAL_BASKET_OPERATION_CAPACITY";
 
 /** Read the stable own-field code preserved when a DO RPC error is reconstructed. */
 export const serializedLocalBasketFailureCode = (
@@ -69,11 +84,16 @@ export const serializedLocalBasketFailureCode = (
   if (error instanceof LocalBasketConflictError) {
     return error.code;
   }
+  if (error instanceof LocalBasketOperationCapacityError) {
+    return error.code;
+  }
   if (typeof error !== "object" || error === null || !("code" in error)) {
     return undefined;
   }
   const { code } = error;
-  return code === "LOCAL_BASKET_NOT_FOUND" || code === "LOCAL_BASKET_CONFLICT"
+  return code === "LOCAL_BASKET_NOT_FOUND" ||
+    code === "LOCAL_BASKET_CONFLICT" ||
+    code === "LOCAL_BASKET_OPERATION_CAPACITY"
     ? code
     : undefined;
 };
@@ -488,6 +508,26 @@ const heartbeatLocalBasket = (
   selectLocalBasket(inventory, ownerId, basketId, options);
 
 export type LocalBasketCommand =
+  | { kind: "review-operation-read"; operationId: string }
+  | {
+      kind: "review-operation-claim";
+      operationId: string;
+      generation: string;
+    }
+  | {
+      kind: "review-operation-release";
+      operationId: string;
+      generation: string;
+    }
+  | {
+      kind: "review-operation-write";
+      operation: ReviewOperation;
+    }
+  | {
+      kind: "review-operation-complete";
+      operationId: string;
+      generation: string;
+    }
   | { kind: "list" }
   | { kind: "selection"; selectionKey: string }
   | { kind: "read"; basketId: string }
@@ -505,6 +545,25 @@ export type LocalBasketCommand =
       expectedRevision?: number;
     };
 
+export interface ReviewOperation {
+  operationId: string;
+  generation: string;
+  accountIdentity: string;
+  kind: "save" | "update" | "submit";
+  name: string;
+  createAttempted?: boolean;
+  dispatchAttempted?: boolean;
+  completed?: boolean;
+  cleanupStatus?: "pending" | "deleted" | "retained" | "uncertain";
+  cleanupWarning?: string;
+  listId?: number;
+  items: Array<{ productId: number; quantity: number }>;
+  baseline?: Array<{ productId: number; quantity: number }>;
+  progress?: { completed: number; total: number };
+  createdAt?: number;
+  completedUntil?: number;
+}
+
 export const applyLocalBasketCommand = (
   inventory: OwnerLocalBasketInventory,
   ownerId: string,
@@ -512,6 +571,12 @@ export const applyLocalBasketCommand = (
   options: LocalBasketDomainOptions = {},
 ): LocalBasketMutation<LocalBasketCommandResult> => {
   switch (command.kind) {
+    case "review-operation-read":
+    case "review-operation-claim":
+    case "review-operation-release":
+    case "review-operation-write":
+    case "review-operation-complete":
+      throw new Error("Review operations require owner storage.");
     case "list": {
       const active = listLocalBaskets(inventory, ownerId, options);
       return {

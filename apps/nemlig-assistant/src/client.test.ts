@@ -6,7 +6,7 @@ import {
   NemligError,
   ProductNotFoundError,
   type Product,
-  NEMLIG_READ_ATTEMPT_TIMEOUT_MS,
+  NEMLIG_API_ATTEMPT_TIMEOUT_MS,
   SEARCH_GATEWAY_URL,
   normalizeDepartments,
   normalizeProducts,
@@ -475,7 +475,7 @@ test("network reads retry, while basket mutations do not", async () => {
     /Get token failed: network unavailable/u,
   );
   assert.equal(reads, 2);
-  assert.equal(NEMLIG_READ_ATTEMPT_TIMEOUT_MS, 60_000);
+  assert.equal(NEMLIG_API_ATTEMPT_TIMEOUT_MS, 120_000);
 
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
@@ -1550,6 +1550,189 @@ test("shopping-list transfer uses the native list endpoints and never the indivi
   });
   await client.addShoppingListToCart(listId);
   await client.deleteShoppingList(listId);
+  assert.equal(requests.length, 0);
+});
+
+test("shopping-list inventory follows the first-party paged overview contract", async () => {
+  // Source-derived synthetic fixture: nemlig.com public main.js, fetched 2026-10-11.
+  // SHA256 57cbe33511fd50de1cd2faf33b8e03f66aafc179799816a70ee5829be80886d8
+  const overview = (id: number, name: string) => ({
+    Id: id,
+    Name: name,
+    ProductsCount: 1,
+    TotalAmount: 12.5,
+  });
+  const firstPage = Array.from({ length: 6 }, (_, index) =>
+    overview(index + 1, index === 0 ? "Shared name" : `List ${index + 1}`),
+  );
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=0&take=6$",
+      inspect: (_url, init) => assert.equal(init?.method, undefined),
+      response: json({
+        ShoppingListOverViewViewModels: firstPage,
+        NumberOfPages: 2,
+      }),
+    },
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=6&take=6$",
+      response: json({
+        ShoppingListOverViewViewModels: [
+          overview(7, "Shared name"),
+          overview(8, "List 8"),
+        ],
+        NumberOfPages: 2,
+      }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+
+  const lists = await client.listShoppingLists();
+  assert.equal(lists.length, 8);
+  assert.deepEqual(lists.slice(0, 2), [
+    { id: 1, name: "Shared name", productCount: 1, totalAmount: 12.5 },
+    { id: 2, name: "List 2", productCount: 1, totalAmount: 12.5 },
+  ]);
+  assert.equal(lists[6]?.name, "Shared name");
+  assert.equal(requests.length, 0);
+});
+
+test("shopping-list inventory distinguishes empty, malformed, unauthorized, and unavailable reads", async () => {
+  const loginRequests = () =>
+    [
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ RedirectUrl: "/" }) },
+      ...sessionRequests(),
+    ] satisfies ExpectedRequest[];
+  const emptyRequests = [
+    ...loginRequests(),
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=0&take=6$",
+      response: json({ ShoppingListOverViewViewModels: [], NumberOfPages: 0 }),
+    },
+  ];
+  const emptyClient = new NemligClient(mockFetch(emptyRequests));
+  await emptyClient.login("person@example.test", "secret");
+  assert.deepEqual(await emptyClient.listShoppingLists(), []);
+  assert.equal(emptyRequests.length, 0);
+
+  for (const [response, expected] of [
+    [json({}), /inventory response is incomplete/u],
+    [json({}, { status: 401 }), /401/u],
+    [json({}, { status: 503 }), /503/u],
+  ] as const) {
+    const requests: ExpectedRequest[] = [
+      ...loginRequests(),
+      {
+        match: "/ShoppingList/GetShoppingLists\\?skip=0&take=6$",
+        response,
+      },
+    ];
+    const client = new NemligClient(mockFetch(requests));
+    await client.login("person@example.test", "secret");
+    await assert.rejects(client.listShoppingLists(), expected);
+    assert.equal(requests.length, 0);
+  }
+});
+
+test("shopping-list inventory fails closed on partial or repeated pages", async () => {
+  const loginRequests = () =>
+    [
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ RedirectUrl: "/" }) },
+      ...sessionRequests(),
+    ] satisfies ExpectedRequest[];
+  const partial: ExpectedRequest[] = [
+    ...loginRequests(),
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=0&take=6$",
+      response: json({
+        ShoppingListOverViewViewModels: [{ Id: 1, Name: "One" }],
+        NumberOfPages: 2,
+      }),
+    },
+  ];
+  const partialClient = new NemligClient(mockFetch(partial));
+  await partialClient.login("person@example.test", "secret");
+  await assert.rejects(
+    partialClient.listShoppingLists(),
+    /inventory is incomplete/u,
+  );
+  assert.equal(partial.length, 0);
+
+  const page = Array.from({ length: 6 }, (_, index) => ({
+    Id: index + 1,
+    Name: `List ${index + 1}`,
+  }));
+  const repeated: ExpectedRequest[] = [
+    ...loginRequests(),
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=0&take=6$",
+      response: json({
+        ShoppingListOverViewViewModels: page,
+        NumberOfPages: 2,
+      }),
+    },
+    {
+      match: "/ShoppingList/GetShoppingLists\\?skip=6&take=6$",
+      response: json({
+        ShoppingListOverViewViewModels: page,
+        NumberOfPages: 2,
+      }),
+    },
+  ];
+  const repeatedClient = new NemligClient(mockFetch(repeated));
+  await repeatedClient.login("person@example.test", "secret");
+  await assert.rejects(
+    repeatedClient.listShoppingLists(),
+    /changed or is incomplete/u,
+  );
+  assert.equal(repeated.length, 0);
+});
+
+test("shopping-list not-found remains distinct from authentication or transport failure", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match: "/ShoppingList/getShoppingList\\?listId=44$",
+      response: json({}, { status: 404 }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await assert.rejects(
+    client.getShoppingList(44),
+    (error: unknown) => error instanceof NemligError && error.status === 404,
+  );
+  assert.equal(requests.length, 0);
+});
+
+test("native list update surfaces provider validation failures and is never retried", async () => {
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    {
+      match:
+        "/ShoppingList/UpdateProductInShoppingList\\?listId=44&productId=7&amount=2$",
+      inspect: (_url, init) => assert.equal(init?.method, "POST"),
+      response: json({
+        List: { ValidationFailures: [{ ErrorMessage: "private detail" }] },
+      }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await assert.rejects(
+    client.updateShoppingListProduct(44, 7, 2),
+    /rejected the shopping-list update/u,
+  );
   assert.equal(requests.length, 0);
 });
 
