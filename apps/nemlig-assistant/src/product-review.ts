@@ -2,6 +2,7 @@ import {
   type BasketProposalService,
   type ApplyResult,
   BasketTransferNotDispatchedError,
+  NativeTransferUnconfirmedError,
   VerifiedPartialAdditionsError,
 } from "./proposals.js";
 import { randomUUID } from "node:crypto";
@@ -197,6 +198,40 @@ const updateOperationId = (listId: number): string =>
   `native-list-update:${listId}`;
 const submitOperationId = (listId: number): string =>
   `native-list-submit:${listId}`;
+type NativeSubmissionStage =
+  "active_review" | "target" | "preflight" | "transfer";
+const failNativeSubmission = (
+  stage: NativeSubmissionStage,
+  error: unknown,
+): never => {
+  console.warn(
+    JSON.stringify({
+      schema_version: 1,
+      event: "native_shopping_list_submit_failed",
+      stage,
+      ...(error instanceof NemligError && error.status !== undefined
+        ? { provider_status: error.status }
+        : {}),
+    }),
+  );
+  if (stage !== "transfer") {
+    const detail =
+      error instanceof NemligError
+        ? error.message
+        : "Shopping-list submission preflight failed.";
+    const suffix =
+      /no (?:basket|provider) write was sent|no transfer was sent/iu.test(
+        detail,
+      )
+        ? ""
+        : " No basket write was sent.";
+    throw new NemligError(
+      `${detail}${suffix}`,
+      error instanceof NemligError ? error.status : undefined,
+    );
+  }
+  throw error;
+};
 const localBasketSnapshot = (basket: LocalBasket): ProductReviewSnapshot => ({
   basketId: basket.basketId,
   revision: basket.revision,
@@ -2751,6 +2786,12 @@ export class ProductReviewService {
         reviewQuantities(stored.snapshot.items),
       )
     ) {
+      console.warn(
+        JSON.stringify({
+          schema_version: 1,
+          event: "native_shopping_list_source_changed",
+        }),
+      );
       stored.snapshot.actionNotice =
         "Nemlig changed this list. Refresh and review its current contents before submitting.";
       throw new NemligError(stored.snapshot.actionNotice);
@@ -2822,7 +2863,9 @@ export class ProductReviewService {
     };
     stored.snapshot.submissionAttempted = true;
     stored.snapshot.actionNotice =
-      "Basket transfer may have completed. Inspect the actual Nemlig basket; do not submit again.";
+      error instanceof NativeTransferUnconfirmedError
+        ? error.message
+        : "Basket transfer may have completed. Inspect the actual Nemlig basket; do not submit again.";
     throw new NemligError(stored.snapshot.actionNotice);
   }
 
@@ -2995,34 +3038,29 @@ export class ProductReviewService {
     signal?: AbortSignal,
     journal?: ReviewOperationJournal,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
-    const stored = this.lock(owner);
+    let stage: NativeSubmissionStage = "active_review";
+    let stored: StoredReview | undefined;
     try {
+      stored = this.lock(owner);
+      stage = "target";
       const listId = this.requireSubmissionTarget(
         stored,
         expectedShoppingListId,
       );
-      if (
-        !this.proposals?.transferNativeShoppingList ||
-        !journal ||
-        !this.client.getCart ||
-        !this.client.providerIdentity ||
-        !this.client.listShoppingLists ||
-        !this.client.getShoppingList
-      ) {
-        throw new NemligError("Submission service unavailable.");
-      }
+      const activeJournal = this.requireNativeSubmissionJournal(journal);
       const operationId = submitOperationId(listId);
       const replay = await this.replayNativeSubmission(
         stored,
         operationId,
         submissionId,
         signal,
-        journal,
+        activeJournal,
       );
       if (replay) {
         return replay;
       }
-      const accountIdentity = this.client.providerIdentity();
+      const accountIdentity = this.client.providerIdentity!();
+      stage = "preflight";
       const plan = await this.prepareNativeSubmission(
         stored,
         listId,
@@ -3030,11 +3068,37 @@ export class ProductReviewService {
         operationId,
         accountIdentity,
         signal,
-        journal,
+        activeJournal,
       );
-      return await this.applyNativeSubmission(stored, plan, signal, journal);
+      stage = "transfer";
+      return await this.applyNativeSubmission(
+        stored,
+        plan,
+        signal,
+        activeJournal,
+      );
+    } catch (error) {
+      return failNativeSubmission(stage, error);
     } finally {
-      stored.busy = false;
+      if (stored) {
+        stored.busy = false;
+      }
     }
+  }
+
+  private requireNativeSubmissionJournal(
+    journal?: ReviewOperationJournal,
+  ): ReviewOperationJournal {
+    if (
+      !this.proposals?.transferNativeShoppingList ||
+      !journal ||
+      !this.client.getCart ||
+      !this.client.providerIdentity ||
+      !this.client.listShoppingLists ||
+      !this.client.getShoppingList
+    ) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    return journal;
   }
 }

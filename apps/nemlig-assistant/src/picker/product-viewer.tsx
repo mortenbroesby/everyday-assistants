@@ -39,6 +39,27 @@ function isUncertainFailure(
   return !recovery && (uncertainOnFailure || /uncertain/i.test(text));
 }
 
+function submitFailureCopy(detail: string): string | undefined {
+  if (
+    /Basket changed before an addition; no provider write was sent/iu.test(
+      detail,
+    )
+  ) {
+    return "The Nemlig basket changed before the addition. No product was sent.";
+  }
+  if (/no (?:provider|basket) write was sent/iu.test(detail)) {
+    return detail;
+  }
+  if (
+    /^Nemlig (?:responded to the transfer|did not confirm the shopping-list transfer request|returned HTTP \d{3} for the shopping-list transfer)/iu.test(
+      detail,
+    )
+  ) {
+    return detail;
+  }
+  return undefined;
+}
+
 function isReviewItem(value: unknown): value is ReviewItem {
   return (
     isRecord(value) &&
@@ -805,8 +826,10 @@ export function ProductViewer() {
       setMessage(submissionFailure.current);
       return;
     }
-    if (/no basket write was sent/iu.test(text)) {
-      setMessage(text);
+    if (/no (?:basket|provider) write was sent/iu.test(text)) {
+      submitBlockedRef.current = false;
+      setSubmitBlocked(false);
+      setMessage(submissionFailure.current ?? text);
       return;
     }
     if (isUncertainFailure(recovery, uncertainOnFailure, text)) {
@@ -960,14 +983,7 @@ export function ProductViewer() {
             .map((content) => content.text)
             .join(" ") || "Update failed";
         if (name === "submit_product_review") {
-          submissionFailure.current =
-            /Basket changed before an addition; no provider write was sent/iu.test(
-              detail,
-            )
-              ? "The Nemlig basket changed before the addition. No product was sent."
-              : /no provider write was sent/iu.test(detail)
-                ? "A basket safety check stopped the addition before any product was sent."
-                : undefined;
+          submissionFailure.current = submitFailureCopy(detail);
         }
         throw new Error(detail);
       }

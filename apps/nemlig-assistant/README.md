@@ -93,7 +93,9 @@ changes or uncertain cleanup keep the list and show a warning.
   additive basket readback, and keeps a durable no-replay fence. After the
   readback, the app checks the source again and deletes it only if its identity
   and contents still match. An edit can race the final check; observed changes
-  or uncertain cleanup keep the list with a warning.
+  or uncertain cleanup keep the list with a warning. Submit errors distinguish
+  a stopped preflight from an unconfirmed transfer; an uncertain transfer still
+  requires basket inspection before another attempt.
 - Use the actual basket view to inspect Nemlig's basket.
 
 ### Use the interface that fits

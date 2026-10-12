@@ -109,6 +109,11 @@ Use evidence to select the layer before changing it:
    investigate the owner session only when the provider error indicates
    provider authentication/session state. Keep raw provider bodies and
    shopping data out of logs/support notes.
+   For shopping-list Submit, use `native_shopping_list_submit_failed` to locate
+   the failed stage, `native_shopping_list_source_changed` for a changed list,
+   and `native_shopping_list_transfer_failed` to distinguish provider-request
+   failure from basket-readback failure. Logs include HTTP status where
+   available, but no list contents.
 5. For stale UI or actions, compare fresh `tools/list` metadata and the live UI
    resource URI/document with what ChatGPT actually requested and rendered.
    Refresh metadata only when stale schemas/resources are demonstrated. A

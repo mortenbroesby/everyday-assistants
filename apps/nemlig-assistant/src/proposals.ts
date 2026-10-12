@@ -117,6 +117,10 @@ export class BasketTransferNotDispatchedError extends NemligError {
   override readonly name = "BasketTransferNotDispatchedError";
 }
 
+export class NativeTransferUnconfirmedError extends NemligError {
+  override readonly name = "NativeTransferUnconfirmedError";
+}
+
 export interface BasketPayload extends Record<string, unknown> {
   items: Basket["items"];
   products_price: number | undefined;
@@ -856,8 +860,10 @@ export class BasketProposalService {
           "Submission was cancelled before the basket transfer. No basket write was sent.",
         );
       }
+      let stage: "provider_request" | "basket_readback" = "provider_request";
       try {
         await addShoppingListToCart(listId, signal);
+        stage = "basket_readback";
         const result = await this.client.getCart(signal);
         this.assertShoppingListTransferReadback(baseline, result, activeLines);
         return {
@@ -866,9 +872,23 @@ export class BasketProposalService {
           replayed: false,
           basket: basketPayload(result),
         };
-      } catch {
-        throw new NemligError(
-          "Basket transfer may have completed. Inspect the basket and do not retry.",
+      } catch (error) {
+        const status = error instanceof NemligError ? error.status : undefined;
+        console.warn(
+          JSON.stringify({
+            schema_version: 1,
+            event: "native_shopping_list_transfer_failed",
+            stage,
+            ...(status === undefined ? {} : { provider_status: status }),
+          }),
+        );
+        throw new NativeTransferUnconfirmedError(
+          stage === "basket_readback"
+            ? "Nemlig responded to the transfer, but basket readback did not confirm the full addition. Inspect the basket; do not retry."
+            : status === undefined
+              ? "Nemlig did not confirm the shopping-list transfer request. Inspect the basket; do not retry."
+              : `Nemlig returned HTTP ${status} for the shopping-list transfer. Inspect the basket; do not retry.`,
+          status,
         );
       }
     });
