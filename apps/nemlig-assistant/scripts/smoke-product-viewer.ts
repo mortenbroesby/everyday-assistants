@@ -1236,7 +1236,13 @@ try {
     .waitFor();
   assert.deepEqual(
     await partialPage.evaluate(() => window.calls.at(-1)?.args),
-    { action: { kind: "select" }, shopping_list_id: 12345678 },
+    {
+      action: {
+        kind: "select",
+        accept_saved_subset_draft_id: "12345678-1234-4234-8234-123456789def",
+      },
+      shopping_list_id: 12345678,
+    },
     "partial-list review did not target its exact native list",
   );
   assert.equal(
