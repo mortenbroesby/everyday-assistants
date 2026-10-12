@@ -166,7 +166,9 @@ Search and review → explicitly Save or Update a Nemlig shopping list → verif
   list, or you can review and submit only the products Nemlig actually saved.
 - Save and Update do not authorize or perform a basket addition. Submit uses
   the selected saved list only after review and explicit basket authorization,
-  then verifies the resulting Nemlig basket.
+  then verifies the resulting Nemlig basket. It compares the reviewed list name
+  and product quantities with a fresh Nemlig readback, so submission does not
+  depend on the same card or server-side review remaining active.
 - An interrupted or uncertain Save or Update is inspected through its durable
   recovery record. The assistant does not blindly replay it. If recovery storage
   is full, it fails closed and keeps existing records.

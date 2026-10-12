@@ -1473,6 +1473,7 @@ export function ProductViewer() {
     }
     if (
       review.shoppingListId === undefined ||
+      !review.shoppingListName ||
       review.saveStatus !== "saved" ||
       review.shoppingListDirty ||
       review.updateStatus !== undefined ||
@@ -1493,6 +1494,13 @@ export function ProductViewer() {
       {
         submission_id: globalThis.crypto.randomUUID(),
         ...reviewTargetArgs(review),
+        reviewed_list: {
+          name: review.shoppingListName,
+          items: review.items.map(({ product_id, quantity }) => ({
+            product_id,
+            quantity,
+          })),
+        },
       },
       false,
       false,

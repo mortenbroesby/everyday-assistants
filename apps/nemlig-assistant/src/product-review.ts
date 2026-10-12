@@ -66,6 +66,30 @@ const sameShoppingListItems = (
       (item) => item.quantity,
     ),
   );
+const matchesReviewedShoppingList = (
+  list: ShoppingList,
+  reviewed: ReviewedShoppingList,
+): boolean => {
+  const reviewedQuantities = quantityMap(
+    reviewed.items,
+    (item) => item.product_id,
+    (item) => item.quantity,
+  );
+  return (
+    list.name === reviewed.name &&
+    reviewedQuantities.size === reviewed.items.length &&
+    new Set(list.items.map((item) => item.productId)).size ===
+      list.items.length &&
+    sameQuantities(
+      quantityMap(
+        list.items,
+        (item) => item.productId,
+        (item) => item.quantity,
+      ),
+      reviewedQuantities,
+    )
+  );
+};
 const reviewQuantities = (items: ReviewItem[]) =>
   quantityMap(
     items,
@@ -111,6 +135,10 @@ export interface ProductReviewSnapshot {
     query: string;
     views: ProductView[];
   };
+}
+export interface ReviewedShoppingList {
+  name: string;
+  items: Array<{ product_id: number; quantity: number }>;
 }
 export type ProductReviewAction =
   | { kind: "save"; name: string }
@@ -198,8 +226,7 @@ const updateOperationId = (listId: number): string =>
   `native-list-update:${listId}`;
 const submitOperationId = (listId: number): string =>
   `native-list-submit:${listId}`;
-type NativeSubmissionStage =
-  "active_review" | "target" | "preflight" | "transfer";
+type NativeSubmissionStage = "target" | "preflight" | "transfer";
 const failNativeSubmission = (
   stage: NativeSubmissionStage,
   error: unknown,
@@ -2657,6 +2684,94 @@ export class ProductReviewService {
     return listId;
   }
 
+  private async readReviewedSubmissionSource(
+    listId: number,
+    reviewed: ReviewedShoppingList,
+    signal?: AbortSignal,
+  ): Promise<{ list: ShoppingList; accountIdentity: string }> {
+    if (
+      !this.client.providerIdentity ||
+      !this.client.getShoppingList ||
+      !this.client.listShoppingLists
+    ) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    const accountIdentity = this.client.providerIdentity();
+    const inventory = await this.getShoppingLists(signal);
+    if (!inventory.some(({ id }) => id === listId)) {
+      throw new NemligError("Shopping list is unavailable or was deleted.");
+    }
+    const list = await this.client.getShoppingList(listId, signal);
+    if (
+      list.id !== listId ||
+      !matchesReviewedShoppingList(list, reviewed) ||
+      this.client.providerIdentity() !== accountIdentity
+    ) {
+      console.warn(
+        JSON.stringify({
+          schema_version: 1,
+          event: "native_shopping_list_source_changed",
+        }),
+      );
+      throw new NemligError(
+        "Nemlig changed this list. Refresh and review its current contents before submitting. No basket write was sent.",
+      );
+    }
+    return { list, accountIdentity };
+  }
+
+  private async loadReviewedSubmission(
+    owner: string,
+    listId: number,
+    reviewed: ReviewedShoppingList,
+    journal: ReviewOperationJournal,
+    signal?: AbortSignal,
+  ): Promise<StoredReview> {
+    const active = this.drafts.get(owner);
+    if (
+      active?.snapshot.shoppingListId === listId &&
+      (active.busy ||
+        active.snapshot.shoppingListDirty ||
+        active.snapshot.updateStatus)
+    ) {
+      throw new NemligError(
+        "A change to this shopping list needs review. No basket write was sent.",
+      );
+    }
+    const pendingUpdate = await journal.read(updateOperationId(listId));
+    if (
+      pendingUpdate?.kind === "update" &&
+      pendingUpdate.completedUntil === undefined
+    ) {
+      throw new NemligError(
+        "An interrupted update to this shopping list needs review. No basket write was sent.",
+      );
+    }
+    const { list, accountIdentity } = await this.readReviewedSubmissionSource(
+      listId,
+      reviewed,
+      signal,
+    );
+    const items = await this.readItems(reviewItemInputs(list.items), signal);
+    if (this.client.providerIdentity!() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed before submission. No basket write was sent.",
+      );
+    }
+    return {
+      busy: true,
+      accountIdentity,
+      nativeFingerprint: shoppingListFingerprint(list),
+      snapshot: {
+        shoppingListId: list.id,
+        shoppingListName: list.name,
+        saveStatus: "saved",
+        destination: "ready",
+        items,
+      },
+    };
+  }
+
   // Replay returns the receipt and may finish cleanup; it never dispatches again.
   // fallow-ignore-next-line complexity
   private async replayNativeSubmission(
@@ -3037,17 +3152,35 @@ export class ProductReviewService {
     expectedShoppingListId?: number,
     signal?: AbortSignal,
     journal?: ReviewOperationJournal,
+    reviewedList?: ReviewedShoppingList,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
-    let stage: NativeSubmissionStage = "active_review";
+    let stage: NativeSubmissionStage = "target";
     let stored: StoredReview | undefined;
     try {
-      stored = this.lock(owner);
-      stage = "target";
+      const activeJournal = this.requireNativeSubmissionJournal(journal);
+      if (reviewedList) {
+        if (
+          expectedShoppingListId === undefined ||
+          !validPositive(expectedShoppingListId)
+        ) {
+          throw new NemligError(
+            "Select the exact saved Nemlig shopping list before submitting. No basket write was sent.",
+          );
+        }
+        stored = await this.loadReviewedSubmission(
+          owner,
+          expectedShoppingListId,
+          reviewedList,
+          activeJournal,
+          signal,
+        );
+      } else {
+        stored = this.lock(owner);
+      }
       const listId = this.requireSubmissionTarget(
         stored,
         expectedShoppingListId,
       );
-      const activeJournal = this.requireNativeSubmissionJournal(journal);
       const operationId = submitOperationId(listId);
       const replay = await this.replayNativeSubmission(
         stored,
