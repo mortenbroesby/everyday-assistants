@@ -20,15 +20,6 @@ import {
 } from "./client.js";
 import { createMcpServer } from "./mcp.js";
 
-type ShoppingListTransferClient = Pick<
-  ShoppingListClient,
-  | "createShoppingList"
-  | "updateShoppingListProduct"
-  | "getShoppingList"
-  | "deleteShoppingList"
-  | "addShoppingListToCart"
->;
-
 const execute = promisify(execFile);
 const modernClient = (name: string) =>
   new Client(
@@ -179,7 +170,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   }
 });
 
-test("discovery reaches an approved draft submission and verified Nemlig basket", async () => {
+test("discovery saves the exact list and requires explicit basket submission", async () => {
   const product = (
     id: number,
     name: string,
@@ -225,7 +216,8 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     numberOfProducts: 0,
     deliveryTime: undefined,
   };
-  const client: ShoppingClient & ShoppingListTransferClient = {
+  const client: ShoppingClient & ShoppingListClient = {
+    providerIdentity: () => "account-1",
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
@@ -251,6 +243,7 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
     addToCart: async () => {
       throw new Error("Direct basket writes must not be used.");
     },
+    listShoppingLists: async () => [],
     createShoppingList: async () => {
       shoppingLists.set(1, new Map());
       return 1;
@@ -334,51 +327,32 @@ test("discovery reaches an approved draft submission and verified Nemlig basket"
         action: { kind: "accept", product_ids: [101, 201, 301] },
       },
     });
+    const saved = await mcp.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        action: { kind: "save", name: "Nemlig Assistant Local basket" },
+      },
+    });
+    assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
     const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
         action: { kind: "prepare_submission" },
       },
     });
-    const draft = (
-      prepared.structuredContent as {
-        review: {
-          submission: { submission_id: string };
-        };
-      }
-    ).review;
-    const applied = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: draft.submission.submission_id,
-      },
-    });
-    assert.notEqual(applied.isError, true);
-    assert.equal(writes, 1);
-    assert.deepEqual(
-      basket.items.map(({ id, quantity }) => [id, quantity]),
-      [
-        [101, 3],
-        [201, 1],
-        [301, 2],
-      ],
+    assert.equal(prepared.isError, true);
+    assert.match(
+      JSON.stringify(prepared.content),
+      /Submit the confirmed saved shopping list directly/u,
     );
-    assert.ok(reads >= 2);
-
-    const replay = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: draft.submission.submission_id,
-      },
-    });
-    assert.equal(replay.isError, true);
-    assert.equal(writes, 1);
+    assert.equal(reads, 0);
+    assert.equal(writes, 0);
   } finally {
     await close();
   }
 });
 
-test("an indeterminate draft submission is attempted once", async () => {
+test("a saved list with unsupported transfer is blocked before any basket write", async () => {
   const item: Product = {
     id: 401,
     name: "Tomatketchup",
@@ -413,7 +387,8 @@ test("an indeterminate draft submission is attempted once", async () => {
   const unavailable = async (): Promise<never> => {
     throw new Error("unexpected provider operation");
   };
-  const client: ShoppingClient & ShoppingListTransferClient = {
+  const client: ShoppingClient & ShoppingListClient = {
+    providerIdentity: () => "account-1",
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: unavailable,
@@ -424,6 +399,7 @@ test("an indeterminate draft submission is attempted once", async () => {
     browseDepartment: unavailable,
     getCart: async () => empty,
     addToCart: unavailable,
+    listShoppingLists: async () => [],
     createShoppingList: async () => {
       shoppingLists.set(1, new Map());
       return 1;
@@ -462,41 +438,25 @@ test("an indeterminate draft submission is attempted once", async () => {
         action: { kind: "accept", product_ids: [401] },
       },
     });
+    const saved = await mcp.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        action: { kind: "save", name: "Nemlig Assistant Local basket" },
+      },
+    });
+    assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
     const prepared = await mcp.callTool({
       name: "update_product_review_conversation",
       arguments: {
         action: { kind: "prepare_submission" },
       },
     });
-    const draft = (
-      prepared.structuredContent as {
-        review: {
-          submission: { submission_id: string };
-        };
-      }
-    ).review;
-    const args = {
-      submission_id: draft.submission.submission_id,
-    };
-    assert.equal(
-      (
-        await mcp.callTool({
-          name: "submit_product_review_conversation",
-          arguments: args,
-        })
-      ).isError,
-      true,
+    assert.equal(prepared.isError, true);
+    assert.match(
+      JSON.stringify(prepared.content),
+      /Submit the confirmed saved shopping list directly/u,
     );
-    assert.equal(
-      (
-        await mcp.callTool({
-          name: "submit_product_review_conversation",
-          arguments: args,
-        })
-      ).isError,
-      true,
-    );
-    assert.equal(writes, 1);
+    assert.equal(writes, 0);
   } finally {
     await close();
   }

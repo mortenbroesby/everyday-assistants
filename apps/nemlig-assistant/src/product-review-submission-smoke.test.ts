@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { randomUUID } from "node:crypto";
 import type {
   Basket,
   Product,
@@ -15,16 +16,13 @@ import type {
   ShoppingListClient,
 } from "./client.js";
 import { createMcpServer } from "./mcp.js";
+import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
+import {
+  mutateOwnerLocalBasketInventory,
+  type LocalBasketInventoryStorage,
+  type LocalBasketStorageAccess,
+} from "./local-basket-storage.js";
 import type { ProductReviewSnapshot } from "./product-review.js";
-
-type ShoppingListTransferClient = Pick<
-  ShoppingListClient,
-  | "createShoppingList"
-  | "updateShoppingListProduct"
-  | "getShoppingList"
-  | "deleteShoppingList"
-  | "addShoppingListToCart"
->;
 
 const product = (id: number, name: string, price: number): Product => ({
   id,
@@ -95,7 +93,7 @@ const withMcpClient = async <T>(
   }
 };
 
-test("MCP submission smoke searches, prepares every Local basket line, and verifies explicit submission", async () => {
+test("MCP saves exact list rows and submits once with durable basket readback", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
@@ -110,9 +108,11 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
+  let listUpdates = 0;
   const providerEvents: string[] = [];
   const shoppingLists = new Map<number, Map<number, number>>();
-  const provider: ShoppingClient & ShoppingListTransferClient = {
+  const provider: ShoppingClient & ShoppingListClient = {
+    providerIdentity: () => "account-1",
     isLoggedIn: () => true,
     login: async () => {},
     searchProducts: async (query) =>
@@ -131,12 +131,23 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     addToCart: async () => {
       throw new Error("Direct basket writes must not be used.");
     },
+    listShoppingLists: async () =>
+      [...shoppingLists.keys()].map((id) => ({
+        id,
+        name: "Nemlig Assistant Local basket",
+        productCount: shoppingLists.get(id)?.size ?? 0,
+      })),
     createShoppingList: async () => {
       shoppingLists.set(1, new Map());
       return 1;
     },
     updateShoppingListProduct: async (listId, id, quantity) => {
-      shoppingLists.get(listId)?.set(id, quantity);
+      listUpdates++;
+      if (quantity === 0) {
+        shoppingLists.get(listId)?.delete(id);
+      } else {
+        shoppingLists.get(listId)?.set(id, quantity);
+      }
     },
     getShoppingList: async (listId) => ({
       id: listId,
@@ -181,222 +192,268 @@ test("MCP submission smoke searches, prepares every Local basket line, and verif
     username: "person@example.test",
     password: "test-only",
   });
-
-  await withMcpClient(createMcpServer(provider, credentials), async (mcp) => {
-    const found = await mcp.callTool({
-      name: "find_groceries",
-      arguments: { search_term: "oats" },
-    });
-    assert.equal(found.isError, undefined);
-    const result = found.structuredContent as { result: Array<{ id: number }> };
-    assert.deepEqual(
-      result.result.map((value) => value.id),
-      [7, 8],
-    );
-    assert.equal(providerWrites, 0, "search is read-only");
-
-    const started = await mcp.callTool({
-      name: "start_product_review",
-      arguments: {
-        items: [
-          { product_id: 7, quantity: 3 },
-          { product_id: 8, quantity: 2 },
-        ],
-      },
-    });
-    assert.equal(started.isError, undefined);
-    let review = (
-      started.structuredContent as { review: ProductReviewSnapshot }
-    ).review;
-    const update = async (action: Record<string, unknown>) => {
-      const response = await mcp.callTool({
-        name: "update_product_review_conversation",
-        arguments: {
-          action,
-        },
-      });
-      assert.equal(
-        response.isError,
-        undefined,
-        JSON.stringify(response.content),
-      );
-      review = (response.structuredContent as { review: ProductReviewSnapshot })
-        .review;
-      return review;
-    };
-    assert.deepEqual(
-      review.items.map(({ product_id, quantity, state }) => [
-        product_id,
-        quantity,
-        state,
-      ]),
-      [
-        [7, 3, "ready"],
-        [8, 2, "ready"],
-      ],
-    );
-    assert.equal(
-      providerWrites,
-      0,
-      "starting a Local basket does not mutate the provider basket",
-    );
-
-    review = await update({ kind: "prepare_submission" });
-    assert.equal(
-      providerWrites,
-      0,
-      "preparation does not mutate the provider basket",
-    );
-    const prepared = review.submission;
-    assert.ok(prepared);
-    const preparedLines = prepared.review.lines as Array<{
-      product_id: number;
-      quantity: number;
-      item_price: number;
-      line_total: number;
-      name: string;
-      unit_size: string;
-    }>;
-    assert.deepEqual(
-      preparedLines.map(
-        ({
-          product_id,
-          quantity,
-          item_price,
-          line_total,
-          name,
-          unit_size,
-        }) => ({
-          product_id,
-          quantity,
-          item_price,
-          line_total,
-          name,
-          unit_size,
+  const values = new Map<string, unknown>();
+  const storage: LocalBasketInventoryStorage = {
+    async get<T>(key: string) {
+      return values.get(key) as T | undefined;
+    },
+    async put<T>(key: string, value: T) {
+      values.set(key, structuredClone(value));
+    },
+    async delete(key: string) {
+      values.delete(key);
+    },
+    async setAlarm() {},
+    async deleteAlarm() {},
+    async transaction<T>(
+      action: (access: LocalBasketStorageAccess) => Promise<T>,
+    ) {
+      return action(storage);
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url =
+      typeof input === "string"
+        ? input
+        : input instanceof URL
+          ? input.href
+          : input.url;
+    if (!url.startsWith("http://local-basket-state.internal/")) {
+      return originalFetch(input, init);
+    }
+    return handleLocalBasketStateRequest(
+      new Request(input, init),
+      {
+        idFromName: (ownerId) => ownerId,
+        get: () => ({
+          mutate: (ownerId, command) =>
+            mutateOwnerLocalBasketInventory(storage, ownerId, command),
         }),
+      },
+      async (capability) =>
+        capability === "submission-smoke-capability" ? "owner" : undefined,
+    );
+  };
+  const requestContext = {
+    principalKey: "owner",
+    policyRevision: "test-v1",
+    localBasketCapability: "submission-smoke-capability",
+  };
+  try {
+    await withMcpClient(
+      createMcpServer(
+        provider,
+        credentials,
+        undefined,
+        undefined,
+        requestContext,
       ),
-      [
-        {
-          product_id: 7,
-          quantity: 3,
-          item_price: 4.25,
-          line_total: 12.75,
-          name: "Chosen oats",
-          unit_size: "1 stk",
-        },
-        {
-          product_id: 8,
-          quantity: 2,
-          item_price: 6.5,
-          line_total: 13,
-          name: "Unresolved tea",
-          unit_size: "1 stk",
-        },
-      ],
-    );
-    assert.equal(
-      JSON.stringify(prepared.review).includes("Unresolved tea"),
-      true,
-    );
-    assert.equal(
-      JSON.stringify(prepared.review).includes('"product_id":8'),
-      true,
-    );
-
-    const wrongReference = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: "00000000-0000-4000-8000-000000000000",
-      },
-    });
-    assert.equal(
-      wrongReference.isError,
-      true,
-      "only the exact prepared submission can be applied",
-    );
-    assert.equal(providerWrites, 0);
-    // Simulate the separate conversational approval turn for these exact lines.
-    // User approval is the model's responsibility, not a boolean invented by this test.
-    const submitted = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: prepared.submission_id,
-      },
-    });
-    assert.equal(
-      submitted.isError,
-      undefined,
-      JSON.stringify(submitted.content),
-    );
-    const submittedData = submitted.structuredContent as {
-      review: ProductReviewSnapshot;
-      result: {
-        status: string;
-        cleanup_warning?: string;
-        basket: {
-          items: Array<{ id: number; quantity: number }>;
-          products_price: number;
-          number_of_products: number;
+      async (mcp) => {
+        const found = await mcp.callTool({
+          name: "find_groceries",
+          arguments: { search_term: "oats" },
+        });
+        assert.equal(found.isError, undefined);
+        const result = found.structuredContent as {
+          result: Array<{ id: number }>;
         };
-      };
-    };
-    assert.equal(submittedData.review.submission?.status, "submitted");
-    assert.equal(submittedData.result.status, "completed");
-    assert.match(
-      submittedData.review.submission?.cleanup_warning ?? "",
-      /could not be confirmed/u,
-    );
-    assert.equal(
-      submittedData.review.submission?.cleanup_warning,
-      submittedData.result.cleanup_warning,
-    );
-    assert.deepEqual(providerEvents.slice(-3), [
-      "transfer",
-      "basket-readback",
-      "delete-list",
-    ]);
-    assert.deepEqual(
-      submittedData.result.basket.items.map(({ id, quantity }) => [
-        id,
-        quantity,
-      ]),
-      [
-        [99, 2],
-        [7, 3],
-        [8, 2],
-      ],
-    );
-    assert.equal(submittedData.result.basket.products_price, 31.75);
-    assert.equal(submittedData.result.basket.number_of_products, 7);
-    assert.equal(providerWrites, 1);
-    assert.deepEqual(
-      (await provider.getCart()).items.map(({ id, quantity }) => [
-        id,
-        quantity,
-      ]),
-      [
-        [99, 2],
-        [7, 3],
-        [8, 2],
-      ],
-      "verified provider readback preserves unrelated lines",
-    );
+        assert.deepEqual(
+          result.result.map((value) => value.id),
+          [7, 8],
+        );
+        assert.equal(providerWrites, 0, "search is read-only");
+        const tools = await mcp.listTools();
+        const productReviewTool = tools.tools.find(
+          ({ name }) => name === "start_product_review",
+        );
+        assert.ok(productReviewTool);
+        assert.doesNotMatch(
+          productReviewTool.description ?? "",
+          /submission .* disabled/u,
+        );
+        assert.match(
+          productReviewTool.description ?? "",
+          /saved list.*Submit|Submit.*saved list/u,
+        );
 
-    const duplicate = await mcp.callTool({
-      name: "submit_product_review_conversation",
-      arguments: {
-        submission_id: prepared.submission_id,
+        const started = await mcp.callTool({
+          name: "start_product_review",
+          arguments: {
+            items: [
+              { product_id: 7, quantity: 3 },
+              { product_id: 8, quantity: 2 },
+            ],
+          },
+        });
+        assert.equal(started.isError, undefined);
+        const review = (
+          started.structuredContent as { review: ProductReviewSnapshot }
+        ).review;
+        assert.deepEqual(
+          review.items.map(({ product_id, quantity, state }) => [
+            product_id,
+            quantity,
+            state,
+          ]),
+          [
+            [7, 3, "ready"],
+            [8, 2, "ready"],
+          ],
+        );
+        assert.equal(
+          providerWrites,
+          0,
+          "starting a draft does not mutate the provider basket",
+        );
+
+        const saved = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            action: { kind: "save", name: "Nemlig Assistant Local basket" },
+          },
+        });
+        assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
+        const savedReview = (
+          saved.structuredContent as { review: ProductReviewSnapshot }
+        ).review;
+        assert.equal(savedReview.saveStatus, "saved");
+        assert.deepEqual((await provider.getShoppingList(1)).items, [
+          { productId: 7, quantity: 3 },
+          { productId: 8, quantity: 2 },
+        ]);
+        assert.equal(listUpdates, 2, "Save writes only the draft rows");
+        const reopened = await mcp.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 1 },
+        });
+        assert.equal(reopened.isError, undefined);
+        assert.equal(
+          (
+            reopened.structuredContent as {
+              selectedShoppingListId: number;
+            }
+          ).selectedShoppingListId,
+          1,
+        );
+        const staged = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            action: { kind: "quantity", product_id: 7, quantity: 4 },
+            shopping_list_id: 1,
+          },
+        });
+        assert.equal(staged.isError, undefined);
+        assert.deepEqual((await provider.getShoppingList(1)).items, [
+          { productId: 7, quantity: 3 },
+          { productId: 8, quantity: 2 },
+        ]);
+        assert.equal(listUpdates, 2, "staging does not write the native list");
+        const updated = await mcp.callTool({
+          name: "update_product_review_conversation",
+          arguments: {
+            action: { kind: "update" },
+            shopping_list_id: 1,
+          },
+        });
+        assert.equal(
+          updated.isError,
+          undefined,
+          JSON.stringify(updated.content),
+        );
+        assert.deepEqual((await provider.getShoppingList(1)).items, [
+          { productId: 7, quantity: 4 },
+          { productId: 8, quantity: 2 },
+        ]);
+        assert.equal(
+          listUpdates,
+          3,
+          "Update writes the staged difference once",
+        );
+        const submitted = await mcp.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            shopping_list_id: 1,
+            submission_id: randomUUID(),
+          },
+        });
+        assert.equal(
+          submitted.isError,
+          undefined,
+          JSON.stringify(submitted.content),
+        );
+        assert.equal(
+          providerWrites,
+          1,
+          "the explicit submit transfers the updated native list once",
+        );
+        assert.deepEqual(providerEvents, [
+          "basket-readback",
+          "basket-readback",
+          "transfer",
+          "basket-readback",
+          "delete-list",
+        ]);
+        assert.deepEqual(await provider.listShoppingLists(), []);
+        assert.deepEqual(
+          basket.items.map(({ id, quantity }) => [id, quantity]),
+          [
+            [99, 2],
+            [7, 4],
+            [8, 2],
+          ],
+        );
+        const replay = await mcp.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            shopping_list_id: 1,
+            submission_id: randomUUID(),
+          },
+        });
+        assert.equal(replay.isError, true);
+        assert.equal(
+          providerWrites,
+          1,
+          "a fresh ID cannot replay the same list snapshot",
+        );
       },
-    });
-    assert.equal(
-      duplicate.isError,
-      true,
-      "the same approved submission cannot be applied twice",
     );
-    assert.equal(
-      providerWrites,
-      1,
-      "rejected duplicate makes no additional provider write",
+    await withMcpClient(
+      createMcpServer(
+        provider,
+        credentials,
+        undefined,
+        undefined,
+        requestContext,
+      ),
+      async (restarted) => {
+        const reopened = await restarted.callTool({
+          name: "start_product_review",
+          arguments: { shopping_list_id: 1 },
+        });
+        assert.equal(reopened.isError, undefined);
+        assert.equal(
+          (reopened.structuredContent as { selectedShoppingListId: null })
+            .selectedShoppingListId,
+          null,
+          "the deleted source returns to the list picker",
+        );
+        const replay = await restarted.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            shopping_list_id: 1,
+            submission_id: randomUUID(),
+          },
+        });
+        assert.equal(replay.isError, true);
+        assert.equal(
+          providerWrites,
+          1,
+          "a restarted service cannot replay the exact list snapshot",
+        );
+      },
     );
-  });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

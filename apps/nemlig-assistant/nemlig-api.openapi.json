@@ -483,6 +483,28 @@
         }
       }
     },
+    "/webapi/ShoppingList/GetShoppingLists": {
+      "get": {
+        "operationId": "getShoppingLists",
+        "tags": ["Shopping lists"],
+        "summary": "List the authenticated user's provider shopping lists",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "medium",
+          "safety": "personal-data-read",
+          "evidence": ["NemligClient.getShoppingLists", "first-party public bundle 2026-10-11"]
+        },
+        "parameters": [
+          { "name": "skip", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "take", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1, "maximum": 100 } }
+        ],
+        "responses": {
+          "200": { "description": "Paged shopping-list overview for the authenticated account." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
     "/webapi/ShoppingList/getShoppingList": {
       "get": {
         "operationId": "getShoppingList",

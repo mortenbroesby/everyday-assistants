@@ -258,7 +258,6 @@ const baseProps = (
     ]),
     message: "",
     busy: false,
-    confirmSubmit: false,
     confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
@@ -279,9 +278,10 @@ const baseProps = (
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
-    onPrepareSubmission: noop,
-    onRequestSubmitConfirmation: noop,
-    onCancelSubmit: noop,
+    onSaveDraft: noop,
+    onUpdateShoppingList: noop,
+    onDiscardPendingUpdate: noop,
+    onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
@@ -572,15 +572,12 @@ function WalkthroughPage({
 function submissionActions(
   currentReview: Review,
   setCurrentReview: SetState<Review>,
-  setConfirmSubmit: SetState<boolean>,
   setConfirmEnd: SetState<boolean>,
   setEnded: SetState<boolean>,
   setHostMessage: SetState<string>,
 ): Pick<
   ViewerPageActions,
-  | "onPrepareSubmission"
-  | "onRequestSubmitConfirmation"
-  | "onCancelSubmit"
+  | "onSubmit"
   | "onConfirmSubmit"
   | "onContinueSubmitted"
   | "onRequestEnd"
@@ -589,10 +586,20 @@ function submissionActions(
   | "onSendFollowUp"
 > {
   return {
-    onPrepareSubmission: () => {
+    onSubmit: () => {
       const next = prepareReview(currentReview);
       if (next) {
-        setCurrentReview(next);
+        setCurrentReview({
+          ...next,
+          submissionAttempted: true,
+          submission: next.submission
+            ? {
+                ...next.submission,
+                status: "submitted",
+                verified_additions: next.submission.review.lines?.length,
+              }
+            : undefined,
+        });
         setHostMessage("");
       } else {
         setHostMessage(
@@ -600,10 +607,7 @@ function submissionActions(
         );
       }
     },
-    onRequestSubmitConfirmation: () => setConfirmSubmit(true),
-    onCancelSubmit: () => setConfirmSubmit(false),
     onConfirmSubmit: () => {
-      setConfirmSubmit(false);
       setCurrentReview((previous) =>
         previous.submission?.status === "prepared"
           ? {
@@ -644,7 +648,6 @@ function LocalBasketWalkthroughStory({
   const [reviewDisclosures, setReviewDisclosures] = useState<
     ViewerPageModel["reviewDisclosures"]
   >(new Map());
-  const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [ended, setEnded] = useState(initiallyEnded);
   const [hostMessage, setHostMessage] = useState("");
@@ -654,7 +657,6 @@ function LocalBasketWalkthroughStory({
   const submission = submissionActions(
     currentReview,
     setCurrentReview,
-    setConfirmSubmit,
     setConfirmEnd,
     setEnded,
     setHostMessage,
@@ -666,7 +668,6 @@ function LocalBasketWalkthroughStory({
         maxWidth: 375,
         presentationDestination: destination,
         reviewDisclosures,
-        confirmSubmit,
         confirmEnd,
       }}
       actions={{

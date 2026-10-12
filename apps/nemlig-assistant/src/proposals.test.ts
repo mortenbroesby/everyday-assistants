@@ -4,6 +4,7 @@ import {
   NemligClient,
   NemligError,
   ProductNotFoundError,
+  shoppingListFingerprint,
   type Basket,
   type Product,
   type ShoppingClient,
@@ -249,7 +250,13 @@ test("provider shopping-list submission transfers a 38-item review once", async 
   }));
   let transfers = 0;
   const events: string[] = [];
-  let basket = emptyBasket();
+  let basket: Basket = {
+    items: [{ id: 99, name: "Unrelated item", quantity: 2, total: 6 }],
+    productsPrice: 6,
+    deliveryPrice: 0,
+    numberOfProducts: 2,
+    deliveryTime: undefined,
+  };
   const list = {
     id: 44,
     name: "Nemlig Assistant test",
@@ -275,15 +282,19 @@ test("provider shopping-list submission transfers a 38-item review once", async 
       events.push("transfer");
       transfers += 1;
       basket = {
-        items: products.map((item) => ({
-          id: item.id,
-          name: item.name,
-          quantity: 1,
-          total: item.price,
-        })),
-        productsPrice: products.length * (product.price ?? 0),
+        items: [
+          ...basket.items,
+          ...products.map((item) => ({
+            id: item.id,
+            name: item.name,
+            quantity: 1,
+            total: item.price,
+          })),
+        ],
+        productsPrice:
+          (basket.productsPrice ?? 0) + products.length * (product.price ?? 0),
         deliveryPrice: 0,
-        numberOfProducts: products.length,
+        numberOfProducts: (basket.numberOfProducts ?? 0) + products.length,
         deliveryTime: undefined,
       };
     },
@@ -320,7 +331,14 @@ test("provider shopping-list submission transfers a 38-item review once", async 
     events.filter((event) => event === "delete-list"),
     ["delete-list"],
   );
-  assert.equal(result.basket.number_of_products, 38);
+  assert.equal(result.basket.number_of_products, 40);
+  assert.deepEqual(result.basket.items[0], {
+    id: 99,
+    name: "Unrelated item",
+    quantity: 2,
+    total: 6,
+  });
+  assert.equal(result.basket.items.length, 39);
   assert.deepEqual(events.slice(-3), [
     "transfer",
     "basket-readback",
@@ -417,6 +435,93 @@ test("verified transfer keeps success when list cleanup fails and never repeats 
   assert.equal(replayed.replayed, true);
   assert.equal(replayed.cleanup_warning, applied.cleanup_warning);
   assert.deepEqual({ transfers, deletions }, { transfers: 1, deletions: 1 });
+});
+
+test("native-list submit uses the same list and verifies additive basket readback", async () => {
+  const events: string[] = [];
+  const list = {
+    id: 44,
+    name: "Family",
+    items: [
+      { productId: 7, quantity: 1 },
+      { productId: 8, quantity: 2 },
+    ],
+  };
+  const baseline: Basket = {
+    items: [
+      { id: 7, name: "Banan", quantity: 2, total: 5 },
+      { id: 99, name: "Existing", quantity: 1, total: 6 },
+    ],
+    productsPrice: 11,
+    deliveryPrice: 0,
+    numberOfProducts: 3,
+    deliveryTime: undefined,
+  };
+  let basket = structuredClone(baseline);
+  const service = new BasketProposalService({
+    getProduct: async () => product,
+    getFreshProduct: async () => product,
+    getCart: async () => {
+      events.push("basket-read");
+      return structuredClone(basket);
+    },
+    addToCart: async () => emptyBasket(),
+    getShoppingList: async (listId) => {
+      events.push(`list-read:${listId}`);
+      return structuredClone(list);
+    },
+    createShoppingList: async () => {
+      events.push("create-list");
+      return 45;
+    },
+    deleteShoppingList: async () => {
+      events.push("delete-list");
+    },
+    addShoppingListToCart: async (listId) => {
+      events.push(`transfer:${listId}`);
+      basket = {
+        ...baseline,
+        items: [
+          { id: 8, name: "Pære", quantity: 2, total: 8 },
+          { id: 7, name: "Banan", quantity: 3, total: 7.5 },
+          { id: 99, name: "Existing", quantity: 1, total: 6 },
+        ],
+        productsPrice: 21.5,
+        numberOfProducts: 6,
+      };
+    },
+  });
+
+  const result = await service.transferNativeShoppingList(
+    44,
+    shoppingListFingerprint(list),
+    [
+      { product_id: 7, quantity: 1 },
+      { product_id: 8, quantity: 2 },
+    ],
+    baseline,
+    async () => {
+      events.push("durable-fence");
+    },
+  );
+
+  assert.equal(result.status, "completed");
+  assert.equal(result.basket.number_of_products, 6);
+  assert.deepEqual(
+    result.basket.items.map(({ id, quantity }) => [id, quantity]),
+    [
+      [8, 2],
+      [7, 3],
+      [99, 1],
+    ],
+  );
+  assert.deepEqual(events, [
+    "list-read:44",
+    "basket-read",
+    "durable-fence",
+    "transfer:44",
+    "basket-read",
+  ]);
 });
 
 test("provider shopping-list preparation rejects a changed list before reviewing it", async () => {
