@@ -780,17 +780,9 @@ test("current family stateless requests decrypt credentials and isolate credenti
   }
 });
 
-test("authenticated local-only basket requests keep capabilities request-scoped", async () => {
-  const observed: Array<{ capability: string; kind: string }> = [];
+test("stale Local basket requests fail closed without native inventory", async () => {
+  let legacyStorageRequests = 0;
   const basketId = "00000000-0000-4000-8000-000000000099";
-  const basket = {
-    basketId,
-    createdAt: 1,
-    lastActivityAt: 2,
-    expiresAt: 86_400_002,
-    revision: 1,
-    lines: [],
-  };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url =
@@ -802,23 +794,8 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
     if (url !== "http://local-basket-state.internal/inventory") {
       return originalFetch(input, init);
     }
-    const command = JSON.parse(String(init?.body)) as { kind: string };
-    const capability = new Headers(init?.headers).get(
-      "x-nemlig-local-basket-capability",
-    );
-    assert.ok(capability);
-    observed.push({ capability, kind: command.kind });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    if (command.kind === "list") {
-      return Response.json([]);
-    }
-    if (command.kind === "delete") {
-      return Response.json({ deleted: true });
-    }
-    if (command.kind === "selection") {
-      return Response.json(null);
-    }
-    return Response.json(basket);
+    legacyStorageRequests += 1;
+    throw new Error("Legacy Local basket storage must stay unused");
   };
 
   let providerTouches = 0;
@@ -880,15 +857,19 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
     const [firstList, secondList] = await Promise.all([
       first.callTool({
         name: "update_product_review",
-        arguments: { action: { kind: "list" } },
+        arguments: { action: { kind: "show" } },
       }),
       second.callTool({
         name: "update_product_review",
-        arguments: { action: { kind: "list" } },
+        arguments: { action: { kind: "show" } },
       }),
     ]);
-    assert.equal(firstList.isError, undefined);
-    assert.equal(secondList.isError, undefined);
+    assert.equal(firstList.isError, true);
+    assert.equal(secondList.isError, true);
+    assert.match(
+      JSON.stringify(firstList.content),
+      /Native shopping-list discovery is unavailable/u,
+    );
 
     for (const action of [
       { kind: "show" },
@@ -903,7 +884,7 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
           action,
         },
       });
-      assert.equal(result.isError, undefined, JSON.stringify(action));
+      assert.equal(result.isError, true);
     }
 
     for (const request of [
@@ -926,18 +907,8 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
       );
     }
 
-    assert.ok(
-      observed.some((entry) => entry.capability === "request-capability-one"),
-    );
-    assert.ok(
-      observed.some((entry) => entry.capability === "request-capability-two"),
-    );
-    assert.equal(
-      observed.filter((entry) => entry.kind === "list").length,
-      6,
-      "local-only UI operations all reached the authenticated callback",
-    );
-    assert.equal(providerTouches, 0);
+    assert.equal(legacyStorageRequests, 0);
+    assert.equal(providerTouches, 1, "only the authentication check ran");
   } finally {
     await Promise.all([first.close(), second.close()]);
     server.closeAllConnections();

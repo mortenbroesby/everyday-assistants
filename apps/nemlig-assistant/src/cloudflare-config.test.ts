@@ -65,8 +65,21 @@ test("Cloudflare safety configuration is explicit, bounded, and internally consi
     /MCP_CONTROL_TIMEOUT_MS is required/u,
   );
   assert.throws(
-    () => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "120001" }),
+    () => loadGatewayConfig({ ...validEnv, MCP_BACKEND_TIMEOUT_MS: "85001" }),
     /MCP_BACKEND_TIMEOUT_MS/u,
+  );
+  assert.throws(
+    () => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "90001" }),
+    /MCP_TOTAL_TIMEOUT_MS/u,
+  );
+  assert.throws(
+    () =>
+      loadGatewayConfig({
+        ...validEnv,
+        MCP_TOTAL_TIMEOUT_MS: "85000",
+        MCP_BACKEND_TIMEOUT_MS: "85000",
+      }),
+    /MCP_BACKEND_TIMEOUT_MS must be less/u,
   );
   assert.throws(
     () => loadGatewayConfig({ ...validEnv, MCP_TOTAL_TIMEOUT_MS: "5000" }),
