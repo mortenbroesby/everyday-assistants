@@ -282,37 +282,20 @@ test("shopping and unknown tool requests receive the same useful classification"
   );
 });
 
-test("only explicit Local basket inventory actions use credential-free local admission", () => {
-  assert.equal(
-    classifyMcpMessage({
-      method: "tools/call",
-      params: {
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "list" } },
-      },
-    }),
-    "local",
-  );
-  assert.equal(
-    classifyMcpMessage({
-      method: "tools/call",
-      params: {
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "heartbeat", basket_id: "not-a-uuid" } },
-      },
-    }),
-    "useful",
-  );
-  assert.equal(
-    classifyMcpMessage({
-      method: "tools/call",
-      params: {
-        name: "update_product_review_conversation",
-        arguments: { action: { kind: "prepare_submission" } },
-      },
-    }),
-    "useful",
-  );
+test("native shopping-list inventory uses credential-backed admission", () => {
+  for (const [name, args] of [
+    ["start_product_review", {}],
+    ["update_product_review_conversation", { action: { kind: "list" } }],
+    ["update_product_review", { action: { kind: "show" } }],
+  ] as const) {
+    assert.equal(
+      classifyMcpMessage({
+        method: "tools/call",
+        params: { name, arguments: args },
+      }),
+      "useful",
+    );
+  }
 });
 
 test("forwarded MCP handshake failures are logged as backend rejections", async () => {

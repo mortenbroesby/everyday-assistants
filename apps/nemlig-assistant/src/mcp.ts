@@ -1305,7 +1305,10 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         action.kind === "save" ||
         action.kind === "list" ||
         action.kind === "select" ||
-        action.kind === "prepare_submission"
+        action.kind === "prepare_submission" ||
+        basket_id !== undefined ||
+        shopping_list_id !== undefined ||
+        (action.kind === "show" && draft_id === undefined)
         ? runAuthenticatedRead("update_product_review_conversation", perform)
         : runMcpOperation("update_product_review_conversation", perform);
     },
@@ -1344,7 +1347,10 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         action.kind === "save" ||
         action.kind === "prepare_submission" ||
         action.kind === "list" ||
-        action.kind === "select"
+        action.kind === "select" ||
+        basket_id !== undefined ||
+        shopping_list_id !== undefined ||
+        (action.kind === "show" && draft_id === undefined)
         ? runAuthenticatedRead("update_product_review", perform)
         : runMcpOperation("update_product_review", perform);
     },
