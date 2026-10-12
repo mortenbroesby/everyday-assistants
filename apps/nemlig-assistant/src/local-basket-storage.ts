@@ -440,6 +440,14 @@ export const mutateOwnerLocalBasketInventory = async (
       const current = operations.find(
         ({ operationId }) => operationId === operation.operationId,
       );
+      if (
+        current?.kind === "save" &&
+        current.completedUntil !== undefined &&
+        operation.kind === "save" &&
+        current.generation === operation.generation
+      ) {
+        throw new Error("A completed shopping-list save cannot be resumed.");
+      }
       const sameCompletedSubmission =
         current?.kind === "submit" &&
         current.completed === true &&

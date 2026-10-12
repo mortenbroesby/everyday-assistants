@@ -86,6 +86,8 @@ changes or uncertain cleanup keep the list and show a warning.
 - Keep a new selection as an unsaved draft until you choose **Save shopping
   list**. Saving writes the displayed products and quantities to Nemlig and
   verifies the saved list.
+- If a save is partial, resume the remaining products or review only the
+  products confirmed in the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
 - Explicitly **Submit** a clean saved list to add it to the actual basket. The

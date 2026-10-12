@@ -66,6 +66,25 @@ const sameShoppingListItems = (
       (item) => item.quantity,
     ),
   );
+const isSavedSubsetOfOperation = (
+  list: ShoppingList,
+  operation: ReviewOperation,
+): boolean => {
+  const intended = quantityMap(
+    operation.items,
+    (item) => item.productId,
+    (item) => item.quantity,
+  );
+  return (
+    list.name === operation.name &&
+    list.items.length > 0 &&
+    new Set(list.items.map((item) => item.productId)).size ===
+      list.items.length &&
+    list.items.every(
+      ({ productId, quantity }) => intended.get(productId) === quantity,
+    )
+  );
+};
 const matchesReviewedShoppingList = (
   list: ShoppingList,
   reviewed: ReviewedShoppingList,
@@ -201,7 +220,7 @@ export interface ReviewOperationJournal {
   complete(operationId: string, generation: string): Promise<void | boolean>;
 }
 
-const completeNativeListUpdate = async (
+const completeReviewOperation = async (
   journal: ReviewOperationJournal,
   operation: ReviewOperation,
   failureMessage: string,
@@ -924,7 +943,7 @@ export class ProductReviewService {
     if (lists.some(({ id }) => id === listId)) {
       return undefined;
     }
-    await completeNativeListUpdate(
+    await completeReviewOperation(
       journal,
       operation,
       "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
@@ -972,6 +991,7 @@ export class ProductReviewService {
     listId: number,
     signal?: AbortSignal,
     journal?: ReviewOperationJournal,
+    acceptedDraftId?: string,
   ): Promise<ProductReviewSnapshot> {
     if (
       !validPositive(listId) ||
@@ -1267,27 +1287,41 @@ export class ProductReviewService {
       return structuredClone(current.snapshot);
     }
     const partialDraftId =
-      current?.accountIdentity === accountIdentity &&
+      acceptedDraftId ??
+      (current?.accountIdentity === accountIdentity &&
       current.snapshot.saveStatus === "partial" &&
       current.snapshot.shoppingListId === list.id
         ? current.snapshot.draftId
-        : undefined;
+        : undefined);
+    if (acceptedDraftId && !journal) {
+      throw new NemligError(
+        "The interrupted save record is unavailable. Refresh before continuing.",
+      );
+    }
     if (partialDraftId && journal) {
       const saveOperation = await journal.read(partialDraftId);
       assertCurrentEntry();
+      if (acceptedDraftId && !saveOperation) {
+        throw new NemligError(
+          "The interrupted save record is unavailable. Refresh before continuing.",
+        );
+      }
       if (saveOperation) {
         if (
           saveOperation.kind !== "save" ||
           saveOperation.generation !== partialDraftId ||
           saveOperation.accountIdentity !== accountIdentity ||
-          saveOperation.listId !== list.id
+          saveOperation.listId !== list.id ||
+          !isSavedSubsetOfOperation(list, saveOperation)
         ) {
           throw new NemligError(
-            "The interrupted save does not belong to this shopping list. Refresh before continuing.",
+            "The interrupted save does not match this account and saved subset. Refresh before continuing.",
           );
         }
-        if (!(await journal.complete(partialDraftId, partialDraftId))) {
-          throw new NemligError(
+        if (saveOperation.completedUntil === undefined) {
+          await completeReviewOperation(
+            journal,
+            saveOperation,
             "Could not finish the interrupted save record. Refresh before continuing.",
           );
         }
@@ -1753,7 +1787,7 @@ export class ProductReviewService {
       );
     }
     if (!inventory.some(({ id }) => id === listId)) {
-      await completeNativeListUpdate(
+      await completeReviewOperation(
         journal,
         operation,
         "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
@@ -1785,7 +1819,7 @@ export class ProductReviewService {
         "Nemlig account changed while reading the list. The pending update was kept.",
       );
     }
-    await completeNativeListUpdate(
+    await completeReviewOperation(
       journal,
       operation,
       "Could not confirm the pending update was retired. Refresh the list before continuing.",
@@ -2227,6 +2261,23 @@ export class ProductReviewService {
     if (!this.drafts.has(owner) && expectedDraftId && journal) {
       const operation = await journal.read(expectedDraftId);
       if (operation?.kind === "save") {
+        if (operation.completedUntil !== undefined) {
+          if (
+            !operation.listId ||
+            operation.name !== name.trim() ||
+            operation.accountIdentity !== this.client.providerIdentity?.()
+          ) {
+            throw new NemligError(
+              "The completed save cannot be resumed. Open the saved shopping list to review it.",
+            );
+          }
+          return this.openShoppingList(
+            owner,
+            operation.listId,
+            signal,
+            journal,
+          );
+        }
         const items = await this.readItems(
           operation.items.map(({ productId, quantity }) => ({
             product_id: productId,

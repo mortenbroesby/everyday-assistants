@@ -1382,16 +1382,20 @@ export function ProductViewer() {
       expected,
     );
   };
-  const selectBasket = async (basketId: string) => {
+  const selectBasket = async (
+    basketId: string,
+    acceptSavedSubsetDraftId?: string,
+  ) => {
     if (busy || !isBasketId(basketId)) {
       return;
     }
-    const targetArgs =
-      baskets.find((basket) => basket.basketId === basketId)
-        ?.nativeShoppingList ||
-      activeReview.current?.review.shoppingListId === Number(basketId)
-        ? { shopping_list_id: Number(basketId) }
-        : { basket_id: basketId };
+    const selected = baskets.find((basket) => basket.basketId === basketId);
+    const nativeShoppingList = selected
+      ? selected.nativeShoppingList === true
+      : activeReview.current?.review.shoppingListId === Number(basketId);
+    const targetArgs = nativeShoppingList
+      ? { shopping_list_id: Number(basketId) }
+      : { basket_id: basketId };
     changeBasket(basketId);
     const heartbeat = heartbeatByBasket.current.get(basketId) ?? {
       attemptedAt: 0,
@@ -1403,7 +1407,15 @@ export function ProductViewer() {
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
     await call(
       "update_product_review",
-      { action: { kind: "select" }, ...targetArgs },
+      {
+        action: {
+          kind: "select",
+          ...(nativeShoppingList && acceptSavedSubsetDraftId
+            ? { accept_saved_subset_draft_id: acceptSavedSubsetDraftId }
+            : {}),
+        },
+        ...targetArgs,
+      },
       true,
       true,
     );
@@ -1569,7 +1581,8 @@ export function ProductViewer() {
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
         onOpenPicker: () => void openPicker(),
-        onSelectBasket: (basketId) => void selectBasket(basketId),
+        onSelectBasket: (basketId, acceptSavedSubsetDraftId) =>
+          void selectBasket(basketId, acceptSavedSubsetDraftId),
         onDeleteBasket: (basketId) => void deleteBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {

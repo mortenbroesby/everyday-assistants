@@ -164,7 +164,10 @@ const showReviewActionSchema = z.object({ kind: z.literal("show") });
 const endReviewActionSchema = z.object({ kind: z.literal("end") });
 const localActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("list") }),
-  z.object({ kind: z.literal("select") }),
+  z.object({
+    kind: z.literal("select"),
+    accept_saved_subset_draft_id: z.string().uuid().optional(),
+  }),
   z.object({ kind: z.literal("delete") }),
   z.object({ kind: z.literal("heartbeat") }),
 ]);
@@ -839,8 +842,18 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       return listNativeShoppingLists(signal);
     }
     if (action.kind === "select") {
+      if (action.accept_saved_subset_draft_id && !targets.shoppingListId) {
+        throw new NemligError(
+          "Select the saved shopping list to review its confirmed products.",
+        );
+      }
       return targets.shoppingListId
-        ? openNativeShoppingList(owner, targets.shoppingListId, signal)
+        ? openNativeShoppingList(
+            owner,
+            targets.shoppingListId,
+            signal,
+            action.accept_saved_subset_draft_id,
+          )
         : listNativeShoppingLists(signal);
     }
     if (targets.shoppingListId) {
@@ -889,6 +902,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     owner: string,
     listId: number,
     signal: AbortSignal,
+    acceptedDraftId?: string,
   ) => {
     try {
       return success({
@@ -897,6 +911,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           listId,
           signal,
           reviewOperationJournal(signal),
+          acceptedDraftId,
         ),
         shoppingLists: await reviews.getShoppingLists(signal),
         selectedShoppingListId: listId,

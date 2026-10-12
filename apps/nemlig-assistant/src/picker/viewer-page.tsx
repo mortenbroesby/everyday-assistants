@@ -137,7 +137,7 @@ export type ViewerPageActions = {
   ) => void;
   onRefresh: () => void;
   onOpenPicker: () => void;
-  onSelectBasket: (basketId: string) => void;
+  onSelectBasket: (basketId: string, acceptSavedSubsetDraftId?: string) => void;
   onDeleteBasket: (basketId: string) => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
@@ -1341,7 +1341,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                     block
                     disabled={busy}
                     onClick={() =>
-                      actions.onSelectBasket(String(review.shoppingListId))
+                      actions.onSelectBasket(
+                        String(review.shoppingListId),
+                        review.draftId,
+                      )
                     }
                   >
                     Review saved products only
