@@ -146,6 +146,15 @@ const nativeFixtureJson = JSON.stringify({
   shoppingListName: "Synthetic saved list",
   saveStatus: "saved",
 });
+const partialFixtureJson = JSON.stringify({
+  ...initialReview,
+  basketId: undefined,
+  draftId: "12345678-1234-4234-8234-123456789def",
+  shoppingListId: 12345678,
+  shoppingListName: "Synthetic partial list",
+  saveStatus: "partial",
+  saveProgress: { completed: 1, total: 2 },
+});
 const longFixtureJson = JSON.stringify({
   ...initialReview,
   items: Array.from({ length: 12 }, (_, index) => {
@@ -181,7 +190,7 @@ const result=(review)=>({structuredContent:{review,...(mode==='normal'?{}:{baske
 const payload=(data)=>({structuredContent:data});
 const apply=(action,args)=>{
  if(action.kind==='list') return payload({baskets:inventory,selectedBasketId,selectionRequired:true});
- if(action.kind==='select'){selectedBasketId=args.basket_id;review=basketReview(selectedBasketId);return result(review)}
+ if(action.kind==='select'){selectedBasketId=args.shopping_list_id?String(args.shopping_list_id):args.basket_id;review=args.shopping_list_id?{...review,draftId:undefined,saveStatus:'saved',saveProgress:undefined,items:review.items.slice(0,1)}:basketReview(selectedBasketId);return result(review)}
  if(action.kind==='delete'){const index=inventory.findIndex(basket=>basket.basketId===args.basket_id);if(index>=0)inventory.splice(index,1);if(selectedBasketId===args.basket_id)selectedBasketId=undefined;return payload({baskets:inventory,selectedBasketId,selectionRequired:true})}
  if(action.kind==='heartbeat'){window.heartbeatCalls++;review.revision++;inventory.find(basket=>basket.basketId===args.basket_id).lastActivityAt=Date.parse('2026-10-10T10:00:00.000Z');return result(review)}
  if(action.kind==='show') return result(review);
@@ -220,6 +229,7 @@ window.addEventListener('message',event=>{
 const hostDocuments = new Map([
   ["/host", parentDocument(fixtureJson)],
   ["/host-native", parentDocument(nativeFixtureJson)],
+  ["/host-partial", parentDocument(partialFixtureJson)],
   ["/host-long", parentDocument(longFixtureJson)],
   ["/host-picker", parentDocument(fixtureJson, "picker")],
   ["/host-idless", parentDocument(fixtureJson, "idless")],
@@ -1204,6 +1214,37 @@ try {
     true,
     "legacy local basket was offered for native-list submission",
   );
+
+  const partialPage = await context.newPage();
+  await partialPage.goto(`http://127.0.0.1:${address.port}/host-partial`);
+  const partialFrame = partialPage.frameLocator('iframe[title="viewer"]');
+  await partialFrame.getByRole("button", { name: "Resume saving" }).click();
+  await partialPage.waitForFunction(() => window.calls.length > 0);
+  assert.deepEqual(
+    await partialPage.evaluate(() => window.calls.at(-1)?.args),
+    {
+      action: { kind: "save", name: "Synthetic partial list" },
+      draft_id: "12345678-1234-4234-8234-123456789def",
+    },
+    "partial-list resume did not target its original draft",
+  );
+  await partialFrame
+    .getByRole("button", { name: "Review saved products only" })
+    .click();
+  await partialFrame
+    .getByRole("button", { name: "Submit to Nemlig basket" })
+    .waitFor();
+  assert.deepEqual(
+    await partialPage.evaluate(() => window.calls.at(-1)?.args),
+    { action: { kind: "select" }, shopping_list_id: 12345678 },
+    "partial-list review did not target its exact native list",
+  );
+  assert.equal(
+    await partialPage.evaluate(() => window.getReview().items.length),
+    1,
+    "partial-list review did not show only saved rows",
+  );
+  await partialPage.close();
 
   const nativePage = await context.newPage();
   await nativePage.goto(`http://127.0.0.1:${address.port}/host-native`);

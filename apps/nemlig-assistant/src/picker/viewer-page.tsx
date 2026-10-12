@@ -1323,10 +1323,31 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             )}
             {review.saveProgress && (
               <p className="status" role="status">
-                Saved {review.saveProgress.completed} of{" "}
+                Save progress: {review.saveProgress.completed} of{" "}
                 {review.saveProgress.total} products.
               </p>
             )}
+            {review.saveStatus === "partial" &&
+              review.shoppingListId !== undefined &&
+              review.saveProgress &&
+              review.saveProgress.completed > 0 && (
+                <>
+                  <p className="status">
+                    You can review the products currently in Nemlig and submit
+                    only those. Products that did not save will be left out.
+                  </p>
+                  <Button
+                    color="secondary"
+                    block
+                    disabled={busy}
+                    onClick={() =>
+                      actions.onSelectBasket(String(review.shoppingListId))
+                    }
+                  >
+                    Review saved products only
+                  </Button>
+                </>
+              )}
             {review.draftId && (
               <form
                 onSubmit={(event) => {

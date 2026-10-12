@@ -1204,6 +1204,34 @@ export class ProductReviewService {
       this.touch(owner, current);
       return structuredClone(current.snapshot);
     }
+    const partialDraftId =
+      current?.accountIdentity === accountIdentity &&
+      current.snapshot.saveStatus === "partial" &&
+      current.snapshot.shoppingListId === list.id
+        ? current.snapshot.draftId
+        : undefined;
+    if (partialDraftId && journal) {
+      const saveOperation = await journal.read(partialDraftId);
+      assertCurrentEntry();
+      if (saveOperation) {
+        if (
+          saveOperation.kind !== "save" ||
+          saveOperation.generation !== partialDraftId ||
+          saveOperation.accountIdentity !== accountIdentity ||
+          saveOperation.listId !== list.id
+        ) {
+          throw new NemligError(
+            "The interrupted save does not belong to this shopping list. Refresh before continuing.",
+          );
+        }
+        if (!(await journal.complete(partialDraftId, partialDraftId))) {
+          throw new NemligError(
+            "Could not finish the interrupted save record. Refresh before continuing.",
+          );
+        }
+        assertCurrentEntry();
+      }
+    }
     this.storeNativeListReview(owner, accountIdentity, list, snapshot);
     return structuredClone(snapshot);
   }
@@ -2041,36 +2069,50 @@ export class ProductReviewService {
     };
     stored.snapshot.saveStatus = "saving";
     delete stored.snapshot.actionNotice;
-    for (const item of stored.snapshot.items) {
-      if (present.has(item.product_id)) {
-        continue;
-      }
-      try {
-        if (signal?.aborted) {
-          throw signal.reason ?? new NemligError("Save was cancelled.");
-        }
-        await this.client.updateShoppingListProduct(
-          listId,
-          item.product_id,
-          item.quantity,
-          signal,
-        );
-      } catch (error) {
+    const missing = stored.snapshot.items.filter(
+      (item) => !present.has(item.product_id),
+    );
+    let writeFailed = false;
+    // Concurrent row updates may not compose at Nemlig; only exact readback makes a draft submittable.
+    for (let index = 0; index < missing.length; index += 2) {
+      if (signal?.aborted) {
         await markPartial(
-          `Saved ${completed} of ${stored.snapshot.items.length} products. Refresh and continue saving to reconcile the same list.`,
+          "Save was cancelled. Refresh this list before continuing.",
           completed,
         );
-        if (signal?.aborted) {
-          throw error;
-        }
-        return;
+        throw signal.reason ?? new NemligError("Save was cancelled.");
       }
-      present.set(item.product_id, item.quantity);
-      completed += 1;
+      const batch = missing.slice(index, index + 2);
+      const results = await Promise.allSettled(
+        batch.map((item) =>
+          this.client.updateShoppingListProduct!(
+            listId,
+            item.product_id,
+            item.quantity,
+            signal,
+          ),
+        ),
+      );
+      for (const [offset, result] of results.entries()) {
+        if (result.status === "fulfilled") {
+          present.set(batch[offset]!.product_id, batch[offset]!.quantity);
+        }
+      }
+      completed = present.size;
       stored.snapshot.saveProgress = {
         completed,
         total: stored.snapshot.items.length,
       };
+      if (signal?.aborted) {
+        await markPartial(
+          "Save was cancelled. Refresh this list before continuing.",
+          completed,
+        );
+        throw signal.reason ?? new NemligError("Save was cancelled.");
+      }
+      if (results.some((result) => result.status === "rejected")) {
+        writeFailed = true;
+      }
     }
     const saved = await this.client.getShoppingList(listId, signal);
     const expectedList = {
@@ -2085,9 +2127,12 @@ export class ProductReviewService {
       this.client.providerIdentity?.() !== accountIdentity ||
       shoppingListFingerprint(saved) !== shoppingListFingerprint(expectedList)
     ) {
+      const confirmed = saved.items.filter(
+        ({ productId, quantity }) => expected.get(productId) === quantity,
+      ).length;
       await markPartial(
-        `Nemlig confirmed ${completed} of ${stored.snapshot.items.length} products. Refresh the list before continuing.`,
-        Math.min(present.size, stored.snapshot.items.length),
+        `Nemlig confirmed ${confirmed} of ${stored.snapshot.items.length} products. ${writeFailed ? "A product update failed. " : ""}Refresh the list before continuing.`,
+        confirmed,
       );
       return;
     }

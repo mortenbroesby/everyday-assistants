@@ -195,11 +195,11 @@ function reviewTargetId(review: Review): string | undefined {
     : (review.draftId ?? review.basketId);
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
-  if (review.shoppingListId !== undefined) {
-    return { shopping_list_id: review.shoppingListId };
-  }
   if (review.draftId !== undefined) {
     return { draft_id: review.draftId };
+  }
+  if (review.shoppingListId !== undefined) {
+    return { shopping_list_id: review.shoppingListId };
   }
   return review.basketId ? { basket_id: review.basketId } : {};
 }
@@ -1370,6 +1370,12 @@ export function ProductViewer() {
     if (busy || !isBasketId(basketId)) {
       return;
     }
+    const targetArgs =
+      baskets.find((basket) => basket.basketId === basketId)
+        ?.nativeShoppingList ||
+      activeReview.current?.review.shoppingListId === Number(basketId)
+        ? { shopping_list_id: Number(basketId) }
+        : { basket_id: basketId };
     changeBasket(basketId);
     const heartbeat = heartbeatByBasket.current.get(basketId) ?? {
       attemptedAt: 0,
@@ -1379,10 +1385,6 @@ export function ProductViewer() {
     heartbeat.intentAt = Date.now();
     heartbeatByBasket.current.set(basketId, heartbeat);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
-    const targetArgs = baskets.find((basket) => basket.basketId === basketId)
-      ?.nativeShoppingList
-      ? { shopping_list_id: Number(basketId) }
-      : { basket_id: basketId };
     await call(
       "update_product_review",
       { action: { kind: "select" }, ...targetArgs },

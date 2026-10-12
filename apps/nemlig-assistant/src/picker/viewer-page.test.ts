@@ -174,6 +174,29 @@ test("only saved Nemlig shopping lists can be submitted to the basket", () => {
   assert.doesNotMatch(savedSubmit, /\sdisabled(?:="")?/u);
 });
 
+test("partial save offers an explicit review of the provider-confirmed subset", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  Object.assign(pageProps.model.screen.review, {
+    draftId: "draft-1",
+    shoppingListId: 44,
+    saveStatus: "partial",
+    saveProgress: { completed: 1, total: 2 },
+  });
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /Save progress: 1 of 2 products/u);
+  assert.match(markup, /Products that did not save will be left out/u);
+  assert.match(markup, />Review saved products only<\/button>/u);
+  assert.match(markup, />Resume saving<\/button>/u);
+  const submit = markup.match(
+    /<button[^>]*>[\s\S]*?Save list before review<\/button>/u,
+  )?.[0];
+  assert.ok(submit);
+  assert.match(submit, /\sdisabled(?:="")?/u);
+});
+
 test("interrupted updates show current rows separately from pending rows", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
