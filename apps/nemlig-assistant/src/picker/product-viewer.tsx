@@ -14,6 +14,13 @@ import type {
   ViewerScreen,
 } from "./viewer-page.js";
 
+export const LONG_OPERATION_TIMEOUT_MS = 660_000;
+export const viewerToolCallOptions = (signal: AbortSignal) => ({
+  signal,
+  timeout: LONG_OPERATION_TIMEOUT_MS,
+  maxTotalTimeout: LONG_OPERATION_TIMEOUT_MS,
+});
+
 declare global {
   interface Window {
     openai?: { toolOutput?: unknown };
@@ -32,6 +39,18 @@ function isUncertainFailure(
   return !recovery && (uncertainOnFailure || /uncertain/i.test(text));
 }
 
+function isReviewItem(value: unknown): value is ReviewItem {
+  return (
+    isRecord(value) &&
+    Number.isSafeInteger(value.product_id) &&
+    typeof value.quantity === "number" &&
+    Number.isSafeInteger(value.quantity) &&
+    value.quantity > 0 &&
+    (value.state === "needs-review" || value.state === "ready") &&
+    isProductView(value.view)
+  );
+}
+
 function isReview(value: unknown): value is Review {
   if (!isRecord(value) || !Array.isArray(value.items)) {
     return false;
@@ -43,22 +62,37 @@ function isReview(value: unknown): value is Review {
   )) {
     return false;
   }
-  if (
-    !value.items.every(
-      (item) =>
-        isRecord(item) &&
-        Number.isSafeInteger(item.product_id) &&
-        typeof item.quantity === "number" &&
-        Number.isSafeInteger(item.quantity) &&
-        item.quantity > 0 &&
-        (item.state === "needs-review" || item.state === "ready") &&
-        isProductView(item.view),
-    )
-  ) {
+  if (!value.items.every(isReviewItem)) {
     return false;
   }
   if (
     (value.basketId !== undefined && !isBasketId(value.basketId)) ||
+    (value.shoppingListId !== undefined &&
+      !isPositiveSafeInteger(value.shoppingListId)) ||
+    (value.shoppingListName !== undefined &&
+      typeof value.shoppingListName !== "string") ||
+    (value.draftId !== undefined && typeof value.draftId !== "string") ||
+    (value.draftExpiresAt !== undefined &&
+      !isNonnegativeSafeInteger(value.draftExpiresAt)) ||
+    (value.saveStatus !== undefined &&
+      !["saving", "saved", "partial", "uncertain"].includes(
+        String(value.saveStatus),
+      )) ||
+    (value.shoppingListDirty !== undefined &&
+      typeof value.shoppingListDirty !== "boolean") ||
+    (value.updateStatus !== undefined &&
+      !["saving", "partial", "uncertain"].includes(
+        String(value.updateStatus),
+      )) ||
+    (value.conflictItems !== undefined &&
+      (!Array.isArray(value.conflictItems) ||
+        !value.conflictItems.every(isReviewItem))) ||
+    (value.saveProgress !== undefined &&
+      (!isRecord(value.saveProgress) ||
+        !isNonnegativeSafeInteger(value.saveProgress.completed) ||
+        !isNonnegativeSafeInteger(value.saveProgress.total))) ||
+    (value.actionNotice !== undefined &&
+      typeof value.actionNotice !== "string") ||
     (value.revision !== undefined &&
       (typeof value.revision !== "number" ||
         !Number.isSafeInteger(value.revision) ||
@@ -138,13 +172,39 @@ function isReview(value: unknown): value is Review {
   }
   return true;
 }
-function isBasketId(value: unknown): value is string {
+export function isBasketId(value: unknown): value is string {
+  return (
+    typeof value === "string" &&
+    (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
+      value,
+    ) ||
+      /^[1-9]\d{0,14}$/u.test(value))
+  );
+}
+function isDraftId(value: unknown): value is string {
   return (
     typeof value === "string" &&
     /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(
       value,
     )
   );
+}
+function reviewTargetId(review: Review): string | undefined {
+  return review.shoppingListId !== undefined
+    ? String(review.shoppingListId)
+    : (review.draftId ?? review.basketId);
+}
+function reviewTargetArgs(review: Review): Record<string, unknown> {
+  if (review.shoppingListId !== undefined) {
+    return { shopping_list_id: review.shoppingListId };
+  }
+  if (review.draftId !== undefined) {
+    return { draft_id: review.draftId };
+  }
+  return review.basketId ? { basket_id: review.basketId } : {};
+}
+function isPositiveSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
@@ -171,7 +231,18 @@ function hasValidBasketIdentity(value: Record<string, unknown>) {
   );
 }
 function isBasketSummary(value: unknown): value is BasketSummary {
-  return isRecord(value) && hasValidBasketIdentity(value);
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (value.nativeShoppingList === true) {
+    return (
+      /^[1-9]\d{0,14}$/u.test(String(value.basketId)) &&
+      typeof value.shoppingListName === "string" &&
+      isNonnegativeSafeInteger(value.productCount) &&
+      value.submissionAttempted === false
+    );
+  }
+  return hasValidBasketIdentity(value);
 }
 // Keep the complete untrusted tool-payload validation at the rendering boundary.
 // fallow-ignore-next-line complexity
@@ -262,6 +333,31 @@ function isProductView(value: unknown): value is ProductView {
 function readBasketSummaries(
   envelope: Record<string, unknown>,
 ): BasketSummary[] | undefined {
+  if (envelope.shoppingLists !== undefined) {
+    if (
+      !Array.isArray(envelope.shoppingLists) ||
+      !envelope.shoppingLists.every(
+        (list) =>
+          isRecord(list) &&
+          isPositiveSafeInteger(list.id) &&
+          typeof list.name === "string" &&
+          (list.productCount === undefined ||
+            isNonnegativeSafeInteger(list.productCount)),
+      )
+    ) {
+      return undefined;
+    }
+    return envelope.shoppingLists.map((list) => {
+      const native = list as Record<string, unknown>;
+      return {
+        basketId: String(native.id),
+        nativeShoppingList: true,
+        shoppingListName: native.name as string,
+        productCount: (native.productCount as number | undefined) ?? 0,
+        submissionAttempted: false,
+      };
+    });
+  }
   if (envelope.baskets === undefined) {
     return [];
   }
@@ -274,7 +370,13 @@ function readBasketSummaries(
   return envelope.baskets;
 }
 function hasUnselectedReview(value: unknown) {
-  return isRecord(value) && isReview(value) && !isBasketId(value.basketId);
+  return (
+    isRecord(value) &&
+    isReview(value) &&
+    !isBasketId(value.basketId) &&
+    !isPositiveSafeInteger(value.shoppingListId) &&
+    !isDraftId(value.draftId)
+  );
 }
 function requiresBasketPicker(envelope: Record<string, unknown>) {
   const serverRequiresSelection =
@@ -295,9 +397,13 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (!baskets) {
     return undefined;
   }
-  const selectedBasketId = isBasketId(envelope.selectedBasketId)
-    ? envelope.selectedBasketId
-    : undefined;
+  const selectedBasketId = isPositiveSafeInteger(
+    envelope.selectedShoppingListId,
+  )
+    ? String(envelope.selectedShoppingListId)
+    : isBasketId(envelope.selectedBasketId)
+      ? envelope.selectedBasketId
+      : undefined;
   if (requiresBasketPicker(envelope)) {
     return { kind: "picker", baskets, selectedBasketId };
   }
@@ -314,7 +420,7 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (envelope.ended === true) {
     return {
       kind: "empty",
-      message: "Your Local basket was discarded. Nothing changed in Nemlig.",
+      message: "Your unsaved draft was discarded. Nothing changed in Nemlig.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -349,7 +455,7 @@ export function ProductViewer() {
   const [selectedBasketId, setSelectedBasketId] = useState<string | undefined>(
     () =>
       screen.kind === "review"
-        ? screen.review.basketId
+        ? reviewTargetId(screen.review)
         : screen.kind === "picker"
           ? screen.selectedBasketId
           : undefined,
@@ -373,6 +479,8 @@ export function ProductViewer() {
     screen.kind === "review" ? screen.review : undefined,
   );
   const callLock = useRef(false);
+  const activeToolController = useRef<AbortController | undefined>(undefined);
+  const cancelledCallPending = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
       (screen.review.submissionAttempted === true ||
@@ -392,7 +500,6 @@ export function ProductViewer() {
   >(() => new Map());
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmSubmit, setConfirmSubmit] = useState(false);
   const [confirmEnd, setConfirmEnd] = useState(false);
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(
@@ -428,7 +535,6 @@ export function ProductViewer() {
     lastConfirmedReview.current = undefined;
     setPresentationDestination(undefined);
     setReviewDisclosures(new Map());
-    setConfirmSubmit(false);
     setConfirmEnd(false);
     setContinueSubmitted(false);
     setSubmitBlocked(false);
@@ -441,6 +547,7 @@ export function ProductViewer() {
     if (selectedBasketIdRef.current === basketId) {
       return;
     }
+    activeToolController.current?.abort();
     selectionEpoch.current++;
     selectedBasketIdRef.current = basketId;
     setSelectedBasketId(basketId);
@@ -479,7 +586,6 @@ export function ProductViewer() {
       activeReview.current = inactive;
       setScreen({ kind: "review", ...inactive });
     }
-    setConfirmSubmit(false);
   }, []);
   const applyPayload = useCallback(
     (
@@ -496,7 +602,7 @@ export function ProductViewer() {
         setScreen({
           kind: "error",
           message:
-            "Could not load the Local basket. Reconnect Nemlig or try again in conversation.",
+            "Could not load the shopping list. Reconnect Nemlig or try again in conversation.",
         });
         return false;
       }
@@ -530,14 +636,16 @@ export function ProductViewer() {
         return true;
       }
       if (next.kind === "review") {
+        const nextTargetId = reviewTargetId(next.review);
         if (
+          !current &&
           selectedBasketIdRef.current &&
-          selectedBasketIdRef.current !== next.review.basketId
+          selectedBasketIdRef.current !== nextTargetId
         ) {
           return true;
         }
-        if (selectedBasketIdRef.current !== next.review.basketId) {
-          changeBasket(next.review.basketId);
+        if (selectedBasketIdRef.current !== nextTargetId) {
+          changeBasket(nextTargetId);
         }
         if (
           next.review.submission?.status === "submitted" ||
@@ -546,7 +654,10 @@ export function ProductViewer() {
         ) {
           ignorePassivePayloads.current = true;
         }
-        const sameReview = previous?.review.basketId === next.review.basketId;
+        const sameReview = Boolean(
+          previous &&
+          reviewTargetId(previous.review) === reviewTargetId(next.review),
+        );
         if (!sameReview) {
           setReviewDisclosures(new Map());
         }
@@ -605,7 +716,6 @@ export function ProductViewer() {
           return visible ?? next.review.destination;
         });
         setMessage("");
-        setConfirmSubmit(false);
       } else if (next.kind === "unavailable") {
         deactivateReview();
         activeReview.current = undefined;
@@ -645,7 +755,9 @@ export function ProductViewer() {
     onAppCreated: (host) => {
       host.ontoolresult = (result) => applyPayload(result);
       host.ontoolcancelled = () => {
+        cancelledCallPending.current = true;
         cancellationEpoch.current++;
+        activeToolController.current?.abort();
         ignorePassivePayloads.current = true;
         deactivateReview();
         setScreen({ kind: "cancelled" });
@@ -654,12 +766,15 @@ export function ProductViewer() {
         );
       };
       host.onerror = () => {
+        if (cancelledCallPending.current) {
+          return;
+        }
         ignorePassivePayloads.current = true;
         deactivateReview();
         setScreen({
           kind: "error",
           message:
-            "The Local basket connection failed. Refresh the Local basket or continue in conversation.",
+            "The shopping-list connection failed. Refresh the list or continue in conversation.",
         });
       };
     },
@@ -667,6 +782,7 @@ export function ProductViewer() {
   useHostStyles(connectedApp, connectedApp?.getHostContext());
   useEffect(
     () => () => {
+      activeToolController.current?.abort();
       if (quantityTimer.current) {
         clearTimeout(quantityTimer.current);
       }
@@ -681,10 +797,21 @@ export function ProductViewer() {
   ) => {
     ignorePassivePayloads.current = true;
     const text = cause instanceof Error ? cause.message : "Update failed";
+    if (/Nemlig changed this list/iu.test(text)) {
+      submissionFailure.current =
+        "Nemlig changed this list. Review its refreshed contents before submitting again.";
+      submitBlockedRef.current = false;
+      setSubmitBlocked(false);
+      setMessage(submissionFailure.current);
+      return;
+    }
+    if (/no basket write was sent/iu.test(text)) {
+      setMessage(text);
+      return;
+    }
     if (isUncertainFailure(recovery, uncertainOnFailure, text)) {
       submitBlockedRef.current = true;
       setSubmitBlocked(true);
-      setConfirmSubmit(false);
       setMessage(
         submissionFailure.current ??
           "Nemlig did not confirm whether the complete addition reached the basket.",
@@ -696,7 +823,7 @@ export function ProductViewer() {
     setScreen({
       kind: "error",
       message:
-        "We could not confirm this action. Refresh the Local basket to read its current state before continuing.",
+        "We could not confirm this action. Refresh the shopping list to read its current state before continuing.",
     });
   };
   // fallow-ignore-next-line complexity
@@ -714,8 +841,8 @@ export function ProductViewer() {
       if (!background) {
         setMessage(
           error
-            ? "The Local basket could not connect. Continue in conversation or reopen the current Local basket."
-            : "Connecting to the current Local basket…",
+            ? "The shopping list could not connect. Continue in conversation or reopen it."
+            : "Connecting to the current shopping list…",
         );
       }
       return false;
@@ -748,47 +875,78 @@ export function ProductViewer() {
       const action = isRecord(requestArgs.action) ? requestArgs.action : {};
       const kind = action.kind;
       if (kind !== "list") {
-        const basketId =
+        const explicitTarget =
           kind === "select" ||
           kind === "show" ||
           kind === "delete" ||
-          kind === "heartbeat"
-            ? requestArgs.basket_id
-            : (expectedSelection?.basketId ?? selectedBasketIdRef.current);
-        if (!isBasketId(basketId)) {
-          setMessage("Choose a Local basket before continuing.");
+          kind === "heartbeat";
+        const targetReview = activeReview.current?.review;
+        const targetArgs = explicitTarget
+          ? requestArgs.basket_id !== undefined
+            ? { basket_id: requestArgs.basket_id }
+            : requestArgs.shopping_list_id !== undefined
+              ? { shopping_list_id: requestArgs.shopping_list_id }
+              : requestArgs.draft_id !== undefined
+                ? { draft_id: requestArgs.draft_id }
+                : {}
+          : targetReview
+            ? reviewTargetArgs(targetReview)
+            : {};
+        const targetId =
+          targetArgs.shopping_list_id !== undefined
+            ? String(targetArgs.shopping_list_id)
+            : (targetArgs.draft_id ?? targetArgs.basket_id);
+        if (!isBasketId(targetId)) {
+          setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
-        requestArgs.basket_id = basketId;
+        delete requestArgs.basket_id;
+        delete requestArgs.draft_id;
+        delete requestArgs.shopping_list_id;
+        Object.assign(requestArgs, targetArgs);
       } else {
         delete requestArgs.basket_id;
       }
     } else if (name === "submit_product_review") {
-      if (!isBasketId(selectedBasketIdRef.current)) {
-        setMessage("Choose a Local basket before continuing.");
+      const targetReview = activeReview.current?.review;
+      if (!targetReview || targetReview.draftId) {
+        setMessage("Save this draft as a Nemlig shopping list before review.");
+        return false;
+      }
+      const targetArgs = reviewTargetArgs(targetReview);
+      if (
+        !isBasketId(
+          targetArgs.shopping_list_id !== undefined
+            ? String(targetArgs.shopping_list_id)
+            : targetArgs.basket_id,
+        )
+      ) {
+        setMessage("Choose a shopping list before continuing.");
         setScreen({ kind: "picker", baskets, selectedBasketId });
         return false;
       }
-      requestArgs.basket_id =
-        expectedSelection?.basketId ?? selectedBasketIdRef.current;
+      Object.assign(requestArgs, targetArgs);
     }
     callLock.current = true;
+    cancelledCallPending.current = false;
     if (name === "submit_product_review") {
       submissionFailure.current = undefined;
     }
     const requestEpoch = cancellationEpoch.current;
     const requestSelectionEpoch =
       expectedSelection?.epoch ?? selectionEpoch.current;
+    const requestController = new AbortController();
+    activeToolController.current = requestController;
     if (!background) {
       setBusy(true);
       setMessage("Updating…");
     }
     try {
-      const result = await connectedApp.callServerTool({
-        name,
-        arguments: requestArgs,
-      });
+      const result = await connectedApp.callServerTool(
+        { name, arguments: requestArgs },
+        viewerToolCallOptions(requestController.signal),
+      );
       if (
         requestEpoch !== cancellationEpoch.current ||
         requestSelectionEpoch !== selectionEpoch.current
@@ -825,7 +983,7 @@ export function ProductViewer() {
           setBaskets(payloadRecord.baskets);
         }
       } else if (!applyPayload(result, true, adoptPresentationDestination)) {
-        throw new Error("Could not confirm the updated Local basket.");
+        throw new Error("Could not confirm the updated shopping list.");
       }
       if (
         !background &&
@@ -846,7 +1004,7 @@ export function ProductViewer() {
         if (preserveReviewOnFailure) {
           ignorePassivePayloads.current = true;
           setMessage(
-            "Could not save the pending quantity. Keep this Local basket open and retry before switching.",
+            "Could not save the pending quantity. Keep this shopping list open and retry before switching.",
           );
         } else {
           handleCallFailure(cause, recovery, uncertainOnFailure);
@@ -854,6 +1012,9 @@ export function ProductViewer() {
       }
       return false;
     } finally {
+      if (activeToolController.current === requestController) {
+        activeToolController.current = undefined;
+      }
       callLock.current = false;
       if (!background) {
         setBusy(false);
@@ -1042,9 +1203,6 @@ export function ProductViewer() {
       false,
       expected,
     );
-    if (result && action.kind === "prepare_submission") {
-      setConfirmSubmit(false);
-    }
     return result;
   };
   const setQuantity = (item: ReviewItem, next: number) => {
@@ -1143,6 +1301,15 @@ export function ProductViewer() {
       }
     });
   };
+  const saveDraft = (name: string) => {
+    afterFlush({ kind: "save", name });
+  };
+  const updateShoppingList = () => {
+    afterFlush({ kind: "update" });
+  };
+  const discardPendingUpdate = () => {
+    afterFlush({ kind: "discard_pending_update" });
+  };
   const navigate = (next: PresentationDestination) => {
     if (next === "alternatives" && !review?.alternatives) {
       return;
@@ -1152,7 +1319,7 @@ export function ProductViewer() {
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
       setMessage(
-        "Continue in conversation to inspect or start a Local basket.",
+        "Continue in conversation to inspect a shopping list or start a draft.",
       );
       return;
     }
@@ -1167,7 +1334,7 @@ export function ProductViewer() {
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage(
-        "Continue in conversation to inspect or start a Local basket.",
+        "Continue in conversation to inspect a shopping list or start a draft.",
       );
     }
   };
@@ -1212,15 +1379,24 @@ export function ProductViewer() {
     heartbeat.intentAt = Date.now();
     heartbeatByBasket.current.set(basketId, heartbeat);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
+    const targetArgs = baskets.find((basket) => basket.basketId === basketId)
+      ?.nativeShoppingList
+      ? { shopping_list_id: Number(basketId) }
+      : { basket_id: basketId };
     await call(
       "update_product_review",
-      { action: { kind: "select" }, basket_id: basketId },
+      { action: { kind: "select" }, ...targetArgs },
       true,
       true,
     );
   };
   const deleteBasket = async (basketId: string) => {
-    if (!busy && isBasketId(basketId)) {
+    if (
+      !busy &&
+      isBasketId(basketId) &&
+      !baskets.find((basket) => basket.basketId === basketId)
+        ?.nativeShoppingList
+    ) {
       await call(
         "update_product_review",
         { action: { kind: "delete" }, basket_id: basketId },
@@ -1230,15 +1406,20 @@ export function ProductViewer() {
   };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
-      setMessage("Reconnect to read this conversation's current Local basket.");
+      setMessage(
+        "Reconnect to read this conversation's current shopping list.",
+      );
       return;
     }
     if (selectedBasketIdRef.current) {
+      const targetArgs = activeReview.current?.review
+        ? reviewTargetArgs(activeReview.current.review)
+        : { basket_id: selectedBasketIdRef.current };
       await call(
         "update_product_review",
         {
           action: { kind: "show" },
-          basket_id: selectedBasketIdRef.current,
+          ...targetArgs,
         },
         true,
       );
@@ -1252,48 +1433,49 @@ export function ProductViewer() {
       await update({ kind: "end" });
     }
   };
-  // The exact submission comparison is intentionally linear and fail-closed.
+  // Submit the exact saved list in one action; provider checks remain server-side.
+  // One user action flushes edits, binds the selected list, and fences duplicate calls.
   // fallow-ignore-next-line complexity
-  const confirmPreparedSubmission = async () => {
+  const submitCurrentBasket = async () => {
     const expected = selectionContext();
     const ok = await flushQuantities(expected);
     if (ok) {
       await waitForCallIdle();
     }
-    const confirmed = activeReview.current?.review;
-    const submissionSelection = (snapshot: Review) =>
-      JSON.stringify(
-        snapshot.items
-          .map(({ product_id, quantity }) => [product_id, quantity])
-          .sort(([left], [right]) => left - right),
-      );
+    const review = activeReview.current?.review;
     if (
       !ok ||
       expected.epoch !== selectionEpoch.current ||
       expected.basketId !== selectedBasketIdRef.current ||
-      !confirmed?.submission ||
       !review ||
-      confirmed.basketId !== selectedBasketIdRef.current ||
-      submissionSelection(confirmed) !== submissionSelection(review) ||
-      confirmed.submission.status !== "prepared" ||
-      confirmed.submission.submission_id !== review.submission?.submission_id ||
       callLock.current
     ) {
-      setConfirmSubmit(false);
+      setMessage("The shopping list changed. Refresh it before submitting.");
+      return;
+    }
+    if (
+      review.shoppingListId === undefined ||
+      review.saveStatus !== "saved" ||
+      review.shoppingListDirty ||
+      review.updateStatus !== undefined ||
+      reviewTargetId(review) !== selectedBasketIdRef.current
+    ) {
       setMessage(
-        "The prepared change changed while quantities were being saved. Prepare and review the exact change again.",
+        "Update and review the saved shopping list before submitting.",
       );
       return;
     }
     submitBlockedRef.current = true;
     setSubmitBlocked(true);
-    setConfirmSubmit(false);
     if (!activeReview.current?.active) {
       return;
     }
     const success = await call(
       "submit_product_review",
-      { submission_id: confirmed.submission.submission_id },
+      {
+        submission_id: globalThis.crypto.randomUUID(),
+        ...reviewTargetArgs(review),
+      },
       false,
       false,
       true,
@@ -1302,28 +1484,17 @@ export function ProductViewer() {
     );
     if (!success) {
       try {
-        if (
-          selectedBasketIdRef.current &&
-          (await call(
-            "update_product_review",
-            {
-              action: { kind: "show" },
-              basket_id: selectedBasketIdRef.current,
-            },
-            true,
-          ))
-        ) {
-          if (activeReview.current?.review.submission?.status === "partial") {
-            setMessage("");
-            return;
-          }
-        }
+        await call(
+          "update_product_review",
+          { action: { kind: "show" }, ...reviewTargetArgs(review) },
+          true,
+        );
       } catch {
-        // The original failure remains safely uncertain when its local state cannot be re-read.
+        // Keep the transfer failure visible if current state cannot be read.
       }
       setMessage(
         submissionFailure.current ??
-          "Nemlig did not confirm whether the complete addition reached the basket.",
+          "Nemlig did not confirm whether the basket addition completed. Inspect the basket; do not retry.",
       );
     }
   };
@@ -1357,11 +1528,10 @@ export function ProductViewer() {
         message,
         connectionMessage: !isConnected
           ? error
-            ? "Could not connect to the Local basket host."
+            ? "Could not connect to the shopping-list host."
             : "Connecting to Nemlig…"
           : undefined,
         busy,
-        confirmSubmit,
         confirmEnd,
         continueSubmitted,
         submitBlocked,
@@ -1401,10 +1571,11 @@ export function ProductViewer() {
           void update({ kind: "alternatives", product_id, query }),
         onReplace: (product_id, replacement_id) =>
           update({ kind: "replace", product_id, replacement_id }),
-        onPrepareSubmission: () => afterFlush({ kind: "prepare_submission" }),
-        onRequestSubmitConfirmation: () => setConfirmSubmit(true),
-        onCancelSubmit: () => setConfirmSubmit(false),
-        onConfirmSubmit: () => void confirmPreparedSubmission(),
+        onSaveDraft: saveDraft,
+        onUpdateShoppingList: updateShoppingList,
+        onDiscardPendingUpdate: discardPendingUpdate,
+        onSubmit: () => void submitCurrentBasket(),
+        onConfirmSubmit: () => void submitCurrentBasket(),
         onContinueSubmitted: () => {
           if (review?.submissionAttempted) {
             void openPicker();
@@ -1414,7 +1585,7 @@ export function ProductViewer() {
         },
         onInspectBasket: () =>
           void sendFollowUp(
-            "Inspect the actual Nemlig basket for this uncertain Local basket submission. Do not retry or add anything.",
+            "Inspect the actual Nemlig basket for this uncertain submission. Do not retry or add anything.",
           ),
         onSendFollowUp: (text) => void sendFollowUp(text),
         onRequestEnd: () => setConfirmEnd(true),

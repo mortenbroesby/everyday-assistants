@@ -8,9 +8,11 @@ export { NemligError } from "./nemlig-error.js";
 export const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL =
   "https://webapi.prod.knl.nemlig.it/searchgateway/api";
-export const NEMLIG_READ_ATTEMPT_TIMEOUT_MS = 60_000;
+export const NEMLIG_API_ATTEMPT_TIMEOUT_MS = 120_000;
 export const NEMLIG_READ_MAX_RETRIES = 1;
 const KNOWN_PRODUCT_LIMIT = 1_000;
+const SHOPPING_LIST_PAGE_SIZE = 6;
+const MAX_SHOPPING_LIST_PAGES = 100;
 
 const recordSchema = z.record(z.string(), z.unknown());
 const recordsSchema = z.array(recordSchema);
@@ -132,6 +134,12 @@ export interface ShoppingList {
   id: number;
   name: string;
   items: Array<{ productId: number; quantity: number }>;
+}
+export interface ShoppingListOverview {
+  id: number;
+  name: string;
+  productCount?: number;
+  totalAmount?: number;
 }
 
 /** Stable basket identity for additive writes; prices are estimates, not approval limits. */
@@ -307,6 +315,55 @@ const assertUniqueShoppingListItems = (
 ): void => {
   if (new Set(items.map((item) => item.productId)).size !== items.length) {
     throw new NemligError("Shopping list response is incomplete.");
+  }
+};
+
+const normalizeShoppingListOverviewPage = (
+  value: unknown,
+): { lists: ShoppingListOverview[]; numberOfPages: number } => {
+  const response = asRecord(value);
+  const rawLists = response.ShoppingListOverViewViewModels;
+  const numberOfPages = asNumber(response.NumberOfPages);
+  if (
+    !Array.isArray(rawLists) ||
+    numberOfPages === undefined ||
+    !Number.isSafeInteger(numberOfPages) ||
+    numberOfPages < 0
+  ) {
+    throw new NemligError("Shopping-list inventory response is incomplete.");
+  }
+  const lists = asRecords(rawLists).map((entry) => {
+    const id = asId(entry.Id);
+    const name = asString(entry.Name);
+    const productCount = asNumber(entry.ProductsCount);
+    const totalAmount = asNumber(entry.TotalAmount);
+    if (
+      id === undefined ||
+      !name?.trim() ||
+      (productCount !== undefined &&
+        (!Number.isSafeInteger(productCount) || productCount < 0))
+    ) {
+      throw new NemligError("Shopping-list inventory response is incomplete.");
+    }
+    return {
+      id,
+      name,
+      ...(productCount === undefined ? {} : { productCount }),
+      ...(totalAmount === undefined ? {} : { totalAmount }),
+    };
+  });
+  if (lists.length !== rawLists.length) {
+    throw new NemligError("Shopping-list inventory response is incomplete.");
+  }
+  assertUniqueShoppingListOverviewIds(lists);
+  return { lists, numberOfPages };
+};
+
+const assertUniqueShoppingListOverviewIds = (
+  lists: readonly ShoppingListOverview[],
+): void => {
+  if (new Set(lists.map(({ id }) => id)).size !== lists.length) {
+    throw new NemligError("Shopping-list inventory response is incomplete.");
   }
 };
 
@@ -806,6 +863,77 @@ export class NemligClient {
     return this.userId;
   }
 
+  // Reject incomplete or changing pages instead of exposing a partial inventory.
+  // fallow-ignore-next-line complexity
+  async listShoppingLists(
+    signal?: AbortSignal,
+  ): Promise<ShoppingListOverview[]> {
+    this.requireLogin("list shopping lists");
+    this.providerIdentity();
+    const take = SHOPPING_LIST_PAGE_SIZE;
+    const first = await this.getShoppingLists(0, take, signal);
+    const pageCount = Math.max(
+      Math.ceil(first.lists.length / take),
+      first.numberOfPages,
+    );
+    if (
+      (first.numberOfPages === 0 && first.lists.length > 0) ||
+      first.lists.length > take ||
+      pageCount > MAX_SHOPPING_LIST_PAGES ||
+      (pageCount > 1 && first.lists.length !== take)
+    ) {
+      throw new NemligError("Shopping-list inventory is incomplete.");
+    }
+    const lists = [...first.lists];
+    const ids = new Set(lists.map(({ id }) => id));
+    for (let page = 1; page < pageCount; page += 1) {
+      const next = await this.getShoppingLists(page * take, take, signal);
+      if (
+        next.numberOfPages !== first.numberOfPages ||
+        next.lists.length === 0 ||
+        next.lists.length > take ||
+        (page < pageCount - 1 && next.lists.length !== take) ||
+        next.lists.some(({ id }) => ids.has(id))
+      ) {
+        throw new NemligError(
+          "Shopping-list inventory changed or is incomplete.",
+        );
+      }
+      for (const list of next.lists) {
+        ids.add(list.id);
+        lists.push(list);
+      }
+    }
+    return lists;
+  }
+
+  async getShoppingLists(
+    skip = 0,
+    take = SHOPPING_LIST_PAGE_SIZE,
+    signal?: AbortSignal,
+  ): Promise<{ lists: ShoppingListOverview[]; numberOfPages: number }> {
+    this.requireLogin("list shopping lists");
+    if (
+      !Number.isSafeInteger(skip) ||
+      skip < 0 ||
+      !Number.isSafeInteger(take) ||
+      take < 1 ||
+      take > 100
+    ) {
+      throw new NemligError("Shopping-list page is invalid.");
+    }
+    const params = new URLSearchParams({
+      skip: String(skip),
+      take: String(take),
+    });
+    const response = await this.json(
+      `${API_BASE_URL}/ShoppingList/GetShoppingLists?${params}`,
+      { signal },
+      "List shopping lists",
+    );
+    return normalizeShoppingListOverviewPage(response);
+  }
+
   async getShoppingList(
     listId: number,
     signal?: AbortSignal,
@@ -825,7 +953,10 @@ export class NemligClient {
     );
   }
 
-  async createShoppingList(name: string): Promise<number> {
+  async createShoppingList(
+    name: string,
+    signal?: AbortSignal,
+  ): Promise<number> {
     this.requireLogin("create a shopping list");
     const normalized = name.trim();
     if (!normalized || normalized.length > 30) {
@@ -834,7 +965,7 @@ export class NemligClient {
     const query = `name=${encodeURIComponent(normalized)}`;
     const value = await this.json(
       `${API_BASE_URL}/ShoppingList/CreateShoppingList?${query}`,
-      { method: "POST" },
+      { method: "POST", signal },
       "Create shopping list",
       false,
     );
@@ -852,6 +983,7 @@ export class NemligClient {
     listId: number,
     productId: number,
     quantity: number,
+    signal?: AbortSignal,
   ): Promise<void> {
     this.requireLogin("update a shopping list");
     if (
@@ -869,18 +1001,25 @@ export class NemligClient {
       productId: String(productId),
       amount: String(quantity),
     });
-    await this.json(
+    const response = await this.json(
       `${API_BASE_URL}/ShoppingList/UpdateProductInShoppingList?${params}`,
-      { method: "POST" },
+      { method: "POST", signal },
       "Update shopping list product",
       false,
       false,
       true,
       true,
     );
+    const failures = asRecord(asRecord(response).List).ValidationFailures;
+    if (Array.isArray(failures) && failures.length > 0) {
+      throw new NemligError("Nemlig rejected the shopping-list update.");
+    }
   }
 
-  async deleteShoppingList(listId: number): Promise<void> {
+  async deleteShoppingList(
+    listId: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     this.requireLogin("delete a shopping list");
     if (!Number.isSafeInteger(listId) || listId < 1) {
       throw new NemligError("Shopping list ID must be positive.");
@@ -888,7 +1027,7 @@ export class NemligClient {
     const params = new URLSearchParams({ listId: String(listId) });
     await this.json(
       `${API_BASE_URL}/ShoppingList/RemoveShoppingList?${params}`,
-      { method: "POST" },
+      { method: "POST", signal },
       "Delete shopping list",
       false,
       false,
@@ -897,7 +1036,10 @@ export class NemligClient {
     );
   }
 
-  async addShoppingListToCart(listId: number): Promise<void> {
+  async addShoppingListToCart(
+    listId: number,
+    signal?: AbortSignal,
+  ): Promise<void> {
     this.requireLogin("add a shopping list to the basket");
     if (!Number.isSafeInteger(listId) || listId < 1) {
       throw new NemligError("Shopping list ID must be positive.");
@@ -907,6 +1049,7 @@ export class NemligClient {
       {
         method: "POST",
         body: JSON.stringify({ ListId: listId, ConfirmMissingProducts: false }),
+        signal,
       },
       "Add shopping list to basket",
       false,
@@ -1328,7 +1471,7 @@ export class NemligClient {
       attempt += 1
     ) {
       throwIfAborted(init.signal);
-      const attemptSignal = AbortSignal.timeout(NEMLIG_READ_ATTEMPT_TIMEOUT_MS);
+      const attemptSignal = AbortSignal.timeout(NEMLIG_API_ATTEMPT_TIMEOUT_MS);
       try {
         const headers = new Headers(init.headers);
         headers.set("Accept", "application/json, text/plain, */*");
@@ -1474,6 +1617,7 @@ export type ShoppingClient = Pick<
 export type ShoppingListClient = Pick<
   NemligClient,
   | "providerIdentity"
+  | "listShoppingLists"
   | "getShoppingList"
   | "createShoppingList"
   | "updateShoppingListProduct"

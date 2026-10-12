@@ -64,7 +64,75 @@ const editSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("attempt-submission") }),
   z.object({ kind: z.literal("complete-submission") }),
 ]);
+const reviewOperationSchema = z
+  .object({
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+    accountIdentity: z.string().min(1).max(512),
+    kind: z.enum(["save", "update", "submit"]),
+    name: z.string().min(1).max(30),
+    createAttempted: z.boolean().optional(),
+    dispatchAttempted: z.boolean().optional(),
+    completed: z.boolean().optional(),
+    cleanupStatus: z
+      .enum(["pending", "deleted", "retained", "uncertain"])
+      .optional(),
+    cleanupWarning: z.string().max(500).optional(),
+    listId: z.number().int().positive().optional(),
+    items: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .max(500),
+    baseline: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .max(500)
+      .optional(),
+    progress: z
+      .object({
+        completed: z.number().int().nonnegative(),
+        total: z.number().int().positive().max(500),
+      })
+      .optional(),
+    completedUntil: z.number().int().nonnegative().optional(),
+  })
+  .superRefine((operation, context) => {
+    if (operation.kind === "save" && !operation.items.length) {
+      context.addIssue({ code: "custom", message: "Save intent is empty." });
+    }
+  });
 const callbackCommandSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("review-operation-read"),
+    operationId: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-claim"),
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-release"),
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+  }),
+  z.object({
+    kind: z.literal("review-operation-write"),
+    operation: reviewOperationSchema,
+  }),
+  z.object({
+    kind: z.literal("review-operation-complete"),
+    operationId: z.string().min(1).max(128),
+    generation: z.string().min(1).max(128),
+  }),
   z.object({ kind: z.literal("list") }),
   z.object({
     kind: z.literal("selection"),
@@ -97,6 +165,12 @@ const callbackCommandSchema = z.discriminatedUnion("kind", [
 
 const storageFailureResponse = (error: unknown): Response => {
   const code = serializedLocalBasketFailureCode(error);
+  if (code === "LOCAL_BASKET_OPERATION_CAPACITY") {
+    return new Response(
+      "Shopping-list recovery storage is full. This Save, Update, or Submit did not reach Nemlig; use an existing list and do not retry an uncertain transfer.",
+      { status: 429 },
+    );
+  }
   if (code === "LOCAL_BASKET_NOT_FOUND") {
     return new Response("Local basket is unavailable.", { status: 404 });
   }
