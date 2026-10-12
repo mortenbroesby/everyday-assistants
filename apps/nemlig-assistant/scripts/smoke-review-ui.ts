@@ -337,7 +337,7 @@ document.getElementById('run').onclick = async () => {
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===2&&item.quantity===3)));
   const refreshed=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
   check(JSON.stringify(refreshed.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,2],[2,3]]),'Refreshing did not show the current native-list contents');
-  check(text().includes('Nemlig changed this list'),'Changed-list rejection was not shown after refresh');
+  await wait(()=>text().includes('Nemlig changed this list'));
   check(!button('Submit to Nemlig basket').disabled,'Refreshed native list was unavailable for deliberate submission');
   click('Submit to Nemlig basket');
   await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
