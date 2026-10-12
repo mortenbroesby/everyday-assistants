@@ -1800,7 +1800,7 @@ test("draft save writes at most two products concurrently and verifies the actua
 
 test("draft save reports provider-confirmed count when concurrent updates lose a row", async () => {
   let created = false;
-  const { journal, read } = createDurableReviewJournal("owner");
+  const { journal } = createDurableReviewJournal("owner");
   let native = {
     id: 46,
     name: "List",
@@ -1845,7 +1845,7 @@ test("draft save reports provider-confirmed count when concurrent updates lose a
     journal,
   );
   assert.equal(savedSubset.saveStatus, "saved");
-  assert.ok((await read(draft.draftId!))?.completedUntil);
+  assert.ok((await journal.read(draft.draftId!))?.completedUntil);
   assert.deepEqual(
     savedSubset.items.map(({ product_id }) => product_id),
     native.items.map(({ productId }) => productId),
