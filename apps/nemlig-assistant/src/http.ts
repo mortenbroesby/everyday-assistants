@@ -32,7 +32,6 @@ import {
 } from "./auth0.js";
 import { NemligClient, type ShoppingClient } from "./client.js";
 import { createMcpServer, serviceAcceptanceToolInventory } from "./mcp.js";
-import { isCredentialFreeMcpCall } from "./credential-free-mcp.js";
 import {
   PRODUCT_VIEWER_RESOURCE_URI,
   readProductViewerArtifact,
@@ -130,18 +129,7 @@ const isCredentialFreeRequest = (request: Request): boolean => {
   if (typeof method !== "string") {
     return false;
   }
-  if (method !== "tools/call") {
-    return true;
-  }
-  const params = (body as { params?: unknown }).params;
-  if (!params || typeof params !== "object" || Array.isArray(params)) {
-    return false;
-  }
-  const { name, arguments: args } = params as {
-    name?: unknown;
-    arguments?: unknown;
-  };
-  return isCredentialFreeMcpCall(name, args);
+  return method !== "tools/call";
 };
 
 type Request = IncomingMessage & {
