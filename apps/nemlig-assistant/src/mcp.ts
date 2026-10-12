@@ -693,11 +693,11 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         });
       },
       async complete(operationId, generation) {
-        await repository.mutate({
+        return (await repository.mutate({
           kind: "review-operation-complete",
           operationId,
           generation,
-        });
+        })) as boolean;
       },
     };
   };

@@ -560,6 +560,7 @@ export interface ReviewOperation {
   items: Array<{ productId: number; quantity: number }>;
   baseline?: Array<{ productId: number; quantity: number }>;
   progress?: { completed: number; total: number };
+  createdAt?: number;
   completedUntil?: number;
 }
 

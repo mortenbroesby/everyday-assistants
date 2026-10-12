@@ -73,11 +73,11 @@ export function loadGatewayConfig(env: CloudflareEnv): GatewayConfig {
     "MCP_CONTROL_TIMEOUT_MS",
     10_000,
   );
-  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 630_000);
+  const totalTimeoutMs = boundedInteger(env, "MCP_TOTAL_TIMEOUT_MS", 90_000);
   const backendTimeoutMs = boundedInteger(
     env,
     "MCP_BACKEND_TIMEOUT_MS",
-    600_000,
+    85_000,
   );
   if (authTimeoutMs >= totalTimeoutMs) {
     throw new Error(

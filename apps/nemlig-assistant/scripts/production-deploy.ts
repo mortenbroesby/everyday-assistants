@@ -603,9 +603,9 @@ export function verifyCandidateVersion(
   const values = bindings(parsed);
   const expectedText: Record<string, string> = {
     MCP_AUTH_TIMEOUT_MS: "5000",
-    MCP_BACKEND_TIMEOUT_MS: "600000",
+    MCP_BACKEND_TIMEOUT_MS: "85000",
     MCP_CONTROL_TIMEOUT_MS: "3000",
-    MCP_TOTAL_TIMEOUT_MS: "630000",
+    MCP_TOTAL_TIMEOUT_MS: "90000",
   };
   for (const [name, text] of Object.entries(expectedText)) {
     if (values.get(name)?.text !== text) {

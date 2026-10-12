@@ -12,6 +12,7 @@ import {
 const INDEX_KEY = "owner-local-basket-index";
 const REVIEW_OPERATION_INDEX_KEY = "owner-review-operation-index";
 const REVIEW_OPERATION_RETENTION_MS = 2 * 60 * 60 * 1000;
+const PENDING_SAVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_DURABLE_VALUE_BYTES = 1024 * 1024;
 
 export interface LocalBasketStorageAccess {
@@ -314,11 +315,32 @@ export const mutateOwnerLocalBasketInventory = async (
       if (index && index.ownerId !== ownerId) {
         throw new Error("Review operation is unavailable.");
       }
-      const operations = (index?.operations ?? []).filter(
-        ({ completedUntil }) =>
-          completedUntil === undefined || completedUntil > now,
-      );
-      if (index && operations.length !== index.operations.length) {
+      const operations = (index?.operations ?? [])
+        .map((operation) =>
+          operation.kind === "save" &&
+          !operation.createAttempted &&
+          operation.listId === undefined &&
+          operation.createdAt === undefined
+            ? { ...operation, createdAt: now }
+            : operation,
+        )
+        .filter((operation) => {
+          if (operation.completedUntil !== undefined) {
+            return operation.completedUntil > now;
+          }
+          // A claimed create may have reached Nemlig without returning its list ID.
+          return !(
+            operation.kind === "save" &&
+            !operation.createAttempted &&
+            operation.listId === undefined &&
+            operation.createdAt !== undefined &&
+            operation.createdAt + PENDING_SAVE_RETENTION_MS <= now
+          );
+        });
+      if (
+        index &&
+        JSON.stringify(operations) !== JSON.stringify(index.operations)
+      ) {
         if (operations.length) {
           await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
             ownerId,
@@ -451,9 +473,10 @@ export const mutateOwnerLocalBasketInventory = async (
       }
       const merged = current
         ? replaceCompleted
-          ? operation
+          ? { ...operation, createdAt: operation.createdAt ?? now }
           : {
               ...operation,
+              createdAt: current.createdAt ?? operation.createdAt ?? now,
               createAttempted:
                 current.createAttempted || operation.createAttempted,
               dispatchAttempted:
@@ -479,7 +502,7 @@ export const mutateOwnerLocalBasketInventory = async (
                 ? { completedUntil: current.completedUntil }
                 : {}),
             }
-        : operation;
+        : { ...operation, createdAt: operation.createdAt ?? now };
       const updated = [
         ...operations.filter(
           ({ operationId }) => operationId !== operation.operationId,

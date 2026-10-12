@@ -169,7 +169,7 @@ export interface ReviewOperationJournal {
   claim(operationId: string, generation: string): Promise<boolean>;
   release?(operationId: string, generation: string): Promise<boolean>;
   write(operation: ReviewOperation): Promise<void>;
-  complete(operationId: string, generation: string): Promise<void>;
+  complete(operationId: string, generation: string): Promise<void | boolean>;
 }
 
 const completeNativeListUpdate = async (
@@ -1489,7 +1489,8 @@ export class ProductReviewService {
       }
       if (
         stored.snapshot.updateStatus === "partial" &&
-        action.kind !== "update"
+        action.kind !== "update" &&
+        stored.snapshot.actionNotice
       ) {
         throw new NemligError(
           "Resume the pending update or discard it after reviewing the current Nemlig list before changing the staged items.",
@@ -1547,24 +1548,35 @@ export class ProductReviewService {
       const operationId = updateOperationId(listId);
       try {
         const pending = await journal.read(operationId);
-        const generation =
-          pending && !pending.completedUntil
-            ? pending.generation
-            : randomUUID();
         const items = [...desired].map(([productId, quantity]) => ({
           productId,
           quantity,
         }));
-        if (pending && pending.completedUntil === undefined) {
+        const samePending =
+          pending?.completedUntil === undefined &&
+          pending?.kind === "update" &&
+          pending.accountIdentity === accountIdentity &&
+          pending.listId === listId &&
+          pending.name === current.name &&
+          JSON.stringify(pending.items) === JSON.stringify(items);
+        if (pending && pending.completedUntil === undefined && !samePending) {
           if (
             pending.kind !== "update" ||
             pending.accountIdentity !== accountIdentity ||
-            pending.listId !== listId ||
-            JSON.stringify(pending.items) !== JSON.stringify(items)
+            pending.listId !== listId
           ) {
             throw new Error("A different shopping-list update is unresolved.");
           }
-        } else {
+          const retired = await journal.complete(
+            operationId,
+            pending.generation,
+          );
+          if (retired === false) {
+            throw new Error("The pending update changed during recovery.");
+          }
+        }
+        const generation = samePending ? pending.generation : randomUUID();
+        if (!samePending) {
           await journal.write({
             operationId,
             generation,

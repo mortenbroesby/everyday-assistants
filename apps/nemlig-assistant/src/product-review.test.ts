@@ -106,11 +106,11 @@ const createDurableReviewJournal = (ownerId: string) => {
         });
       },
       async complete(operationId: string, generation: string) {
-        await mutateOwnerLocalBasketInventory(storage, ownerId, {
+        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
           kind: "review-operation-complete",
           operationId,
           generation,
-        });
+        })) as boolean;
       },
     } satisfies ReviewOperationJournal,
     read(operationId: string) {
@@ -1460,6 +1460,58 @@ test("discarding an interrupted update holds its lock through renamed-list readb
     (await journal.read("native-list-update:44"))?.completedUntil !== undefined,
     true,
   );
+});
+
+test("a changed intent recovers an interrupted update through the durable journal", async () => {
+  const { journal, read } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-update:44",
+    generation: "update-1",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  });
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      writes++;
+      native.items = [{ productId, quantity }];
+    },
+  });
+  await service.openShoppingList("owner", 44, undefined, journal);
+  const previousGeneration = (await journal.read("native-list-update:44"))
+    ?.generation;
+  await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 3,
+  });
+  const saved = await service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "update" },
+    undefined,
+    journal,
+  );
+
+  assert.equal(saved.saveStatus, "saved");
+  assert.equal(native.items[0]?.quantity, 3);
+  assert.equal(writes, 1);
+  const updated = (await read("native-list-update:44")) as ReviewOperation;
+  assert.notEqual(updated?.generation, previousGeneration);
+  assert.ok(updated?.completedUntil);
 });
 
 test("discarding a pending update retires only a confirmed deleted list", async () => {

@@ -55,11 +55,11 @@ const version = (
       bindings: [
         ...[
           ["MCP_AUTH_TIMEOUT_MS", "5000"],
-          ["MCP_BACKEND_TIMEOUT_MS", "600000"],
+          ["MCP_BACKEND_TIMEOUT_MS", "85000"],
           ["MCP_CREDENTIAL_ONBOARDING_ENABLED", "false"],
           ["MCP_CONTROL_TIMEOUT_MS", "3000"],
           ["MCP_ENABLED", String(enabled)],
-          ["MCP_TOTAL_TIMEOUT_MS", "630000"],
+          ["MCP_TOTAL_TIMEOUT_MS", "90000"],
           ["NEMLIG_MCP_CREDENTIAL_KEY_VERSION", "one"],
           ["NEMLIG_MCP_AUTH0_AUDIENCE", "https://nemlig-mcp.broesby.dk/mcp"],
           [
@@ -119,8 +119,8 @@ const config = (path: string) => ({
     MCP_ENABLED: "false",
     MCP_AUTH_TIMEOUT_MS: "5000",
     MCP_CONTROL_TIMEOUT_MS: "3000",
-    MCP_TOTAL_TIMEOUT_MS: "630000",
-    MCP_BACKEND_TIMEOUT_MS: "600000",
+    MCP_TOTAL_TIMEOUT_MS: "90000",
+    MCP_BACKEND_TIMEOUT_MS: "85000",
     MCP_CREDENTIAL_ONBOARDING_ENABLED: "false",
     NEMLIG_MCP_CREDENTIAL_KEY_VERSION: "one",
     NEMLIG_MCP_HTTP_HOST: "0.0.0.0",
