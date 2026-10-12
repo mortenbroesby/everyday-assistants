@@ -89,7 +89,7 @@
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@storybook/react-vite": "10.6.1",
     "@types/html-to-text": "9.0.4",
-    "@types/node": "24.13.0",
+    "@types/node": "26.6.4",
     "@types/react": "19.2.7",
     "@types/react-dom": "19.2.3",
     "@types/semver": "7.8.0",

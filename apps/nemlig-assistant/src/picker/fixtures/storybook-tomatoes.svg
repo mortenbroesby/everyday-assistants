@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Tomato can">
+  <rect width="320" height="320" fill="#f7eee8"/>
+  <rect x="88" y="38" width="144" height="244" rx="18" fill="#b9332e"/>
+  <rect x="88" y="38" width="144" height="24" rx="12" fill="#ddd8ca"/>
+  <rect x="88" y="258" width="144" height="24" rx="12" fill="#ddd8ca"/>
+  <circle cx="160" cy="151" r="49" fill="#e95b48"/>
+  <path d="M160 96l11 18 21-5-13 18 12 18-22-5-9 20-9-20-22 5 12-18-13-18 21 5z" fill="#2b7645"/>
+  <text x="160" y="224" fill="#fff8f0" font-family="Arial, sans-serif" font-size="20" font-weight="700" text-anchor="middle">TOMATER</text>
+</svg>
