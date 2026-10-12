@@ -124,6 +124,14 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
       reads += 1;
       return empty;
     },
+    providerIdentity: () => {
+      assert.equal(loggedIn, true);
+      return "owner";
+    },
+    listShoppingLists: async () => {
+      assert.equal(loggedIn, true);
+      return [];
+    },
     addToCart: async () => {
       writes += 1;
       throw new Error("unapproved write");
@@ -226,6 +234,16 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
         fetch: edgeFetch,
       }),
     );
+    const initialLists = await client.callTool({
+      name: "update_product_review",
+      arguments: { action: { kind: "show" } },
+    });
+    assert.notEqual(initialLists.isError, true);
+    assert.deepEqual(
+      (initialLists.structuredContent as { shoppingLists?: unknown })
+        ?.shoppingLists,
+      [],
+    );
     for (let index = 0; index < 501; index += 1) {
       const result = await client.callTool({
         name: "show_my_basket",
@@ -248,9 +266,18 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
         "rate removal must not bypass exact approval",
       );
     }
+    const lists = await client.callTool({
+      name: "start_product_review",
+      arguments: {},
+    });
+    assert.notEqual(lists.isError, true);
+    assert.deepEqual(
+      (lists.structuredContent as { shoppingLists?: unknown })?.shoppingLists,
+      [],
+    );
     assert.equal(reads, 501);
     assert.equal(writes, 0);
-    assert.equal(usefulAdmissions, 531);
+    assert.equal(usefulAdmissions, 533);
     assert.equal(records.has("usage"), false);
   } finally {
     await client.close();
@@ -780,17 +807,9 @@ test("current family stateless requests decrypt credentials and isolate credenti
   }
 });
 
-test("authenticated local-only basket requests keep capabilities request-scoped", async () => {
-  const observed: Array<{ capability: string; kind: string }> = [];
+test("stale Local basket requests without credentials cannot reach native inventory", async () => {
+  let legacyStorageRequests = 0;
   const basketId = "00000000-0000-4000-8000-000000000099";
-  const basket = {
-    basketId,
-    createdAt: 1,
-    lastActivityAt: 2,
-    expiresAt: 86_400_002,
-    revision: 1,
-    lines: [],
-  };
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url =
@@ -802,23 +821,8 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
     if (url !== "http://local-basket-state.internal/inventory") {
       return originalFetch(input, init);
     }
-    const command = JSON.parse(String(init?.body)) as { kind: string };
-    const capability = new Headers(init?.headers).get(
-      "x-nemlig-local-basket-capability",
-    );
-    assert.ok(capability);
-    observed.push({ capability, kind: command.kind });
-    await new Promise((resolve) => setTimeout(resolve, 5));
-    if (command.kind === "list") {
-      return Response.json([]);
-    }
-    if (command.kind === "delete") {
-      return Response.json({ deleted: true });
-    }
-    if (command.kind === "selection") {
-      return Response.json(null);
-    }
-    return Response.json(basket);
+    legacyStorageRequests += 1;
+    throw new Error("Legacy Local basket storage must stay unused");
   };
 
   let providerTouches = 0;
@@ -877,66 +881,40 @@ test("authenticated local-only basket requests keep capabilities request-scoped"
   const first = await connect("request-capability-one");
   const second = await connect("request-capability-two");
   try {
-    const [firstList, secondList] = await Promise.all([
-      first.callTool({
-        name: "update_product_review",
-        arguments: { action: { kind: "list" } },
-      }),
-      second.callTool({
-        name: "update_product_review",
-        arguments: { action: { kind: "list" } },
-      }),
-    ]);
-    assert.equal(firstList.isError, undefined);
-    assert.equal(secondList.isError, undefined);
-
-    for (const action of [
-      { kind: "show" },
-      { kind: "select" },
-      { kind: "heartbeat" },
-      { kind: "delete" },
-    ]) {
-      const result = await first.callTool({
-        name: "update_product_review",
-        arguments: {
-          ...(action.kind === "show" ? {} : { basket_id: basketId }),
-          action,
+    for (const client of [first, second]) {
+      for (const request of [
+        {
+          name: "update_product_review",
+          arguments: { action: { kind: "show" } },
         },
-      });
-      assert.equal(result.isError, undefined, JSON.stringify(action));
+        ...["select", "heartbeat", "delete"].map((kind) => ({
+          name: "update_product_review",
+          arguments: { basket_id: basketId, action: { kind } },
+        })),
+        {
+          name: "update_product_review",
+          arguments: {
+            basket_id: basketId,
+            action: { kind: "add", items: [{ product_id: 1, quantity: 1 }] },
+          },
+        },
+        {
+          name: "submit_product_review",
+          arguments: {
+            basket_id: basketId,
+            submission_id: crypto.randomUUID(),
+          },
+        },
+      ]) {
+        await assert.rejects(
+          client.callTool(request),
+          (error: unknown) =>
+            (error as { data?: { status?: number } }).data?.status === 403,
+        );
+      }
     }
 
-    for (const request of [
-      {
-        name: "update_product_review",
-        arguments: {
-          basket_id: basketId,
-          action: { kind: "add", items: [{ product_id: 1, quantity: 1 }] },
-        },
-      },
-      {
-        name: "submit_product_review",
-        arguments: { basket_id: basketId, submission_id: crypto.randomUUID() },
-      },
-    ]) {
-      await assert.rejects(
-        first.callTool(request),
-        (error: unknown) =>
-          (error as { data?: { status?: number } }).data?.status === 403,
-      );
-    }
-
-    assert.ok(
-      observed.some((entry) => entry.capability === "request-capability-one"),
-    );
-    assert.ok(
-      observed.some((entry) => entry.capability === "request-capability-two"),
-    );
-    assert.equal(
-      observed.filter((entry) => entry.kind === "list").length,
-      6,
-      "local-only UI operations all reached the authenticated callback",
-    );
+    assert.equal(legacyStorageRequests, 0);
     assert.equal(providerTouches, 0);
   } finally {
     await Promise.all([first.close(), second.close()]);
@@ -1106,6 +1084,29 @@ test("family HTTP denies unknown, disabled and mismatched identities before crea
           id: 1,
           method: "tools/call",
           params: { name: "show_my_basket", arguments: {} },
+        }),
+      });
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), {
+        error: "principal_not_allowed",
+      });
+    }
+    for (const [name, args] of [
+      ["start_product_review", {}],
+      ["update_product_review_conversation", { action: { kind: "list" } }],
+    ] as const) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer owner",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
         }),
       });
       assert.equal(response.status, 403);

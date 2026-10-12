@@ -1,13 +1,18 @@
 import {
   applyLocalBasketCommand,
+  LocalBasketOperationCapacityError,
   LocalBasketNotFoundError,
   type LocalBasket,
   type LocalBasketCommand,
   type LocalBasketLine,
   type OwnerLocalBasketInventory,
+  type ReviewOperation,
 } from "./local-basket.js";
 
 const INDEX_KEY = "owner-local-basket-index";
+const REVIEW_OPERATION_INDEX_KEY = "owner-review-operation-index";
+const REVIEW_OPERATION_RETENTION_MS = 2 * 60 * 60 * 1000;
+const PENDING_SAVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_DURABLE_VALUE_BYTES = 1024 * 1024;
 
 export interface LocalBasketStorageAccess {
@@ -31,6 +36,17 @@ interface OwnerBasketIndex {
   baskets: StoredBasket[];
   selections?: Record<string, string>;
 }
+interface OwnerReviewOperations {
+  ownerId: string;
+  operations: ReviewOperation[];
+}
+
+const sameReviewItems = (
+  left: ReviewOperation["items"],
+  right: ReviewOperation["items"],
+): boolean =>
+  JSON.stringify([...left].sort((a, b) => a.productId - b.productId)) ===
+  JSON.stringify([...right].sort((a, b) => a.productId - b.productId));
 
 const lineKey = (basketId: string, productId: number): string =>
   `line:${basketId}:${productId}`;
@@ -286,6 +302,224 @@ export const mutateOwnerLocalBasketInventory = async (
   // Dispatch stays inside one transaction so cleanup and record edits cannot partially persist.
   // fallow-ignore-next-line complexity
   return storage.transaction(async (transaction) => {
+    if (
+      command.kind === "review-operation-read" ||
+      command.kind === "review-operation-claim" ||
+      command.kind === "review-operation-release" ||
+      command.kind === "review-operation-write" ||
+      command.kind === "review-operation-complete"
+    ) {
+      const index = await transaction.get<OwnerReviewOperations>(
+        REVIEW_OPERATION_INDEX_KEY,
+      );
+      if (index && index.ownerId !== ownerId) {
+        throw new Error("Review operation is unavailable.");
+      }
+      const operations = (index?.operations ?? [])
+        .map((operation) =>
+          operation.kind === "save" &&
+          !operation.createAttempted &&
+          operation.listId === undefined &&
+          operation.createdAt === undefined
+            ? { ...operation, createdAt: now }
+            : operation,
+        )
+        .filter((operation) => {
+          if (operation.completedUntil !== undefined) {
+            return operation.completedUntil > now;
+          }
+          // A claimed create may have reached Nemlig without returning its list ID.
+          return !(
+            operation.kind === "save" &&
+            !operation.createAttempted &&
+            operation.listId === undefined &&
+            operation.createdAt !== undefined &&
+            operation.createdAt + PENDING_SAVE_RETENTION_MS <= now
+          );
+        });
+      if (
+        index &&
+        JSON.stringify(operations) !== JSON.stringify(index.operations)
+      ) {
+        if (operations.length) {
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations,
+          });
+        } else {
+          await transaction.delete(REVIEW_OPERATION_INDEX_KEY);
+        }
+      }
+      if (command.kind === "review-operation-claim") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (
+          !current ||
+          current.generation !== command.generation ||
+          current.completed ||
+          (current.kind === "submit"
+            ? current.dispatchAttempted
+            : current.createAttempted)
+        ) {
+          return false;
+        }
+        const updated = operations.map((operation) =>
+          operation.operationId === command.operationId
+            ? operation.kind === "submit"
+              ? { ...operation, dispatchAttempted: true }
+              : { ...operation, createAttempted: true }
+            : operation,
+        );
+        await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+          ownerId,
+          operations: updated,
+        });
+        return true;
+      }
+      if (command.kind === "review-operation-release") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (
+          !current ||
+          current.kind !== "submit" ||
+          current.generation !== command.generation ||
+          current.completed
+        ) {
+          return false;
+        }
+        const updated = operations.filter(
+          ({ operationId }) => operationId !== command.operationId,
+        );
+        if (updated.length) {
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations: updated,
+          });
+        } else {
+          await transaction.delete(REVIEW_OPERATION_INDEX_KEY);
+        }
+        return true;
+      }
+      if (command.kind === "review-operation-read") {
+        return structuredClone(
+          operations.find(
+            ({ operationId }) => operationId === command.operationId,
+          ),
+        );
+      }
+      if (command.kind === "review-operation-complete") {
+        const current = operations.find(
+          ({ operationId }) => operationId === command.operationId,
+        );
+        if (current && current.generation !== command.generation) {
+          return false;
+        }
+        if (current) {
+          const completed =
+            current.kind === "submit"
+              ? { ...current, completed: true }
+              : {
+                  ...current,
+                  completedUntil: now + REVIEW_OPERATION_RETENTION_MS,
+                };
+          const updated = operations.map((operation) =>
+            operation.operationId === command.operationId
+              ? completed
+              : operation,
+          );
+          await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+            ownerId,
+            operations: updated,
+          });
+        }
+        return Boolean(current);
+      }
+      const operation = command.operation;
+      const current = operations.find(
+        ({ operationId }) => operationId === operation.operationId,
+      );
+      const sameCompletedSubmission =
+        current?.kind === "submit" &&
+        current.completed === true &&
+        operation.kind === "submit" &&
+        current.accountIdentity === operation.accountIdentity &&
+        current.listId === operation.listId &&
+        sameReviewItems(current.items, operation.items);
+      const replaceCompleted =
+        (current?.completed === true ||
+          current?.completedUntil !== undefined ||
+          (current?.kind === "submit" && !current.dispatchAttempted)) &&
+        operation.generation !== current.generation &&
+        !sameCompletedSubmission;
+      if (
+        current &&
+        !replaceCompleted &&
+        (current.accountIdentity !== operation.accountIdentity ||
+          current.generation !== operation.generation ||
+          current.kind !== operation.kind ||
+          current.name !== operation.name ||
+          JSON.stringify(current.items) !== JSON.stringify(operation.items) ||
+          JSON.stringify(current.baseline) !==
+            JSON.stringify(operation.baseline) ||
+          (current.listId !== undefined &&
+            operation.listId !== undefined &&
+            current.listId !== operation.listId))
+      ) {
+        throw new Error(
+          "A different shopping-list operation is already pending.",
+        );
+      }
+      const merged = current
+        ? replaceCompleted
+          ? { ...operation, createdAt: operation.createdAt ?? now }
+          : {
+              ...operation,
+              createdAt: current.createdAt ?? operation.createdAt ?? now,
+              createAttempted:
+                current.createAttempted || operation.createAttempted,
+              dispatchAttempted:
+                current.dispatchAttempted || operation.dispatchAttempted,
+              completed: current.completed || operation.completed,
+              ...(current.listId !== undefined
+                ? { listId: current.listId }
+                : {}),
+              ...(current.progress && operation.progress
+                ? {
+                    progress: {
+                      completed: Math.max(
+                        current.progress.completed,
+                        operation.progress.completed,
+                      ),
+                      total: operation.progress.total,
+                    },
+                  }
+                : current.progress && !operation.progress
+                  ? { progress: current.progress }
+                  : {}),
+              ...(current.completedUntil !== undefined
+                ? { completedUntil: current.completedUntil }
+                : {}),
+            }
+        : { ...operation, createdAt: operation.createdAt ?? now };
+      const updated = [
+        ...operations.filter(
+          ({ operationId }) => operationId !== operation.operationId,
+        ),
+        merged,
+      ];
+      try {
+        enforceValueLimit({ ownerId, operations: updated });
+      } catch {
+        throw new LocalBasketOperationCapacityError();
+      }
+      await transaction.put(REVIEW_OPERATION_INDEX_KEY, {
+        ownerId,
+        operations: updated,
+      });
+      return undefined;
+    }
     let index = await readIndex(transaction, ownerId);
     index = await pruneExpired(transaction, index, now);
     if (command.kind === "selection") {
