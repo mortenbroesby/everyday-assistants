@@ -3157,7 +3157,6 @@ export class ProductReviewService {
     let stage: NativeSubmissionStage = "target";
     let stored: StoredReview | undefined;
     try {
-      const activeJournal = this.requireNativeSubmissionJournal(journal);
       if (reviewedList) {
         if (
           expectedShoppingListId === undefined ||
@@ -3171,7 +3170,7 @@ export class ProductReviewService {
           owner,
           expectedShoppingListId,
           reviewedList,
-          activeJournal,
+          this.requireNativeSubmissionJournal(journal),
           signal,
         );
       } else {
@@ -3181,6 +3180,7 @@ export class ProductReviewService {
         stored,
         expectedShoppingListId,
       );
+      const activeJournal = this.requireNativeSubmissionJournal(journal);
       const operationId = submitOperationId(listId);
       const replay = await this.replayNativeSubmission(
         stored,

@@ -375,7 +375,7 @@ const friendlyCatalog = [
     "Submit the exact shopping list to Nemlig",
     false,
     false,
-    ["basket_id", "shopping_list_id", "submission_id"],
+    ["basket_id", "shopping_list_id", "submission_id", "reviewed_list"],
   ],
   [
     "update_product_review_conversation",
@@ -1119,7 +1119,7 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
-        /Add the exact contents of the selected saved Nemlig shopping list/u,
+        /Add the exact reviewed saved Nemlig shopping list/u,
       );
       assert.equal(
         (await mcp.listResources()).resources[0]?.uri,
