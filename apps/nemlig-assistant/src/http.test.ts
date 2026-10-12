@@ -124,6 +124,14 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
       reads += 1;
       return empty;
     },
+    providerIdentity: () => {
+      assert.equal(loggedIn, true);
+      return "owner";
+    },
+    listShoppingLists: async () => {
+      assert.equal(loggedIn, true);
+      return [];
+    },
     addToCart: async () => {
       writes += 1;
       throw new Error("unapproved write");
@@ -226,6 +234,16 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
         fetch: edgeFetch,
       }),
     );
+    const initialLists = await client.callTool({
+      name: "update_product_review",
+      arguments: { action: { kind: "show" } },
+    });
+    assert.notEqual(initialLists.isError, true);
+    assert.deepEqual(
+      (initialLists.structuredContent as { shoppingLists?: unknown })
+        ?.shoppingLists,
+      [],
+    );
     for (let index = 0; index < 501; index += 1) {
       const result = await client.callTool({
         name: "show_my_basket",
@@ -248,9 +266,18 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
         "rate removal must not bypass exact approval",
       );
     }
+    const lists = await client.callTool({
+      name: "start_product_review",
+      arguments: {},
+    });
+    assert.notEqual(lists.isError, true);
+    assert.deepEqual(
+      (lists.structuredContent as { shoppingLists?: unknown })?.shoppingLists,
+      [],
+    );
     assert.equal(reads, 501);
     assert.equal(writes, 0);
-    assert.equal(usefulAdmissions, 531);
+    assert.equal(usefulAdmissions, 533);
     assert.equal(records.has("usage"), false);
   } finally {
     await client.close();
@@ -780,7 +807,7 @@ test("current family stateless requests decrypt credentials and isolate credenti
   }
 });
 
-test("stale Local basket requests fail closed without native inventory", async () => {
+test("stale Local basket requests without credentials cannot reach native inventory", async () => {
   let legacyStorageRequests = 0;
   const basketId = "00000000-0000-4000-8000-000000000099";
   const originalFetch = globalThis.fetch;
@@ -854,61 +881,41 @@ test("stale Local basket requests fail closed without native inventory", async (
   const first = await connect("request-capability-one");
   const second = await connect("request-capability-two");
   try {
-    const [firstList, secondList] = await Promise.all([
-      first.callTool({
-        name: "update_product_review",
-        arguments: { action: { kind: "show" } },
-      }),
-      second.callTool({
-        name: "update_product_review",
-        arguments: { action: { kind: "show" } },
-      }),
-    ]);
-    assert.equal(firstList.isError, true);
-    assert.equal(secondList.isError, true);
-    assert.match(
-      JSON.stringify(firstList.content),
-      /Native shopping-list discovery is unavailable/u,
-    );
-
-    for (const action of [
-      { kind: "show" },
-      { kind: "select" },
-      { kind: "heartbeat" },
-      { kind: "delete" },
-    ]) {
-      const result = await first.callTool({
-        name: "update_product_review",
-        arguments: {
-          ...(action.kind === "show" ? {} : { basket_id: basketId }),
-          action,
+    for (const client of [first, second]) {
+      for (const request of [
+        {
+          name: "update_product_review",
+          arguments: { action: { kind: "show" } },
         },
-      });
-      assert.equal(result.isError, true);
-    }
-
-    for (const request of [
-      {
-        name: "update_product_review",
-        arguments: {
-          basket_id: basketId,
-          action: { kind: "add", items: [{ product_id: 1, quantity: 1 }] },
+        ...["select", "heartbeat", "delete"].map((kind) => ({
+          name: "update_product_review",
+          arguments: { basket_id: basketId, action: { kind } },
+        })),
+        {
+          name: "update_product_review",
+          arguments: {
+            basket_id: basketId,
+            action: { kind: "add", items: [{ product_id: 1, quantity: 1 }] },
+          },
         },
-      },
-      {
-        name: "submit_product_review",
-        arguments: { basket_id: basketId, submission_id: crypto.randomUUID() },
-      },
-    ]) {
-      await assert.rejects(
-        first.callTool(request),
-        (error: unknown) =>
-          (error as { data?: { status?: number } }).data?.status === 403,
-      );
+        {
+          name: "submit_product_review",
+          arguments: {
+            basket_id: basketId,
+            submission_id: crypto.randomUUID(),
+          },
+        },
+      ]) {
+        await assert.rejects(
+          client.callTool(request),
+          (error: unknown) =>
+            (error as { data?: { status?: number } }).data?.status === 403,
+        );
+      }
     }
 
     assert.equal(legacyStorageRequests, 0);
-    assert.equal(providerTouches, 1, "only the authentication check ran");
+    assert.equal(providerTouches, 0);
   } finally {
     await Promise.all([first.close(), second.close()]);
     server.closeAllConnections();
@@ -1077,6 +1084,29 @@ test("family HTTP denies unknown, disabled and mismatched identities before crea
           id: 1,
           method: "tools/call",
           params: { name: "show_my_basket", arguments: {} },
+        }),
+      });
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), {
+        error: "principal_not_allowed",
+      });
+    }
+    for (const [name, args] of [
+      ["start_product_review", {}],
+      ["update_product_review_conversation", { action: { kind: "list" } }],
+    ] as const) {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          authorization: "Bearer owner",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tools/call",
+          params: { name, arguments: args },
         }),
       });
       assert.equal(response.status, 403);
