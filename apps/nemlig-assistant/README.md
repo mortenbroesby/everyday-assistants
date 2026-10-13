@@ -86,6 +86,8 @@ changes or uncertain cleanup keep the list and show a warning.
 - Keep a new selection as an unsaved draft until you choose **Save shopping
   list**. Saving writes the displayed products and quantities to Nemlig and
   verifies the saved list.
+- If a save is partial, resume the remaining products or review only the
+  products confirmed in the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
 - Explicitly **Submit** a clean saved list to add it to the actual basket. The
@@ -93,7 +95,9 @@ changes or uncertain cleanup keep the list and show a warning.
   additive basket readback, and keeps a durable no-replay fence. After the
   readback, the app checks the source again and deletes it only if its identity
   and contents still match. An edit can race the final check; observed changes
-  or uncertain cleanup keep the list with a warning.
+  or uncertain cleanup keep the list with a warning. Submit errors distinguish
+  a stopped preflight from an unconfirmed transfer; an uncertain transfer still
+  requires basket inspection before another attempt.
 - Use the actual basket view to inspect Nemlig's basket.
 
 ### Use the interface that fits
@@ -159,9 +163,14 @@ Search and review → explicitly Save or Update a Nemlig shopping list → verif
 - Product search and actual Nemlig basket inspection are read-only.
 - Saving a draft creates a native Nemlig shopping list. Updating a saved list
   writes only the staged changes to that selected list.
-- Save and Update do not authorize or perform a basket addition. The
-  shopping-list-to-basket action is disabled until exact transfer behavior and
-  concurrent-edit handling are verified.
+- Draft saving writes up to two products at a time and checks Nemlig's list
+  afterward. If some products are missing, the draft can resume on the same
+  list, or you can review and submit only the products Nemlig actually saved.
+- Save and Update do not authorize or perform a basket addition. Submit uses
+  the selected saved list only after review and explicit basket authorization,
+  then verifies the resulting Nemlig basket. It compares the reviewed list name
+  and product quantities with a fresh Nemlig readback, so submission does not
+  depend on the same card or server-side review remaining active.
 - An interrupted or uncertain Save or Update is inspected through its durable
   recovery record. The assistant does not blindly replay it. If recovery storage
   is full, it fails closed and keeps existing records.

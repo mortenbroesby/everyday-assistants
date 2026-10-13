@@ -1761,6 +1761,134 @@ test("partial draft saves reconcile and resume the same native list", async () =
   assert.deepEqual({ creates, updates }, { creates: 1, updates: 3 });
 });
 
+test("draft save writes at most two products concurrently and verifies the actual list", async () => {
+  let activeWrites = 0;
+  let maximumActiveWrites = 0;
+  const native = {
+    id: 45,
+    name: "List",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [],
+    createShoppingList: async () => native.id,
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      activeWrites += 1;
+      maximumActiveWrites = Math.max(maximumActiveWrites, activeWrites);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      native.items.push({ productId, quantity });
+      activeWrites -= 1;
+    },
+    getShoppingList: async () => structuredClone(native),
+  });
+  const draft = await service.start(
+    "owner",
+    Array.from({ length: 4 }, (_, index) => ({
+      product_id: index + 1,
+      quantity: 1,
+    })),
+  );
+
+  const saved = await service.save("owner", "List", draft.draftId);
+
+  assert.equal(saved.saveStatus, "saved");
+  assert.equal(native.items.length, 4);
+  assert.equal(maximumActiveWrites, 2);
+});
+
+test("draft save reports provider-confirmed count when concurrent updates lose a row", async () => {
+  let created = false;
+  const { journal } = createDurableReviewJournal("owner");
+  let native = {
+    id: 46,
+    name: "List",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () =>
+      created ? [{ id: native.id, name: native.name }] : [],
+    createShoppingList: async () => {
+      created = true;
+      return native.id;
+    },
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      const before = structuredClone(native.items);
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      native = { ...native, items: [...before, { productId, quantity }] };
+    },
+    getShoppingList: async () => structuredClone(native),
+  });
+  const draft = await service.start("owner", [
+    { product_id: 1, quantity: 1 },
+    { product_id: 2, quantity: 1 },
+  ]);
+
+  const partial = await service.save(
+    "owner",
+    "List",
+    draft.draftId,
+    undefined,
+    journal,
+  );
+
+  assert.equal(partial.saveStatus, "partial");
+  assert.deepEqual(partial.saveProgress, { completed: 1, total: 2 });
+  assert.equal(partial.shoppingListId, 46);
+  const savedSubset = await service.openShoppingList(
+    "owner",
+    46,
+    undefined,
+    journal,
+  );
+  assert.equal(savedSubset.saveStatus, "saved");
+  assert.ok((await journal.read(draft.draftId!))?.completedUntil);
+  assert.deepEqual(
+    savedSubset.items.map(({ product_id }) => product_id),
+    native.items.map(({ productId }) => productId),
+  );
+});
+
+test("one failed product update does not stop later shopping-list products", async () => {
+  const native = {
+    id: 47,
+    name: "List",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const attempted: number[] = [];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [],
+    createShoppingList: async () => native.id,
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      attempted.push(productId);
+      if (productId === 2) {
+        throw new NemligError("Product unavailable");
+      }
+      native.items.push({ productId, quantity });
+    },
+    getShoppingList: async () => structuredClone(native),
+  });
+  const draft = await service.start(
+    "owner",
+    Array.from({ length: 4 }, (_, index) => ({
+      product_id: index + 1,
+      quantity: 1,
+    })),
+  );
+
+  const partial = await service.save("owner", "List", draft.draftId);
+
+  assert.deepEqual(attempted, [1, 2, 3, 4]);
+  assert.equal(partial.saveStatus, "partial");
+  assert.deepEqual(partial.saveProgress, { completed: 3, total: 4 });
+  assert.equal(partial.shoppingListId, 47);
+});
+
 test("uncertain creation never adopts an unrelated list by matching name", async () => {
   let inventoryReads = 0;
   let creates = 0;
@@ -1942,8 +2070,8 @@ test("52-product save resumes after a service restart without recreating the lis
   );
   assert.equal(partial.saveStatus, "partial");
   assert.equal(partial.shoppingListId, 88);
-  assert.deepEqual(partial.saveProgress, { completed: 30, total: 52 });
-  assert.equal(native.items.length, 30);
+  assert.deepEqual(partial.saveProgress, { completed: 51, total: 52 });
+  assert.equal(native.items.length, 51);
 
   const resumed = await newService().save(
     "owner",

@@ -46,6 +46,7 @@ import {
   MAX_DRAFT_PRODUCTS,
   ProductReviewService,
   type ReviewOperationJournal,
+  type ReviewedShoppingList,
 } from "./product-review.js";
 import { candidateSchema, productViewSchema } from "./product-view-schema.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
@@ -163,7 +164,10 @@ const showReviewActionSchema = z.object({ kind: z.literal("show") });
 const endReviewActionSchema = z.object({ kind: z.literal("end") });
 const localActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("list") }),
-  z.object({ kind: z.literal("select") }),
+  z.object({
+    kind: z.literal("select"),
+    accept_saved_subset_draft_id: z.string().uuid().optional(),
+  }),
   z.object({ kind: z.literal("delete") }),
   z.object({ kind: z.literal("heartbeat") }),
 ]);
@@ -303,6 +307,26 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
       basket_id: reviewTargetFields.basket_id,
       shopping_list_id: reviewTargetFields.shopping_list_id,
       submission_id: submissionId,
+      reviewed_list: z
+        .object({
+          name: z.string().min(1),
+          items: z
+            .array(
+              z
+                .object({
+                  product_id: z.number().int().positive(),
+                  quantity: z.number().int().positive(),
+                })
+                .strict(),
+            )
+            .min(1)
+            .max(MAX_DRAFT_PRODUCTS),
+        })
+        .strict()
+        .optional()
+        .describe(
+          "The exact saved-list name, product IDs, and quantities the user reviewed. Include this to submit after a card or server restart; the server re-reads and compares the list before any basket write.",
+        ),
     })
     .strict()
     .refine(
@@ -818,8 +842,18 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       return listNativeShoppingLists(signal);
     }
     if (action.kind === "select") {
+      if (action.accept_saved_subset_draft_id && !targets.shoppingListId) {
+        throw new NemligError(
+          "Select the saved shopping list to review its confirmed products.",
+        );
+      }
       return targets.shoppingListId
-        ? openNativeShoppingList(owner, targets.shoppingListId, signal)
+        ? openNativeShoppingList(
+            owner,
+            targets.shoppingListId,
+            signal,
+            action.accept_saved_subset_draft_id,
+          )
         : listNativeShoppingLists(signal);
     }
     if (targets.shoppingListId) {
@@ -868,6 +902,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     owner: string,
     listId: number,
     signal: AbortSignal,
+    acceptedDraftId?: string,
   ) => {
     try {
       return success({
@@ -876,6 +911,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           listId,
           signal,
           reviewOperationJournal(signal),
+          acceptedDraftId,
         ),
         shoppingLists: await reviews.getShoppingLists(signal),
         selectedShoppingListId: listId,
@@ -950,6 +986,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     submissionId: string,
     shoppingListId: number,
     signal: AbortSignal,
+    reviewedList?: ReviewedShoppingList,
   ) => {
     await ensureLoggedIn(client, loadCredentials);
     return success(
@@ -959,6 +996,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         shoppingListId,
         signal,
         reviewOperationJournal(signal),
+        reviewedList,
       ),
     );
   };
@@ -968,6 +1006,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     shoppingListId: number | undefined,
     submissionId: string,
     signal: AbortSignal,
+    reviewedList?: ReviewedShoppingList,
   ) => {
     if (basketId) {
       throw new NemligError(
@@ -975,7 +1014,13 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       );
     }
     if (shoppingListId) {
-      return submitProcessReview(owner, submissionId, shoppingListId, signal);
+      return submitProcessReview(
+        owner,
+        submissionId,
+        shoppingListId,
+        signal,
+        reviewedList,
+      );
     }
     throw new NemligError(
       "Select the exact native Nemlig shopping list before submitting.",
@@ -1361,7 +1406,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Submit the exact shopping list to Nemlig",
       description:
-        "Add the exact contents of the selected saved Nemlig shopping list to the basket once. This action requires explicit user authorization, uses the same native shopping_list_id without creating a temporary list or showing another review screen, and verifies additive basket readback. The source list is kept. A simultaneous Nemlig edit can race the final check; uncertain transfers are never retried. Legacy Local basket IDs are rejected.",
+        "Add the exact reviewed saved Nemlig shopping list to the basket once after explicit user authorization. Pass shopping_list_id and reviewed_list from the user's reviewed list, including its name and every product ID and quantity. The server re-reads that list and rejects changed contents before transfer; an active card or in-memory review is not required. Uncertain transfers are never retried. Legacy Local basket IDs are rejected.",
       inputSchema: submitReviewInputSchema(
         z
           .string()
@@ -1378,7 +1423,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ basket_id, shopping_list_id, submission_id }, ctx) =>
+    ({ basket_id, shopping_list_id, submission_id, reviewed_list }, ctx) =>
       runMcpOperation("submit_product_review_conversation", () =>
         submitReview(
           reviewOwner(ctx),
@@ -1386,6 +1431,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           shopping_list_id,
           submission_id,
           ctx.mcpReq.signal,
+          reviewed_list,
         ),
       ),
   );
@@ -1395,7 +1441,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Submit the current shopping list",
       description:
-        "Internal one-click action for the exact saved native shopping list shown in the viewer. Uses its same shopping_list_id, writes a durable attempt fence before transfer, verifies additive basket readback, keeps the source list, and never retries an uncertain transfer. Legacy Local basket IDs are rejected.",
+        "Internal one-click action for the exact saved native shopping list shown in the viewer. Passes the reviewed list contents so a card or server restart does not require an active in-memory review. Writes a durable attempt fence before transfer, verifies additive basket readback, and never retries an uncertain transfer. Legacy Local basket IDs are rejected.",
       inputSchema: submitReviewInputSchema(z.string().uuid()),
       outputSchema: durableReviewResultSchema,
       annotations: {
@@ -1405,7 +1451,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
-    ({ basket_id, shopping_list_id, submission_id }, ctx) =>
+    ({ basket_id, shopping_list_id, submission_id, reviewed_list }, ctx) =>
       runMcpOperation("submit_product_review", () =>
         submitReview(
           reviewOwner(ctx),
@@ -1413,6 +1459,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           shopping_list_id,
           submission_id,
           ctx.mcpReq.signal,
+          reviewed_list,
         ),
       ),
   );

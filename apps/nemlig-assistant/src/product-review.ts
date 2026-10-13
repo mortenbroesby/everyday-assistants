@@ -2,6 +2,7 @@ import {
   type BasketProposalService,
   type ApplyResult,
   BasketTransferNotDispatchedError,
+  NativeTransferUnconfirmedError,
   VerifiedPartialAdditionsError,
 } from "./proposals.js";
 import { randomUUID } from "node:crypto";
@@ -65,6 +66,49 @@ const sameShoppingListItems = (
       (item) => item.quantity,
     ),
   );
+const isSavedSubsetOfOperation = (
+  list: ShoppingList,
+  operation: ReviewOperation,
+): boolean => {
+  const intended = quantityMap(
+    operation.items,
+    (item) => item.productId,
+    (item) => item.quantity,
+  );
+  return (
+    list.name === operation.name &&
+    list.items.length > 0 &&
+    new Set(list.items.map((item) => item.productId)).size ===
+      list.items.length &&
+    list.items.every(
+      ({ productId, quantity }) => intended.get(productId) === quantity,
+    )
+  );
+};
+const matchesReviewedShoppingList = (
+  list: ShoppingList,
+  reviewed: ReviewedShoppingList,
+): boolean => {
+  const reviewedQuantities = quantityMap(
+    reviewed.items,
+    (item) => item.product_id,
+    (item) => item.quantity,
+  );
+  return (
+    list.name === reviewed.name &&
+    reviewedQuantities.size === reviewed.items.length &&
+    new Set(list.items.map((item) => item.productId)).size ===
+      list.items.length &&
+    sameQuantities(
+      quantityMap(
+        list.items,
+        (item) => item.productId,
+        (item) => item.quantity,
+      ),
+      reviewedQuantities,
+    )
+  );
+};
 const reviewQuantities = (items: ReviewItem[]) =>
   quantityMap(
     items,
@@ -110,6 +154,10 @@ export interface ProductReviewSnapshot {
     query: string;
     views: ProductView[];
   };
+}
+export interface ReviewedShoppingList {
+  name: string;
+  items: Array<{ product_id: number; quantity: number }>;
 }
 export type ProductReviewAction =
   | { kind: "save"; name: string }
@@ -172,7 +220,7 @@ export interface ReviewOperationJournal {
   complete(operationId: string, generation: string): Promise<void | boolean>;
 }
 
-const completeNativeListUpdate = async (
+const completeReviewOperation = async (
   journal: ReviewOperationJournal,
   operation: ReviewOperation,
   failureMessage: string,
@@ -197,6 +245,39 @@ const updateOperationId = (listId: number): string =>
   `native-list-update:${listId}`;
 const submitOperationId = (listId: number): string =>
   `native-list-submit:${listId}`;
+type NativeSubmissionStage = "target" | "preflight" | "transfer";
+const failNativeSubmission = (
+  stage: NativeSubmissionStage,
+  error: unknown,
+): never => {
+  console.warn(
+    JSON.stringify({
+      schema_version: 1,
+      event: "native_shopping_list_submit_failed",
+      stage,
+      ...(error instanceof NemligError && error.status !== undefined
+        ? { provider_status: error.status }
+        : {}),
+    }),
+  );
+  if (stage !== "transfer") {
+    const detail =
+      error instanceof NemligError
+        ? error.message
+        : "Shopping-list submission preflight failed.";
+    const suffix =
+      /no (?:basket|provider) write was sent|no transfer was sent/iu.test(
+        detail,
+      )
+        ? ""
+        : " No basket write was sent.";
+    throw new NemligError(
+      `${detail}${suffix}`,
+      error instanceof NemligError ? error.status : undefined,
+    );
+  }
+  throw error;
+};
 const localBasketSnapshot = (basket: LocalBasket): ProductReviewSnapshot => ({
   basketId: basket.basketId,
   revision: basket.revision,
@@ -862,7 +943,7 @@ export class ProductReviewService {
     if (lists.some(({ id }) => id === listId)) {
       return undefined;
     }
-    await completeNativeListUpdate(
+    await completeReviewOperation(
       journal,
       operation,
       "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
@@ -910,6 +991,7 @@ export class ProductReviewService {
     listId: number,
     signal?: AbortSignal,
     journal?: ReviewOperationJournal,
+    acceptedDraftId?: string,
   ): Promise<ProductReviewSnapshot> {
     if (
       !validPositive(listId) ||
@@ -1203,6 +1285,48 @@ export class ProductReviewService {
       }
       this.touch(owner, current);
       return structuredClone(current.snapshot);
+    }
+    const partialDraftId =
+      acceptedDraftId ??
+      (current?.accountIdentity === accountIdentity &&
+      current.snapshot.saveStatus === "partial" &&
+      current.snapshot.shoppingListId === list.id
+        ? current.snapshot.draftId
+        : undefined);
+    if (acceptedDraftId && !journal) {
+      throw new NemligError(
+        "The interrupted save record is unavailable. Refresh before continuing.",
+      );
+    }
+    if (partialDraftId && journal) {
+      const saveOperation = await journal.read(partialDraftId);
+      assertCurrentEntry();
+      if (acceptedDraftId && !saveOperation) {
+        throw new NemligError(
+          "The interrupted save record is unavailable. Refresh before continuing.",
+        );
+      }
+      if (saveOperation) {
+        if (
+          saveOperation.kind !== "save" ||
+          saveOperation.generation !== partialDraftId ||
+          saveOperation.accountIdentity !== accountIdentity ||
+          saveOperation.listId !== list.id ||
+          !isSavedSubsetOfOperation(list, saveOperation)
+        ) {
+          throw new NemligError(
+            "The interrupted save does not match this account and saved subset. Refresh before continuing.",
+          );
+        }
+        if (saveOperation.completedUntil === undefined) {
+          await completeReviewOperation(
+            journal,
+            saveOperation,
+            "Could not finish the interrupted save record. Refresh before continuing.",
+          );
+        }
+        assertCurrentEntry();
+      }
     }
     this.storeNativeListReview(owner, accountIdentity, list, snapshot);
     return structuredClone(snapshot);
@@ -1663,7 +1787,7 @@ export class ProductReviewService {
       );
     }
     if (!inventory.some(({ id }) => id === listId)) {
-      await completeNativeListUpdate(
+      await completeReviewOperation(
         journal,
         operation,
         "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
@@ -1695,7 +1819,7 @@ export class ProductReviewService {
         "Nemlig account changed while reading the list. The pending update was kept.",
       );
     }
-    await completeNativeListUpdate(
+    await completeReviewOperation(
       journal,
       operation,
       "Could not confirm the pending update was retired. Refresh the list before continuing.",
@@ -2041,36 +2165,50 @@ export class ProductReviewService {
     };
     stored.snapshot.saveStatus = "saving";
     delete stored.snapshot.actionNotice;
-    for (const item of stored.snapshot.items) {
-      if (present.has(item.product_id)) {
-        continue;
-      }
-      try {
-        if (signal?.aborted) {
-          throw signal.reason ?? new NemligError("Save was cancelled.");
-        }
-        await this.client.updateShoppingListProduct(
-          listId,
-          item.product_id,
-          item.quantity,
-          signal,
-        );
-      } catch (error) {
+    const missing = stored.snapshot.items.filter(
+      (item) => !present.has(item.product_id),
+    );
+    let writeFailed = false;
+    // Concurrent row updates may not compose at Nemlig; only exact readback makes a draft submittable.
+    for (let index = 0; index < missing.length; index += 2) {
+      if (signal?.aborted) {
         await markPartial(
-          `Saved ${completed} of ${stored.snapshot.items.length} products. Refresh and continue saving to reconcile the same list.`,
+          "Save was cancelled. Refresh this list before continuing.",
           completed,
         );
-        if (signal?.aborted) {
-          throw error;
-        }
-        return;
+        throw signal.reason ?? new NemligError("Save was cancelled.");
       }
-      present.set(item.product_id, item.quantity);
-      completed += 1;
+      const batch = missing.slice(index, index + 2);
+      const results = await Promise.allSettled(
+        batch.map((item) =>
+          this.client.updateShoppingListProduct!(
+            listId,
+            item.product_id,
+            item.quantity,
+            signal,
+          ),
+        ),
+      );
+      for (const [offset, result] of results.entries()) {
+        if (result.status === "fulfilled") {
+          present.set(batch[offset]!.product_id, batch[offset]!.quantity);
+        }
+      }
+      completed = present.size;
       stored.snapshot.saveProgress = {
         completed,
         total: stored.snapshot.items.length,
       };
+      if (signal?.aborted) {
+        await markPartial(
+          "Save was cancelled. Refresh this list before continuing.",
+          completed,
+        );
+        throw signal.reason ?? new NemligError("Save was cancelled.");
+      }
+      if (results.some((result) => result.status === "rejected")) {
+        writeFailed = true;
+      }
     }
     const saved = await this.client.getShoppingList(listId, signal);
     const expectedList = {
@@ -2085,9 +2223,12 @@ export class ProductReviewService {
       this.client.providerIdentity?.() !== accountIdentity ||
       shoppingListFingerprint(saved) !== shoppingListFingerprint(expectedList)
     ) {
+      const confirmed = saved.items.filter(
+        ({ productId, quantity }) => expected.get(productId) === quantity,
+      ).length;
       await markPartial(
-        `Nemlig confirmed ${completed} of ${stored.snapshot.items.length} products. Refresh the list before continuing.`,
-        Math.min(present.size, stored.snapshot.items.length),
+        `Nemlig confirmed ${confirmed} of ${stored.snapshot.items.length} products. ${writeFailed ? "A product update failed. " : ""}Refresh the list before continuing.`,
+        confirmed,
       );
       return;
     }
@@ -2120,6 +2261,23 @@ export class ProductReviewService {
     if (!this.drafts.has(owner) && expectedDraftId && journal) {
       const operation = await journal.read(expectedDraftId);
       if (operation?.kind === "save") {
+        if (operation.completedUntil !== undefined) {
+          if (
+            !operation.listId ||
+            operation.name !== name.trim() ||
+            operation.accountIdentity !== this.client.providerIdentity?.()
+          ) {
+            throw new NemligError(
+              "The completed save cannot be resumed. Open the saved shopping list to review it.",
+            );
+          }
+          return this.openShoppingList(
+            owner,
+            operation.listId,
+            signal,
+            journal,
+          );
+        }
         const items = await this.readItems(
           operation.items.map(({ productId, quantity }) => ({
             product_id: productId,
@@ -2577,6 +2735,94 @@ export class ProductReviewService {
     return listId;
   }
 
+  private async readReviewedSubmissionSource(
+    listId: number,
+    reviewed: ReviewedShoppingList,
+    signal?: AbortSignal,
+  ): Promise<{ list: ShoppingList; accountIdentity: string }> {
+    if (
+      !this.client.providerIdentity ||
+      !this.client.getShoppingList ||
+      !this.client.listShoppingLists
+    ) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    const accountIdentity = this.client.providerIdentity();
+    const inventory = await this.getShoppingLists(signal);
+    if (!inventory.some(({ id }) => id === listId)) {
+      throw new NemligError("Shopping list is unavailable or was deleted.");
+    }
+    const list = await this.client.getShoppingList(listId, signal);
+    if (
+      list.id !== listId ||
+      !matchesReviewedShoppingList(list, reviewed) ||
+      this.client.providerIdentity() !== accountIdentity
+    ) {
+      console.warn(
+        JSON.stringify({
+          schema_version: 1,
+          event: "native_shopping_list_source_changed",
+        }),
+      );
+      throw new NemligError(
+        "Nemlig changed this list. Refresh and review its current contents before submitting. No basket write was sent.",
+      );
+    }
+    return { list, accountIdentity };
+  }
+
+  private async loadReviewedSubmission(
+    owner: string,
+    listId: number,
+    reviewed: ReviewedShoppingList,
+    journal: ReviewOperationJournal,
+    signal?: AbortSignal,
+  ): Promise<StoredReview> {
+    const active = this.drafts.get(owner);
+    if (
+      active?.snapshot.shoppingListId === listId &&
+      (active.busy ||
+        active.snapshot.shoppingListDirty ||
+        active.snapshot.updateStatus)
+    ) {
+      throw new NemligError(
+        "A change to this shopping list needs review. No basket write was sent.",
+      );
+    }
+    const pendingUpdate = await journal.read(updateOperationId(listId));
+    if (
+      pendingUpdate?.kind === "update" &&
+      pendingUpdate.completedUntil === undefined
+    ) {
+      throw new NemligError(
+        "An interrupted update to this shopping list needs review. No basket write was sent.",
+      );
+    }
+    const { list, accountIdentity } = await this.readReviewedSubmissionSource(
+      listId,
+      reviewed,
+      signal,
+    );
+    const items = await this.readItems(reviewItemInputs(list.items), signal);
+    if (this.client.providerIdentity!() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed before submission. No basket write was sent.",
+      );
+    }
+    return {
+      busy: true,
+      accountIdentity,
+      nativeFingerprint: shoppingListFingerprint(list),
+      snapshot: {
+        shoppingListId: list.id,
+        shoppingListName: list.name,
+        saveStatus: "saved",
+        destination: "ready",
+        items,
+      },
+    };
+  }
+
   // Replay returns the receipt and may finish cleanup; it never dispatches again.
   // fallow-ignore-next-line complexity
   private async replayNativeSubmission(
@@ -2706,6 +2952,12 @@ export class ProductReviewService {
         reviewQuantities(stored.snapshot.items),
       )
     ) {
+      console.warn(
+        JSON.stringify({
+          schema_version: 1,
+          event: "native_shopping_list_source_changed",
+        }),
+      );
       stored.snapshot.actionNotice =
         "Nemlig changed this list. Refresh and review its current contents before submitting.";
       throw new NemligError(stored.snapshot.actionNotice);
@@ -2777,7 +3029,9 @@ export class ProductReviewService {
     };
     stored.snapshot.submissionAttempted = true;
     stored.snapshot.actionNotice =
-      "Basket transfer may have completed. Inspect the actual Nemlig basket; do not submit again.";
+      error instanceof NativeTransferUnconfirmedError
+        ? error.message
+        : "Basket transfer may have completed. Inspect the actual Nemlig basket; do not submit again.";
     throw new NemligError(stored.snapshot.actionNotice);
   }
 
@@ -2949,35 +3203,48 @@ export class ProductReviewService {
     expectedShoppingListId?: number,
     signal?: AbortSignal,
     journal?: ReviewOperationJournal,
+    reviewedList?: ReviewedShoppingList,
   ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
-    const stored = this.lock(owner);
+    let stage: NativeSubmissionStage = "target";
+    let stored: StoredReview | undefined;
     try {
+      if (reviewedList) {
+        if (
+          expectedShoppingListId === undefined ||
+          !validPositive(expectedShoppingListId)
+        ) {
+          throw new NemligError(
+            "Select the exact saved Nemlig shopping list before submitting. No basket write was sent.",
+          );
+        }
+        stored = await this.loadReviewedSubmission(
+          owner,
+          expectedShoppingListId,
+          reviewedList,
+          this.requireNativeSubmissionJournal(journal),
+          signal,
+        );
+      } else {
+        stored = this.lock(owner);
+      }
       const listId = this.requireSubmissionTarget(
         stored,
         expectedShoppingListId,
       );
-      if (
-        !this.proposals?.transferNativeShoppingList ||
-        !journal ||
-        !this.client.getCart ||
-        !this.client.providerIdentity ||
-        !this.client.listShoppingLists ||
-        !this.client.getShoppingList
-      ) {
-        throw new NemligError("Submission service unavailable.");
-      }
+      const activeJournal = this.requireNativeSubmissionJournal(journal);
       const operationId = submitOperationId(listId);
       const replay = await this.replayNativeSubmission(
         stored,
         operationId,
         submissionId,
         signal,
-        journal,
+        activeJournal,
       );
       if (replay) {
         return replay;
       }
-      const accountIdentity = this.client.providerIdentity();
+      const accountIdentity = this.client.providerIdentity!();
+      stage = "preflight";
       const plan = await this.prepareNativeSubmission(
         stored,
         listId,
@@ -2985,11 +3252,37 @@ export class ProductReviewService {
         operationId,
         accountIdentity,
         signal,
-        journal,
+        activeJournal,
       );
-      return await this.applyNativeSubmission(stored, plan, signal, journal);
+      stage = "transfer";
+      return await this.applyNativeSubmission(
+        stored,
+        plan,
+        signal,
+        activeJournal,
+      );
+    } catch (error) {
+      return failNativeSubmission(stage, error);
     } finally {
-      stored.busy = false;
+      if (stored) {
+        stored.busy = false;
+      }
     }
+  }
+
+  private requireNativeSubmissionJournal(
+    journal?: ReviewOperationJournal,
+  ): ReviewOperationJournal {
+    if (
+      !this.proposals?.transferNativeShoppingList ||
+      !journal ||
+      !this.client.getCart ||
+      !this.client.providerIdentity ||
+      !this.client.listShoppingLists ||
+      !this.client.getShoppingList
+    ) {
+      throw new NemligError("Submission service unavailable.");
+    }
+    return journal;
   }
 }
