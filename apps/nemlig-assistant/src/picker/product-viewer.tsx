@@ -39,6 +39,27 @@ function isUncertainFailure(
   return !recovery && (uncertainOnFailure || /uncertain/i.test(text));
 }
 
+function submitFailureCopy(detail: string): string | undefined {
+  if (
+    /Basket changed before an addition; no provider write was sent/iu.test(
+      detail,
+    )
+  ) {
+    return "The Nemlig basket changed before the addition. No product was sent.";
+  }
+  if (/no (?:provider|basket) write was sent/iu.test(detail)) {
+    return detail;
+  }
+  if (
+    /^Nemlig (?:responded to the transfer|did not confirm the shopping-list transfer request|returned HTTP \d{3} for the shopping-list transfer)/iu.test(
+      detail,
+    )
+  ) {
+    return detail;
+  }
+  return undefined;
+}
+
 function isReviewItem(value: unknown): value is ReviewItem {
   return (
     isRecord(value) &&
@@ -195,11 +216,11 @@ function reviewTargetId(review: Review): string | undefined {
     : (review.draftId ?? review.basketId);
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
-  if (review.shoppingListId !== undefined) {
-    return { shopping_list_id: review.shoppingListId };
-  }
   if (review.draftId !== undefined) {
     return { draft_id: review.draftId };
+  }
+  if (review.shoppingListId !== undefined) {
+    return { shopping_list_id: review.shoppingListId };
   }
   return review.basketId ? { basket_id: review.basketId } : {};
 }
@@ -805,8 +826,10 @@ export function ProductViewer() {
       setMessage(submissionFailure.current);
       return;
     }
-    if (/no basket write was sent/iu.test(text)) {
-      setMessage(text);
+    if (/no (?:basket|provider) write was sent/iu.test(text)) {
+      submitBlockedRef.current = false;
+      setSubmitBlocked(false);
+      setMessage(submissionFailure.current ?? text);
       return;
     }
     if (isUncertainFailure(recovery, uncertainOnFailure, text)) {
@@ -960,14 +983,7 @@ export function ProductViewer() {
             .map((content) => content.text)
             .join(" ") || "Update failed";
         if (name === "submit_product_review") {
-          submissionFailure.current =
-            /Basket changed before an addition; no provider write was sent/iu.test(
-              detail,
-            )
-              ? "The Nemlig basket changed before the addition. No product was sent."
-              : /no provider write was sent/iu.test(detail)
-                ? "A basket safety check stopped the addition before any product was sent."
-                : undefined;
+          submissionFailure.current = submitFailureCopy(detail);
         }
         throw new Error(detail);
       }
@@ -1366,10 +1382,20 @@ export function ProductViewer() {
       expected,
     );
   };
-  const selectBasket = async (basketId: string) => {
+  const selectBasket = async (
+    basketId: string,
+    acceptSavedSubsetDraftId?: string,
+  ) => {
     if (busy || !isBasketId(basketId)) {
       return;
     }
+    const selected = baskets.find((basket) => basket.basketId === basketId);
+    const nativeShoppingList = selected
+      ? selected.nativeShoppingList === true
+      : activeReview.current?.review.shoppingListId === Number(basketId);
+    const targetArgs = nativeShoppingList
+      ? { shopping_list_id: Number(basketId) }
+      : { basket_id: basketId };
     changeBasket(basketId);
     const heartbeat = heartbeatByBasket.current.get(basketId) ?? {
       attemptedAt: 0,
@@ -1379,13 +1405,17 @@ export function ProductViewer() {
     heartbeat.intentAt = Date.now();
     heartbeatByBasket.current.set(basketId, heartbeat);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
-    const targetArgs = baskets.find((basket) => basket.basketId === basketId)
-      ?.nativeShoppingList
-      ? { shopping_list_id: Number(basketId) }
-      : { basket_id: basketId };
     await call(
       "update_product_review",
-      { action: { kind: "select" }, ...targetArgs },
+      {
+        action: {
+          kind: "select",
+          ...(nativeShoppingList && acceptSavedSubsetDraftId
+            ? { accept_saved_subset_draft_id: acceptSavedSubsetDraftId }
+            : {}),
+        },
+        ...targetArgs,
+      },
       true,
       true,
     );
@@ -1455,6 +1485,7 @@ export function ProductViewer() {
     }
     if (
       review.shoppingListId === undefined ||
+      !review.shoppingListName ||
       review.saveStatus !== "saved" ||
       review.shoppingListDirty ||
       review.updateStatus !== undefined ||
@@ -1475,6 +1506,13 @@ export function ProductViewer() {
       {
         submission_id: globalThis.crypto.randomUUID(),
         ...reviewTargetArgs(review),
+        reviewed_list: {
+          name: review.shoppingListName,
+          items: review.items.map(({ product_id, quantity }) => ({
+            product_id,
+            quantity,
+          })),
+        },
       },
       false,
       false,
@@ -1543,7 +1581,8 @@ export function ProductViewer() {
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
         onOpenPicker: () => void openPicker(),
-        onSelectBasket: (basketId) => void selectBasket(basketId),
+        onSelectBasket: (basketId, acceptSavedSubsetDraftId) =>
+          void selectBasket(basketId, acceptSavedSubsetDraftId),
         onDeleteBasket: (basketId) => void deleteBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {
