@@ -67,7 +67,9 @@ export function ViewerShell({
       >
         {title && (
           <HeadingRow>
-            <ScreenHeading id="title">{title}</ScreenHeading>
+            <ScreenHeading id="title" tabIndex={-1}>
+              {title}
+            </ScreenHeading>
             {headerActions}
           </HeadingRow>
         )}

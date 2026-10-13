@@ -137,10 +137,15 @@ destinations are omitted.
 The shared product viewer supports unsaved drafts and selected native shopping
 lists. It reuses product details, alternatives, quantity, remove, and accessible
 touch and keyboard controls. New product choices stay in a process-local draft
-until explicit Save. Saved-list changes stay staged until explicit Update. Save
-and Update use a durable, owner-scoped journal so an interrupted provider write
-can be inspected without blindly replaying it. Recovery storage is bounded; if
-it fills, the action fails closed and existing recovery evidence is retained.
+until explicit Save. Repeating a start for the same product-ID set reopens the
+current edited draft; a different set reports a conflict and preserves it.
+Saved-list changes stay staged until explicit Update. Without host conversation
+metadata, draft cards continue only through their principal-bound draft ID, and
+native-list actions use the explicit list ID. A show without a target does not
+guess a draft or list. Save and Update use a durable, owner-scoped journal so an
+interrupted provider write can be inspected without blindly replaying it.
+Recovery storage is bounded; if it fills, the action fails closed and existing
+recovery evidence is retained.
 
 Old Local Basket cards route to native shopping-list discovery. Their saved data
 and storage namespace have not been deleted, but Local Basket mutations are no
@@ -230,29 +235,25 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Show or build a Local basket: `start_product_review`; refresh, change quantity, remove,
-  find alternatives, append products, finish shopping, or prepare the whole list
-  with `update_product_review_conversation`. Show can recover the active
-  conversation review without its opaque reference. A start with exact items
-  creates a separate Local basket; omit items to reopen the remembered basket
-  or show the picker.
-- For a visual product request, search exact products and open the native Local
-  basket without requiring the user to name a tool. This changes only local review
-  state. Omit `items` to reopen an existing list, and add newly found products
-  through `update_product_review_conversation`. If the user forbids local basket
-  state and later asks for a visual view, explain the conflict and ask whether
-  to allow local state; give a concise text result until then.
-  Use `show_my_basket` when the user means products already in Nemlig. Tool
-  success alone does not prove that a client rendered the Local basket viewer.
-- Submit all exact Local basket lines after a clear conversational add instruction
-  or the viewer's separate on-screen exact confirmation:
-  `submit_product_review_conversation`.
-  Local presence alone is not provider-write authorization. The protected
-  tool uses only the unchanged prepared lines; confirmed unavailable products
-  are skipped and reported while other approved products can proceed. Unresolved
-  identity or availability details fail closed; missing price, package, category,
-  or descriptive fields may remain unknown. Ambiguous scope or changed
-  IDs/quantities requires clarification.
+- Show or build an unsaved draft: `start_product_review`; edit, add, remove, or
+  find alternatives with `update_product_review_conversation`. Repeating a start
+  with the same product IDs preserves current quantities and edits; a different
+  product set returns a conflict without replacing the draft. Use the explicit
+  add action or end the draft before starting a replacement. Omit `items` only
+  when intentionally opening the native shopping-list picker.
+- For a visual product request, search exact products and start the draft with
+  those exact returned IDs and quantities. Without host conversation metadata,
+  continue a draft using its exact `draft_id`; saved-list cards carry the
+  transient `review_context_id` with `shopping_list_id` to keep staged edits
+  isolated between chats. Exact reviewed-list submission remains available
+  after that transient context expires. A show without a target does not choose another draft or
+  enumerate saved lists. Use action `list` to open the picker. Use
+  `show_my_basket` when the user means products already in Nemlig. Tool success
+  alone does not prove that a client rendered the product viewer.
+- Submit the exact saved native shopping list only after the user's explicit
+  Submit action: `submit_product_review_conversation`. The tool re-reads and
+  compares the reviewed list before one additive transfer, verifies basket
+  readback, and never retries an uncertain transfer.
 - Nemlig Assistant is strictly add-only for the real
   basket: it cannot remove, decrease, replace, swap, or clear products. If two
   units are already present and two more are authorized, the resulting line is

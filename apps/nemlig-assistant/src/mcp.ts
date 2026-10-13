@@ -99,6 +99,7 @@ const reviewSnapshotSchema = z.object({
   draftId: z.string().uuid().optional(),
   draftExpiresAt: z.number().int().nonnegative().optional(),
   shoppingListId: z.number().int().positive().optional(),
+  reviewContextId: z.string().uuid().optional(),
   shoppingListName: z.string().optional(),
   saveStatus: z.enum(["saving", "saved", "partial", "uncertain"]).optional(),
   shoppingListDirty: z.boolean().optional(),
@@ -287,6 +288,13 @@ const reviewTargetFields = {
     .positive()
     .optional()
     .describe("Exact native Nemlig shopping-list ID from this card."),
+  review_context_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Opaque temporary handle for this card's review of the exact saved list.",
+    ),
 };
 const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
   z
@@ -306,6 +314,7 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
     .object({
       basket_id: reviewTargetFields.basket_id,
       shopping_list_id: reviewTargetFields.shopping_list_id,
+      review_context_id: reviewTargetFields.review_context_id,
       submission_id: submissionId,
       reviewed_list: z
         .object({
@@ -520,9 +529,9 @@ export function createMcpServer(
 
 The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. Added quantities are additional units. Local basket edits never write to Nemlig.
 
-For discovery, use a concise Danish catalogue phrase and preserve a distinctive brand when useful. Search results describe one provider response, not the entire catalogue; an empty result differs from a failure. Search and conversation edits do not open cards. When the user asks to see products visually, use start_product_review with exact returned IDs and quantities. Omit items in start_product_review to show the native shopping-list picker. New products start in an unsaved draft; only explicit Save creates a native shopping list. Native-list edits stay staged until explicit Update verifies the same list. Honor explicit requests not to start a draft, save a list, or edit a saved list; continue in text. Existing Local basket cards are stale: show the native shopping-list picker and never read, edit, delete, or submit their old Local basket IDs. Use update_product_review_conversation for model-side list and draft operations. After an unconfirmed action, show current state; never replay it.
+For discovery, use a concise Danish catalogue phrase and preserve a distinctive brand when useful. Search results describe one provider response, not the entire catalogue; an empty result differs from a failure. Search and conversation edits do not open cards. When the user asks to see products visually, use start_product_review with exact returned IDs and quantities. Omit items in start_product_review to explicitly open the native shopping-list picker. New products start in an unsaved draft; only explicit Save creates a native shopping list. Repeating the same product-ID set reopens its current edited draft. A different set preserves the existing draft and returns a conflict; add with update_product_review_conversation or explicitly end it before starting a replacement. Native-list edits stay staged until explicit Update verifies the same list. Honor explicit requests not to start a draft, save a list, or edit a saved list; continue in text. Existing Local basket cards are stale: show the native shopping-list picker and never read, edit, delete, or submit their old Local basket IDs. Use update_product_review_conversation action=list to open the picker; show without a target never guesses another chat's draft or list. Without host conversation metadata, continue drafts with draft_id and saved-list cards with both shopping_list_id and review_context_id. Submit may use exact reviewed_list contents after the transient context expires; edits require a live matching context or a refreshed list. After an unconfirmed action, show current state; never replay it.
 
-Only an explicit Submit action from a clean, saved native shopping list may add to the actual basket. Submit uses that exact list ID once, verifies additive basket readback, keeps the source list, and never retries an uncertain transfer. Nemlig may change a list concurrently between the final check and dispatch; report this limitation without claiming atomicity. Searching, drafts, Save, and Update never change the actual basket.
+Only an explicit Submit action from a clean, saved native shopping list may add to the actual basket. Submit uses that exact list ID once, verifies additive basket readback, and never retries an uncertain transfer. After verified transfer, the temporary source list may be deleted; if cleanup is uncertain, the completed transfer receipt prevents replay. Nemlig may change a list concurrently between the final check and dispatch; report this limitation without claiming atomicity. Searching, drafts, Save, and Update never change the actual basket.
 
 When a stale card supplies basket_id without a draft_id or shopping_list_id, show native shopping lists and explain that the old Local basket is no longer active. Never infer a native list from an old basket ID or matching name. Direct stdio use is process-local and text-only. A tool result or image URL does not prove ChatGPT rendered a card; provide a text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
@@ -612,7 +621,17 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     );
   }
   const localConnectionId = randomUUID();
-  const reviewOwner = (ctx: ServerContext): string => {
+  // Keep principal, exact-list, expiry, and explicit-target routing together.
+  // fallow-ignore-next-line complexity
+  const reviewOwner = (
+    ctx: ServerContext,
+    target?: {
+      draftId?: string;
+      shoppingListId?: number;
+      reviewContextId?: string;
+      allowMissingReviewContext?: boolean;
+    },
+  ): string => {
     const session = ctx.mcpReq._meta?.["openai/session"];
     if (
       session !== undefined &&
@@ -620,8 +639,45 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     ) {
       throw new NemligError("Invalid shopping session context.");
     }
+    const context = target?.reviewContextId
+      ? reviews.reviewContextOwner(target.reviewContextId)
+      : undefined;
+    if (
+      target?.reviewContextId &&
+      requestContext &&
+      context &&
+      (!context.owner.startsWith(`${requestContext.principalKey}\0`) ||
+        context.shoppingListId !== target.shoppingListId)
+    ) {
+      throw new NemligError(
+        "This review handle does not match the authenticated account and exact shopping list.",
+      );
+    }
+    if (context && context.shoppingListId === target?.shoppingListId) {
+      return context.owner;
+    }
+    if (
+      target?.reviewContextId &&
+      (!target.allowMissingReviewContext || target.shoppingListId === undefined)
+    ) {
+      throw new NemligError(
+        "This shopping-list review expired. Refresh the exact list before editing it.",
+      );
+    }
     if (requestContext) {
-      return requestContext.principalKey;
+      const principalPrefix = `${requestContext.principalKey}\0`;
+      if (target?.draftId) {
+        const existing = reviews.ownerForDraft(principalPrefix, target.draftId);
+        // A missing in-memory owner may be a valid Save recovery after restart;
+        // the explicit ID remains constrained by this authenticated principal.
+        return existing ?? `${principalPrefix}draft:${target.draftId}`;
+      }
+      if (session) {
+        return `${principalPrefix}${session}`;
+      }
+      // Stateless MCP requests cannot safely share an implicit draft or list
+      // selection. Cards continue drafts by their principal-bound draft ID.
+      return `${principalPrefix}${randomUUID()}`;
     }
     return ctx.sessionId ?? localConnectionId;
   };
@@ -888,7 +944,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         : listNativeShoppingLists(signal);
     }
     if (action.kind === "show" && !reviews.active(owner)) {
-      return listNativeShoppingLists(signal);
+      return success({ unavailable: true as const });
     }
     return updateUnsavedDraft(
       owner,
@@ -1237,9 +1293,9 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
   registerTool(
     "start_product_review",
     {
-      title: "Show or start a shopping list",
+      title: "Show products or open a saved list",
       description:
-        "Open the visual review when the user asks to see products. With exact returned product IDs and quantities, start an unsaved process-local draft; nothing is written to Nemlig until explicit Save. Omit items to list native Nemlig shopping lists, or pass shopping_list_id to reopen one. Native-list edits remain staged until explicit action=update verifies the same list. An explicit Submit rechecks the exact saved list and basket baseline, transfers once with the same shopping_list_id, verifies additive basket readback, then deletes the source only after a final exact-list check. A Nemlig-side edit can still race that final cleanup check. Changed or unconfirmed cleanup keeps the list with a warning; the durable receipt prevents replay. Cards carry the exact draft_id or shopping_list_id. Never infer a target from its name or replay an uncertain write.",
+        "Open the visual review when the user asks to see products. With exact returned product IDs and quantities, start an unsaved process-local draft; nothing is written to Nemlig until explicit Save. Repeating the same product-ID set shows the current edited draft. A different set returns a conflict and preserves the draft; add through update_product_review_conversation or explicitly end it first. Omit items to explicitly list native Nemlig shopping lists, or pass shopping_list_id to reopen one. Native-list edits remain staged until explicit action=update verifies the same list. An explicit Submit rechecks the exact saved list and basket baseline, transfers once with the same shopping_list_id, verifies additive basket readback, then deletes the source only after a final exact-list check. A Nemlig-side edit can still race that final cleanup check. Changed or unconfirmed cleanup keeps the list with a warning; the durable receipt prevents replay. Cards carry the exact draft_id or both shopping_list_id and review_context_id. Without host conversation metadata, continue edits only with the card's explicit target and matching review context; exact reviewed-list Submit remains valid after that context expires. Show without a target does not infer one. Never infer a target from its name or replay an uncertain write.",
       inputSchema: z
         .object({
           items: z
@@ -1321,20 +1377,30 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Update your shopping list",
       description:
-        "List native Nemlig shopping lists with action=list, open one by passing shopping_list_id with action=select, and target every edit with its exact shopping_list_id. Native-list edits are staged locally and only action=update writes the exact selected list; an uncertain or partial Update blocks Submit. Unsaved drafts require explicit Save before basket submission. Save and Update never authorize basket additions; only the user's explicit Submit action does. Never infer a target from a matching name. After an error, refresh the exact list and never replay an uncertain write.",
+        "List native Nemlig shopping lists with action=list, open one by passing shopping_list_id with action=select, and target every card edit with its exact shopping_list_id and review_context_id. Native-list edits are staged locally and only action=update writes the exact selected list; an uncertain or partial Update blocks Submit. Unsaved drafts require explicit Save before basket submission. Save and Update never authorize basket additions; only the user's explicit Submit action does. Never infer a target from a matching name. After an error, refresh the exact list and never replay an uncertain write.",
       inputSchema: reviewInputSchema(
         modelReviewActionSchema.describe(
-          "The Local basket change, navigation, refresh, or preparation requested by the user.",
+          "The requested product-review change, navigation, refresh, or submission preparation.",
         ),
       ),
       outputSchema: draftActionOutputSchema,
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ action, basket_id, draft_id, shopping_list_id }, ctx) => {
+    (
+      { action, basket_id, draft_id, shopping_list_id, review_context_id },
+      ctx,
+    ) => {
       const perform = async () => {
+        const owner = reviewOwner(ctx, {
+          draftId: draft_id,
+          shoppingListId: shopping_list_id,
+          reviewContextId: review_context_id,
+          allowMissingReviewContext:
+            action.kind === "show" || action.kind === "select",
+        });
         return updateReviewTarget(
-          reviewOwner(ctx),
+          owner,
           action,
           {
             basketId: basket_id,
@@ -1373,10 +1439,20 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     },
     // Model may resolve a conversation target; widget mutations are tied to this card's exact list ID.
     // fallow-ignore-next-line code-duplication
-    ({ action, basket_id, draft_id, shopping_list_id }, ctx) => {
+    (
+      { action, basket_id, draft_id, shopping_list_id, review_context_id },
+      ctx,
+    ) => {
       const perform = async () => {
+        const owner = reviewOwner(ctx, {
+          draftId: draft_id,
+          shoppingListId: shopping_list_id,
+          reviewContextId: review_context_id,
+          allowMissingReviewContext:
+            action.kind === "show" || action.kind === "select",
+        });
         return updateReviewTarget(
-          reviewOwner(ctx),
+          owner,
           action,
           {
             basketId: basket_id,
@@ -1423,10 +1499,23 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
       _meta: { ui: { visibility: ["model"] } },
     },
-    ({ basket_id, shopping_list_id, submission_id, reviewed_list }, ctx) =>
+    (
+      {
+        basket_id,
+        shopping_list_id,
+        submission_id,
+        reviewed_list,
+        review_context_id,
+      },
+      ctx,
+    ) =>
       runMcpOperation("submit_product_review_conversation", () =>
         submitReview(
-          reviewOwner(ctx),
+          reviewOwner(ctx, {
+            shoppingListId: shopping_list_id,
+            reviewContextId: review_context_id,
+            allowMissingReviewContext: true,
+          }),
           basket_id,
           shopping_list_id,
           submission_id,
@@ -1451,10 +1540,23 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
-    ({ basket_id, shopping_list_id, submission_id, reviewed_list }, ctx) =>
+    (
+      {
+        basket_id,
+        shopping_list_id,
+        submission_id,
+        reviewed_list,
+        review_context_id,
+      },
+      ctx,
+    ) =>
       runMcpOperation("submit_product_review", () =>
         submitReview(
-          reviewOwner(ctx),
+          reviewOwner(ctx, {
+            shoppingListId: shopping_list_id,
+            reviewContextId: review_context_id,
+            allowMissingReviewContext: true,
+          }),
           basket_id,
           shopping_list_id,
           submission_id,

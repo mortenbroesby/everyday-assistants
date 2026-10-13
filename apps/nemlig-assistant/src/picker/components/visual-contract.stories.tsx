@@ -262,6 +262,7 @@ const baseProps = (
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
+    submitErrorOpen: false,
     baskets: screen.kind === "picker" ? screen.baskets : [],
     selectedBasketId: undefined,
     ...overrides.model,
@@ -272,7 +273,6 @@ const baseProps = (
     onRefresh: noop,
     onOpenPicker: noop,
     onSelectBasket: noop,
-    onDeleteBasket: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -285,6 +285,7 @@ const baseProps = (
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
+    onDismissSubmitError: noop,
     onSendFollowUp: noop,
     onRequestEnd: noop,
     onCancelEnd: noop,
@@ -304,7 +305,7 @@ function FixturePage({
 }) {
   const [hostMessage, setHostMessage] = useState("");
   const [activeScreen, setActiveScreen] = useState(screen);
-  const [localBaskets, setLocalBaskets] = useState(
+  const [localBaskets] = useState(
     overrides.model?.baskets ??
       (screen.kind === "picker" ? screen.baskets : []),
   );
@@ -345,20 +346,6 @@ function FixturePage({
             active: true,
           });
           setHostMessage(`Storybook opened Basket ${basketId.slice(0, 8)}.`);
-        }),
-      onDeleteBasket:
-        overrides.actions?.onDeleteBasket ??
-        ((basketId) => {
-          const remaining = localBaskets.filter(
-            (basket) => basket.basketId !== basketId,
-          );
-          setLocalBaskets(remaining);
-          setActiveScreen({
-            kind: "picker",
-            baskets: remaining,
-            selectedBasketId: undefined,
-          });
-          setHostMessage(`Storybook deleted Basket ${basketId.slice(0, 8)}.`);
         }),
       onRefresh:
         overrides.actions?.onRefresh ??
@@ -787,6 +774,35 @@ export const VerifiedSuccess: Story = {
 };
 export const UncertainOutcome: Story = {
   render: () => activeReview(uncertainReview, "ready"),
+};
+export const UncertainSubmissionRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review: uncertainReview, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          submitBlocked: true,
+          recoveryOperation: "submit",
+          message:
+            "Nemlig returned HTTP 503 for the shopping-list transfer. Inspect the basket; do not retry.",
+        },
+      },
+    ),
+};
+export const SaveRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          recoveryOperation: "save",
+          message:
+            "Nemlig did not confirm saving this draft. Keep the draft and recovery record.",
+        },
+      },
+    ),
 };
 export const EmptyLocalBasket: Story = {
   decorators: [embeddedConversation],

@@ -311,6 +311,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           name: "update_product_review_conversation",
           arguments: {
             action: { kind: "save", name: "Nemlig Assistant Local basket" },
+            draft_id: review.draftId,
           },
         });
         assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
@@ -318,29 +319,18 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           saved.structuredContent as { review: ProductReviewSnapshot }
         ).review;
         assert.equal(savedReview.saveStatus, "saved");
+        assert.ok(savedReview.reviewContextId);
         assert.deepEqual((await provider.getShoppingList(1)).items, [
           { productId: 7, quantity: 3 },
           { productId: 8, quantity: 2 },
         ]);
         assert.equal(listUpdates, 2, "Save writes only the draft rows");
-        const reopened = await mcp.callTool({
-          name: "start_product_review",
-          arguments: { shopping_list_id: 1 },
-        });
-        assert.equal(reopened.isError, undefined);
-        assert.equal(
-          (
-            reopened.structuredContent as {
-              selectedShoppingListId: number;
-            }
-          ).selectedShoppingListId,
-          1,
-        );
         const staged = await mcp.callTool({
           name: "update_product_review_conversation",
           arguments: {
             action: { kind: "quantity", product_id: 7, quantity: 4 },
             shopping_list_id: 1,
+            review_context_id: savedReview.reviewContextId,
           },
         });
         assert.equal(staged.isError, undefined);
@@ -354,6 +344,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           arguments: {
             action: { kind: "update" },
             shopping_list_id: 1,
+            review_context_id: savedReview.reviewContextId,
           },
         });
         assert.equal(
@@ -374,6 +365,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
           name: "submit_product_review_conversation",
           arguments: {
             shopping_list_id: 1,
+            review_context_id: savedReview.reviewContextId,
             submission_id: randomUUID(),
           },
         });

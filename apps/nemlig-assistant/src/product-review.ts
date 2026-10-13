@@ -3,7 +3,6 @@ import {
   type ApplyResult,
   BasketTransferNotDispatchedError,
   NativeTransferUnconfirmedError,
-  VerifiedPartialAdditionsError,
 } from "./proposals.js";
 import { randomUUID } from "node:crypto";
 import { NemligError } from "./nemlig-error.js";
@@ -23,12 +22,7 @@ import {
 } from "./product-discovery.js";
 import { createProductView, type ProductView } from "./product-presentation.js";
 import { runReadPool } from "./read-coordination.js";
-import type {
-  LocalBasket,
-  LocalBasketCommand,
-  LocalBasketSummary,
-  ReviewOperation,
-} from "./local-basket.js";
+import type { LocalBasketCommand, ReviewOperation } from "./local-basket.js";
 
 export type ReviewDestination = "needs-review" | "ready" | "alternatives";
 /** Bounds transient draft payloads while allowing a full family shopping trip. */
@@ -116,7 +110,6 @@ const reviewQuantities = (items: ReviewItem[]) =>
     (item) => item.quantity,
   );
 export const DRAFT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-const MAX_DURABLE_REVIEW_CACHE = 8;
 interface ReviewItem {
   product_id: number;
   quantity: number;
@@ -127,6 +120,7 @@ export interface ProductReviewSnapshot {
   draftId?: string;
   draftExpiresAt?: number;
   shoppingListId?: number;
+  reviewContextId?: string;
   shoppingListName?: string;
   saveStatus?: "saving" | "saved" | "partial" | "uncertain";
   shoppingListDirty?: boolean;
@@ -195,8 +189,12 @@ type ReviewProposals = Pick<
   >;
 type ReviewClient = ProductDiscoveryClient &
   Partial<ShoppingListClient & Pick<ShoppingClient, "getCart">>;
+export type ReviewJournalCommand = Extract<
+  LocalBasketCommand,
+  { kind: `review-operation-${string}` }
+>;
 export interface LocalBasketRepository {
-  mutate(command: LocalBasketCommand): Promise<unknown>;
+  mutate(command: ReviewJournalCommand): Promise<unknown>;
 }
 interface NativeListSubmissionPlan {
   operationId: string;
@@ -239,8 +237,6 @@ type DraftListCreationClaim =
   | { kind: "existing"; listId: number }
   | { kind: "blocked" };
 
-const reviewKey = (owner: string, basketId: string): string =>
-  `${owner}\0${basketId}`;
 const updateOperationId = (listId: number): string =>
   `native-list-update:${listId}`;
 const submitOperationId = (listId: number): string =>
@@ -260,6 +256,9 @@ const failNativeSubmission = (
         : {}),
     }),
   );
+  if (error instanceof NativeTransferUnconfirmedError) {
+    throw error;
+  }
   if (stage !== "transfer") {
     const detail =
       error instanceof NemligError
@@ -278,64 +277,15 @@ const failNativeSubmission = (
   }
   throw error;
 };
-const localBasketSnapshot = (basket: LocalBasket): ProductReviewSnapshot => ({
-  basketId: basket.basketId,
-  revision: basket.revision,
-  submissionAttempted: basket.submissionAttempted === true,
-  destination: "ready",
-  items: basket.lines.map((line) => ({
-    product_id: line.productId,
-    quantity: line.quantity,
-    state: "ready",
-    view: structuredClone(line.view),
-  })),
-});
-const localBasket = (value: unknown): LocalBasket => {
-  if (
-    !value ||
-    typeof value !== "object" ||
-    !("basketId" in value) ||
-    !Array.isArray((value as LocalBasket).lines)
-  ) {
-    throw new NemligError("Local basket unavailable. Refresh the basket.");
-  }
-  return value as LocalBasket;
-};
-
 const validPositive = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
 const available = (view: ProductView): boolean =>
   view.status === "complete" && view.product.available === true;
-const requirePreparedSubmission = (
-  submission: ProductReviewSnapshot["submission"],
-  submissionId: string,
-  proposalId: string | undefined,
-  now: number,
-) => {
-  if (
-    !submission ||
-    submission.status !== "prepared" ||
-    submission.submission_id !== submissionId ||
-    !proposalId
-  ) {
-    throw new NemligError(
-      "Submission is absent, changed, or already attempted. Refresh the Local basket.",
-    );
-  }
-  if (Date.parse(submission.expires_at) <= now) {
-    throw new NemligError(
-      "Submission expired. Prepare a fresh exact review for approval.",
-    );
-  }
-  return { proposalId, submission };
-};
-
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
 export class ProductReviewService {
   private readonly drafts = new Map<string, StoredReview>();
   private readonly expiredDraftIds = new Set<string>();
   private readonly startingOwners = new Set<string>();
-  private readonly basketOperations = new Set<string>();
   private readonly proposals?: ReviewProposals;
   private readonly now: () => number;
 
@@ -370,65 +320,6 @@ export class ProductReviewService {
     }
     const [owner] = oldest;
     this.drafts.delete(owner);
-  }
-
-  private makeDurableRoom(key: string): boolean {
-    if (this.drafts.has(key)) {
-      return true;
-    }
-    const durable = [...this.drafts.entries()].filter(([candidate]) =>
-      candidate.includes("\0"),
-    );
-    if (durable.length < MAX_DURABLE_REVIEW_CACHE) {
-      return true;
-    }
-    const oldest = durable.find(
-      ([candidate, draft]) =>
-        !draft.busy &&
-        !this.basketOperations.has(candidate) &&
-        !this.startingOwners.has(candidate.split("\0", 1)[0] ?? ""),
-    );
-    if (!oldest) {
-      return false;
-    }
-    this.drafts.delete(oldest[0]);
-    return true;
-  }
-
-  private cacheDurable(key: string, stored: StoredReview): void {
-    if (this.makeDurableRoom(key)) {
-      this.drafts.set(key, stored);
-    }
-  }
-
-  forgetBasket(owner: string, basketId: string): void {
-    const key = reviewKey(owner, basketId);
-    const stored = this.drafts.get(key);
-    if (stored?.busy || this.basketOperations.has(key)) {
-      return;
-    }
-    this.drafts.delete(key);
-  }
-
-  private forgetMissingBaskets(
-    owner: string,
-    baskets: readonly LocalBasketSummary[],
-  ): void {
-    const prefix = `${owner}\0`;
-    const available = new Set(baskets.map(({ basketId }) => basketId));
-    for (const [key, stored] of this.drafts) {
-      if (!key.startsWith(prefix)) {
-        continue;
-      }
-      const basketId = key.slice(prefix.length);
-      if (
-        !available.has(basketId) &&
-        !stored.busy &&
-        !this.basketOperations.has(key)
-      ) {
-        this.drafts.delete(key);
-      }
-    }
   }
 
   private expireDraft(owner: string, stored: StoredReview): void {
@@ -478,287 +369,6 @@ export class ProductReviewService {
       },
       { signal },
     );
-  }
-
-  async listBaskets(
-    repository: LocalBasketRepository,
-    owner?: string,
-  ): Promise<LocalBasketSummary[]> {
-    const baskets = (await repository.mutate({
-      kind: "list",
-    })) as LocalBasketSummary[];
-    if (owner) {
-      this.forgetMissingBaskets(owner, baskets);
-    }
-    return baskets;
-  }
-
-  // Preserve only safe live outcomes across revisions; never restore prepared authority.
-  // fallow-ignore-next-line complexity
-  async showBasket(
-    owner: string,
-    basketId: string,
-    repository: LocalBasketRepository,
-    allowOperation = false,
-  ): Promise<ProductReviewSnapshot> {
-    const key = reviewKey(owner, basketId);
-    let basket: LocalBasket;
-    try {
-      basket = localBasket(await repository.mutate({ kind: "read", basketId }));
-    } catch (error) {
-      this.forgetBasket(owner, basketId);
-      throw error;
-    }
-    const previous = this.drafts.get(key);
-    if (previous?.busy || (!allowOperation && this.basketOperations.has(key))) {
-      throw new NemligError(
-        "A Local basket operation is in progress. Refresh it after the request finishes.",
-      );
-    }
-    const snapshot = localBasketSnapshot(basket);
-    if (previous?.snapshot.revision === basket.revision) {
-      if (basket.submissionAttempted) {
-        if (
-          previous.snapshot.submission?.status === "uncertain" ||
-          previous.snapshot.submission?.status === "partial" ||
-          previous.snapshot.submission?.status === "submitted"
-        ) {
-          snapshot.submission = structuredClone(previous.snapshot.submission);
-        }
-      } else {
-        snapshot.alternatives = structuredClone(previous.snapshot.alternatives);
-        snapshot.submission = structuredClone(previous.snapshot.submission);
-      }
-      previous.snapshot = snapshot;
-      this.touch(key, previous);
-      return structuredClone(snapshot);
-    }
-    this.cacheDurable(key, { busy: false, snapshot });
-    return structuredClone(snapshot);
-  }
-
-  async createBasket(
-    owner: string,
-    items: Array<{ product_id: number; quantity: number }>,
-    repository: LocalBasketRepository,
-    signal?: AbortSignal,
-    selectionKey?: string,
-  ): Promise<{ review: ProductReviewSnapshot; baskets: LocalBasketSummary[] }> {
-    const rows = await this.readItems(items, signal);
-    const created = (await repository.mutate({
-      kind: "create",
-      ...(selectionKey ? { selectionKey } : {}),
-      lines: rows.map(({ product_id, quantity, view }) => ({
-        productId: product_id,
-        quantity,
-        view,
-      })),
-    })) as { basket: LocalBasket; evictedBasketId?: string };
-    if (created.evictedBasketId) {
-      this.drafts.delete(reviewKey(owner, created.evictedBasketId));
-    }
-    const review = localBasketSnapshot(created.basket);
-    this.cacheDurable(reviewKey(owner, created.basket.basketId), {
-      busy: false,
-      snapshot: review,
-    });
-    return { review, baskets: await this.listBaskets(repository, owner) };
-  }
-
-  private canPrepareShoppingList(): boolean {
-    return Boolean(
-      this.proposals?.prepareShoppingListAdditions &&
-      this.client.createShoppingList &&
-      this.client.updateShoppingListProduct &&
-      this.client.getShoppingList &&
-      this.client.addShoppingListToCart,
-    );
-  }
-
-  private async prepareSubmissionProposal(
-    owner: string,
-    basketId: string,
-    basket: LocalBasket,
-    signal: AbortSignal | undefined,
-  ): Promise<{
-    proposal: Awaited<ReturnType<BasketProposalService["prepareAdditions"]>>;
-  }> {
-    if (!this.canPrepareShoppingList()) {
-      throw new NemligError(
-        "Shopping-list submission is unavailable. No Nemlig basket write was sent.",
-      );
-    }
-    const proposal = await this.proposals!.prepareShoppingListAdditions!(
-      owner,
-      basket.lines.map(({ productId, quantity }) => ({
-        product_id: productId,
-        quantity,
-      })),
-      `Nemlig Assistant ${basketId.slice(0, 8)}`,
-      { kind: "exact_review" },
-      { signal, freshProducts: true },
-    );
-    return { proposal };
-  }
-
-  // Preparation and provider apply keep separate, visible critical sections with different fence ordering.
-  // fallow-ignore-next-line code-duplication
-  async prepareBasket(
-    owner: string,
-    basketId: string,
-    repository: LocalBasketRepository,
-    signal?: AbortSignal,
-  ): Promise<ProductReviewSnapshot> {
-    // Keep both provider-authority entry points independently fail-closed.
-    // fallow-ignore-next-line code-duplication
-    if (!this.proposals) {
-      throw new NemligError("Submission service unavailable.");
-    }
-    const key = reviewKey(owner, basketId);
-    if (this.basketOperations.has(key)) {
-      throw new NemligError("A Local basket operation is in progress.");
-    }
-    this.basketOperations.add(key);
-    try {
-      await this.showBasket(owner, basketId, repository, true);
-      const stored = this.lock(key);
-      try {
-        const basket = localBasket(
-          await repository.mutate({ kind: "read", basketId }),
-        );
-        if (basket.submissionAttempted) {
-          throw new NemligError(
-            "Inspect the actual Nemlig basket before preparing another submission.",
-          );
-        }
-        if (!basket.lines.length) {
-          throw new NemligError("The Local basket is empty.");
-        }
-        if (
-          basket.lines.some((line) =>
-            line.view.status === "unavailable"
-              ? line.view.missing !== true
-              : line.view.product.available === undefined,
-          )
-        ) {
-          throw new NemligError(
-            "The Local basket has unresolved product identity or availability.",
-          );
-        }
-        const { proposal } = await this.prepareSubmissionProposal(
-          owner,
-          basketId,
-          basket,
-          signal,
-        );
-        const current = localBasket(
-          await repository.mutate({ kind: "read", basketId }),
-        );
-        if (
-          current.revision !== basket.revision ||
-          current.submissionAttempted
-        ) {
-          throw new NemligError(
-            "The Local basket changed during preparation. Refresh and prepare again.",
-          );
-        }
-        stored.proposalId = proposal.proposal_id;
-        stored.snapshot = {
-          ...localBasketSnapshot(current),
-          submission: {
-            submission_id: randomUUID(),
-            status: "prepared",
-            expires_at: proposal.expires_at,
-            review: structuredClone(proposal.review),
-          },
-        };
-        return structuredClone(stored.snapshot);
-      } finally {
-        stored.busy = false;
-      }
-    } finally {
-      this.basketOperations.delete(key);
-    }
-  }
-
-  // Fence before provider apply, retain uncertain outcomes, and delete only after verified readback.
-  // fallow-ignore-next-line complexity
-  async submitBasket(
-    owner: string,
-    basketId: string,
-    submissionId: string,
-    repository: LocalBasketRepository,
-  ): Promise<{ review: ProductReviewSnapshot; result: ApplyResult }> {
-    // Keep both provider-authority entry points independently fail-closed.
-    // fallow-ignore-next-line code-duplication
-    if (!this.proposals) {
-      throw new NemligError("Submission service unavailable.");
-    }
-    const key = reviewKey(owner, basketId);
-    if (this.basketOperations.has(key)) {
-      throw new NemligError("A Local basket operation is in progress.");
-    }
-    this.basketOperations.add(key);
-    try {
-      const stored = this.lock(key);
-      try {
-        const { proposalId, submission } = requirePreparedSubmission(
-          stored.snapshot.submission,
-          submissionId,
-          stored.proposalId,
-          this.now(),
-        );
-        const current = localBasket(
-          await repository.mutate({ kind: "read", basketId }),
-        );
-        if (
-          current.submissionAttempted ||
-          current.revision !== stored.snapshot.revision
-        ) {
-          throw new NemligError(
-            "The Local basket changed after review. Prepare a fresh exact review.",
-          );
-        }
-        const fenced = localBasket(
-          await repository.mutate({
-            kind: "edit",
-            basketId,
-            edit: { kind: "attempt-submission" },
-            expectedRevision: current.revision,
-          }),
-        );
-        submission.status = "uncertain";
-        stored.snapshot = { ...localBasketSnapshot(fenced), submission };
-        let result: ApplyResult;
-        try {
-          result = await this.proposals.apply(owner, proposalId, "additions");
-        } catch (error) {
-          if (error instanceof VerifiedPartialAdditionsError) {
-            submission.status = "partial";
-            submission.verified_additions = error.verifiedAdditions;
-            stored.snapshot = { ...stored.snapshot, submission };
-          }
-          throw error;
-        }
-        submission.status = "submitted";
-        submission.skipped_products = result.skipped_products;
-        submission.verified_additions = result.verified_additions;
-        submission.cleanup_warning = result.cleanup_warning;
-        stored.snapshot = { ...stored.snapshot, submission };
-        await repository.mutate({
-          kind: "edit",
-          basketId,
-          edit: { kind: "complete-submission" },
-          expectedRevision: fenced.revision,
-        });
-        this.drafts.delete(key);
-        return { review: structuredClone(stored.snapshot), result };
-      } finally {
-        stored.busy = false;
-      }
-    } finally {
-      this.basketOperations.delete(key);
-    }
   }
 
   // Expiry, ownership, and stale-card checks must pass before returning draft state.
@@ -825,6 +435,37 @@ export class ProductReviewService {
     return structuredClone(stored.snapshot);
   }
 
+  ownerForDraft(ownerPrefix: string, draftId: string): string | undefined {
+    for (const [owner, stored] of this.drafts) {
+      if (
+        owner.startsWith(ownerPrefix) &&
+        (stored.snapshot.draftId === draftId ||
+          stored.completedDraftId === draftId)
+      ) {
+        return owner;
+      }
+    }
+    return undefined;
+  }
+
+  reviewContextOwner(reviewContextId: string):
+    | {
+        owner: string;
+        shoppingListId: number;
+      }
+    | undefined {
+    for (const [owner, stored] of this.drafts) {
+      const shoppingListId = stored.snapshot.shoppingListId;
+      if (
+        stored.snapshot.reviewContextId === reviewContextId &&
+        shoppingListId !== undefined
+      ) {
+        return { owner, shoppingListId };
+      }
+    }
+    return undefined;
+  }
+
   end(owner: string, expectedDraftId?: string): void {
     const stored = this.lock(owner, expectedDraftId);
     this.drafts.delete(owner);
@@ -838,24 +479,6 @@ export class ProductReviewService {
     items: Array<{ product_id: number; quantity: number }>,
     signal?: AbortSignal,
   ): Promise<ProductReviewSnapshot> {
-    const active = this.drafts.get(owner);
-    if (active) {
-      if (
-        active.snapshot.draftId &&
-        !active.busy &&
-        this.now() - (active.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
-      ) {
-        this.expireDraft(owner, active);
-      } else {
-        this.touch(owner, active);
-        return structuredClone(active.snapshot);
-      }
-    }
-    if (this.startingOwners.has(owner)) {
-      throw new NemligError(
-        "A Local basket is starting. Refresh it after the current request finishes.",
-      );
-    }
     if (!items.length) {
       throw new NemligError(
         "No active Local basket to show. Find exact products and provide them to start a new Local basket.",
@@ -872,7 +495,65 @@ export class ProductReviewService {
         `Provide 1–${MAX_DRAFT_PRODUCTS} unique exact products with positive integer quantities.`,
       );
     }
-    this.makeRoom();
+    if (this.startingOwners.has(owner)) {
+      throw new NemligError(
+        "A Local basket is starting. Refresh it after the current request finishes.",
+      );
+    }
+    const active = this.drafts.get(owner);
+    if (active) {
+      if (
+        active.snapshot.draftId &&
+        !active.busy &&
+        this.now() - (active.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
+      ) {
+        this.expireDraft(owner, active);
+      } else {
+        if (active.snapshot.draftId) {
+          const activeIds = active.snapshot.items
+            .map(({ product_id }) => product_id)
+            .sort((a, b) => a - b);
+          const requestedIds = items
+            .map(({ product_id }) => product_id)
+            .sort((a, b) => a - b);
+          if (
+            activeIds.length !== requestedIds.length ||
+            activeIds.some((id, index) => id !== requestedIds[index])
+          ) {
+            throw new NemligError(
+              "An unsaved draft is already open. Add products or edit it, or explicitly end it before starting a different product set.",
+            );
+          }
+          this.touch(owner, active);
+          return structuredClone(active.snapshot);
+        }
+        if (active.busy) {
+          throw new NemligError(
+            "The saved shopping list is being updated. Refresh it before starting a draft.",
+          );
+        }
+        if (
+          active.snapshot.shoppingListDirty ||
+          active.snapshot.updateStatus !== undefined ||
+          active.snapshot.saveStatus !== "saved" ||
+          active.snapshot.submission?.status === "uncertain" ||
+          active.snapshot.submission?.status === "partial" ||
+          active.snapshot.submission?.status === "prepared"
+        ) {
+          throw new NemligError(
+            "The saved shopping list has pending or unconfirmed changes. Reopen it and resolve them before starting a different draft.",
+          );
+        }
+        // Keep the selected native list available until the replacement draft
+        // has been fully hydrated. Its provider data is never changed here.
+      }
+    }
+    if (!active) {
+      this.makeRoom();
+    }
+    if (active && this.drafts.get(owner) === active) {
+      active.busy = true;
+    }
     this.startingOwners.add(owner);
     try {
       const rows = await this.readItems(items, signal);
@@ -889,6 +570,11 @@ export class ProductReviewService {
         snapshot,
       });
       return structuredClone(snapshot);
+    } catch (error) {
+      if (active?.busy && this.drafts.get(owner) === active) {
+        active.busy = false;
+      }
+      throw error;
     } finally {
       this.startingOwners.delete(owner);
     }
@@ -974,6 +660,11 @@ export class ProductReviewService {
     snapshot: ProductReviewSnapshot,
     operationGeneration?: string,
   ): void {
+    const previous = this.drafts.get(owner);
+    snapshot.reviewContextId =
+      previous?.snapshot.shoppingListId === list.id
+        ? (previous.snapshot.reviewContextId ?? randomUUID())
+        : randomUUID();
     this.drafts.set(owner, {
       busy: false,
       accountIdentity,
@@ -1831,6 +1522,9 @@ export class ProductReviewService {
       shoppingListDirty: false,
       destination: "ready",
       items: rows,
+      ...(stored.snapshot.reviewContextId
+        ? { reviewContextId: stored.snapshot.reviewContextId }
+        : {}),
     };
     stored.nativeFingerprint = shoppingListFingerprint(current);
     stored.nativeItems = current.items.map((item) => ({ ...item }));
@@ -1952,6 +1646,7 @@ export class ProductReviewService {
     next: ProductReviewSnapshot,
     journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
+    next.reviewContextId ??= stored.snapshot.reviewContextId;
     stored.snapshot = next;
     stored.snapshot.saveStatus = "saved";
     stored.nativeFingerprint = shoppingListFingerprint(saved);
@@ -2233,6 +1928,7 @@ export class ProductReviewService {
       return;
     }
     stored.snapshot.saveStatus = "saved";
+    stored.snapshot.reviewContextId ??= randomUUID();
     stored.nativeFingerprint = shoppingListFingerprint(saved);
     stored.nativeItems = saved.items.map((item) => ({ ...item }));
     stored.completedDraftId = stored.snapshot.draftId;
@@ -2728,7 +2424,7 @@ export class ProductReviewService {
       stored.snapshot.submission?.status === "uncertain" ||
       stored.snapshot.submission?.status === "partial"
     ) {
-      throw new NemligError(
+      throw new NativeTransferUnconfirmedError(
         "Inspect the actual Nemlig basket before submitting this list again.",
       );
     }
@@ -2771,6 +2467,8 @@ export class ProductReviewService {
     return { list, accountIdentity };
   }
 
+  // Keep source, dirty-update, and account revalidation gates in one path.
+  // fallow-ignore-next-line complexity
   private async loadReviewedSubmission(
     owner: string,
     listId: number,
@@ -2815,6 +2513,10 @@ export class ProductReviewService {
       nativeFingerprint: shoppingListFingerprint(list),
       snapshot: {
         shoppingListId: list.id,
+        reviewContextId:
+          active?.snapshot.shoppingListId === listId
+            ? active.snapshot.reviewContextId
+            : undefined,
         shoppingListName: list.name,
         saveStatus: "saved",
         destination: "ready",
@@ -2841,7 +2543,7 @@ export class ProductReviewService {
       previous.completedUntil === undefined &&
       previous.dispatchAttempted
     ) {
-      throw new NemligError(
+      throw new NativeTransferUnconfirmedError(
         "A previous basket transfer may have completed. Inspect the actual basket; this transfer will not be retried.",
       );
     }

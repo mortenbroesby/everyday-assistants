@@ -9,6 +9,37 @@ without a durable editable local mirror. Native contents SHALL be written only
 after explicit Update and exact readback. Neither draft edits, saving nor staged
 saved-list edits SHALL change the actual basket.
 
+When a host omits conversation metadata, the server SHALL NOT reuse an implicit
+principal-wide draft or selected-list slot. Draft continuation SHALL use its
+exact draft ID within the authenticated principal; native-list continuation
+SHALL use an opaque transient review context bound to the authenticated
+principal and exact native list ID. An exact reviewed-list Submit SHALL remain
+valid after that transient context expires. A new product request with the same active
+draft product-ID set SHALL preserve current edits. A different set SHALL return
+a recoverable conflict without replacing the unsaved draft. A clean saved-list
+review may be replaced by a new draft only after exact product hydration
+succeeds; dirty, in-flight, or uncertain saved-list state SHALL remain available.
+
+#### Scenario: New product request meets a different unsaved draft
+- **WHEN** a start request supplies a different product-ID set while an unsaved draft is active
+- **THEN** the active draft and quantities remain unchanged and the response tells the user to add through the edit action or explicitly end the draft
+
+#### Scenario: Host conversation metadata is absent
+- **WHEN** a card continues a draft or saved list without host conversation metadata
+- **THEN** only its exact principal-bound draft ID or review context bound to the exact native list resolves; show without a target does not reuse another implicit selection
+
+#### Scenario: Two conversations open the same native list
+- **WHEN** two conversations stage edits to the same account list using different review contexts
+- **THEN** each transient buffer remains isolated, while an exact reviewed-list Submit can be independently revalidated after a context expires
+
+#### Scenario: Start from a clean saved-list review
+- **WHEN** exact new products are requested while a clean saved native list is open
+- **THEN** the new unsaved draft appears after hydration and the provider's saved-list contents remain unchanged
+
+#### Scenario: Start while saved-list edits are unresolved
+- **WHEN** a new draft is requested while saved-list edits or an operation are dirty, in-flight, or uncertain
+- **THEN** the pending review remains active and the new draft is not created
+
 #### Scenario: Accept some products
 - **WHEN** exact candidate products are accepted in an unsaved draft
 - **THEN** they remain in the unsaved draft until explicit Save; accepting alone

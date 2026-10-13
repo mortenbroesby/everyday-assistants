@@ -1,183 +1,132 @@
 import assert from "node:assert/strict";
-import { createRequire } from "node:module";
 import test from "node:test";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import { attachLocalBasketCapability } from "./local-basket-capability.js";
-import { createOwnerLocalBasketInventory } from "./local-basket.js";
-import type { LocalBasketStorageAccess } from "./local-basket-storage.js";
-import { mutateOwnerLocalBasketInventory } from "./local-basket-storage.js";
+import type { LocalBasketCommand } from "./local-basket.js";
 
 const principalKey = "a".repeat(32);
-const requireFromHere = createRequire(import.meta.url);
-const wranglerRequire = createRequire(
-  requireFromHere.resolve("wrangler/package.json"),
-);
-
-interface WorkersRuntime {
-  dispatchFetch(input: string, init: RequestInit): Promise<Response>;
-  dispose(): Promise<void>;
-}
-
-const workersRuntimeModules = () => {
-  const { build } = wranglerRequire("esbuild") as {
-    build(options: Record<string, unknown>): Promise<{
-      outputFiles: Array<{ text: string }>;
-    }>;
-  };
-  const { Miniflare, convertV4MiniflareOptions } = wranglerRequire(
-    "miniflare",
-  ) as {
-    Miniflare: new (options: unknown) => WorkersRuntime;
-    convertV4MiniflareOptions(options: unknown): unknown;
-  };
-  return { build, Miniflare, convertV4MiniflareOptions };
-};
-
-const runWorkersSelection = async (): Promise<{
-  status: number;
-  body: string;
-}> => {
-  const { build, Miniflare, convertV4MiniflareOptions } =
-    workersRuntimeModules();
-  const result = await build({
-    stdin: {
-      contents: `
-        import { handleLocalBasketStateRequest } from "./local-basket-callback.ts";
-        const storage = {
-          idFromName: (ownerId: string) => ownerId,
-          get: () => ({ mutate: async () => undefined }),
-        };
-        export default {
-          fetch(request: Request) {
-            return handleLocalBasketStateRequest(
-              request,
-              storage,
-              async (capability) => capability === "cap" ? "${principalKey}" : undefined,
-            );
-          },
-        };
-      `,
-      resolveDir: new URL(".", import.meta.url).pathname,
-      sourcefile: "local-basket-workers-fixture.ts",
-      loader: "ts",
-    },
-    bundle: true,
-    format: "esm",
-    platform: "node",
-    write: false,
-  });
-  const runtime = new Miniflare(
-    convertV4MiniflareOptions({
-      modules: true,
-      compatibilityDate: "2026-08-31",
-      compatibilityFlags: ["nodejs_compat"],
-      script: result.outputFiles[0]!.text,
+const capability = "container-owned-capability";
+const request = (command: unknown, headers: Record<string, string> = {}) =>
+  attachLocalBasketCapability(
+    new Request("http://local-basket-state.internal/inventory", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...headers },
+      body: JSON.stringify(command),
     }),
+    capability,
   );
-  try {
-    const response = await runtime.dispatchFetch(
-      "http://local-basket-state.internal/inventory",
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-nemlig-local-basket-capability": "cap",
-        },
-        body: JSON.stringify({ kind: "selection", selectionKey: "session" }),
-      },
-    );
-    return { status: response.status, body: await response.text() };
-  } finally {
-    await runtime.dispose();
-  }
-};
 
 test("Local basket callback requires a live Worker capability before storage", async () => {
   let storageCalls = 0;
-  const storage = {
-    idFromName: (ownerId: string) => {
-      storageCalls += 1;
-      return ownerId;
-    },
-    get: () => {
-      storageCalls += 1;
-      return {
-        read: async () => createOwnerLocalBasketInventory(principalKey),
-        mutate: async () => undefined,
-      };
-    },
-  };
-
   const response = await handleLocalBasketStateRequest(
-    new Request("http://local-basket-state.internal/inventory"),
-    storage,
+    new Request("http://local-basket-state.internal/inventory", {
+      method: "POST",
+      body: JSON.stringify({ kind: "review-operation-read", operationId: "x" }),
+    }),
+    {
+      idFromName: () => {
+        storageCalls++;
+        return "owner";
+      },
+      get: () => {
+        storageCalls++;
+        return { mutate: async () => undefined };
+      },
+    },
     async () => undefined,
   );
-
   assert.equal(response.status, 403);
   assert.equal(storageCalls, 0);
 });
 
-test("Local basket callback derives storage identity from capability, not request data", async () => {
-  const names: string[] = [];
-  const storage = {
-    idFromName: (ownerId: string) => {
-      names.push(ownerId);
-      return ownerId;
-    },
-    get: () => ({
-      read: async (ownerId: string) => createOwnerLocalBasketInventory(ownerId),
-      mutate: async () => [],
-    }),
+test("callback accepts all five journal commands and keeps long native names", async () => {
+  const seen: string[] = [];
+  const operation = {
+    operationId: "save:1",
+    generation: "attempt:1",
+    accountIdentity: "synthetic-account",
+    kind: "save",
+    name: "A saved list name longer than thirty characters",
+    items: [{ productId: 7, quantity: 2 }],
   };
-  const request = new Request("http://local-basket-state.internal/inventory", {
-    headers: { "x-owner-id": "forged-owner" },
-  });
-
+  const commands = [
+    { kind: "review-operation-read", operationId: "save:1" },
+    {
+      kind: "review-operation-claim",
+      operationId: "save:1",
+      generation: "attempt:1",
+    },
+    {
+      kind: "review-operation-release",
+      operationId: "save:1",
+      generation: "attempt:1",
+    },
+    { kind: "review-operation-write", operation },
+    {
+      kind: "review-operation-complete",
+      operationId: "save:1",
+      generation: "attempt:1",
+    },
+  ];
   const response = await handleLocalBasketStateRequest(
-    attachLocalBasketCapability(request, "container-owned-capability"),
-    storage,
-    async (capability) =>
-      capability === "container-owned-capability" ? principalKey : undefined,
+    request(
+      { kind: "review-operation-write", operation, ownerId: "forged-owner" },
+      { "x-owner-id": "forged-owner" },
+    ),
+    {
+      idFromName: (ownerId: string) => {
+        seen.push(`id:${ownerId}`);
+        assert.equal(ownerId, principalKey);
+        return ownerId;
+      },
+      get: () => ({
+        mutate: async (_owner: string, command: LocalBasketCommand) => {
+          seen.push(command.kind);
+          return command.kind;
+        },
+      }),
+    },
+    async (value) => (value === capability ? principalKey : undefined),
   );
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), []);
-
-  assert.deepEqual(names, [principalKey]);
+  assert.equal(await response.json(), "review-operation-write");
+  for (const command of commands) {
+    const commandResponse = await handleLocalBasketStateRequest(
+      request(command),
+      {
+        idFromName: (ownerId: string) => ownerId,
+        get: () => ({ mutate: async (_owner, parsed) => parsed.kind }),
+      },
+      async (value) => (value === capability ? principalKey : undefined),
+    );
+    assert.equal(commandResponse.status, 200, command.kind);
+  }
+  assert.deepEqual(seen, ["id:" + principalKey, "review-operation-write"]);
 });
 
-test("review-operation journal callbacks stay scoped to the request capability", async () => {
-  const values = new Map<string, Map<string, unknown>>();
+test("journal callbacks remain separated by capability-derived owner", async () => {
+  const owners = new Map<string, Map<string, unknown>>();
   const storage = {
     idFromName: (ownerId: string) => ownerId,
     get: (ownerId: string) => ({
-      mutate: async (
-        requestOwner: string,
-        command: { kind: string } & Record<string, unknown>,
-      ) => {
-        assert.equal(requestOwner, ownerId);
-        let ownerValues = values.get(ownerId);
-        if (!ownerValues) {
-          ownerValues = new Map();
-          values.set(ownerId, ownerValues);
-        }
+      mutate: async (_owner: string, command: LocalBasketCommand) => {
+        const operations = owners.get(ownerId) ?? new Map<string, unknown>();
+        owners.set(ownerId, operations);
         if (command.kind === "review-operation-write") {
-          const operation = command.operation as { operationId: string };
-          ownerValues.set(operation.operationId, operation);
-          return;
+          operations.set(command.operation.operationId, command.operation);
         }
         if (command.kind === "review-operation-read") {
-          return ownerValues.get(command.operationId as string);
+          return operations.get(command.operationId);
         }
-        throw new Error(`Unexpected journal command: ${command.kind}`);
+        return true;
       },
     }),
   };
-  const ownerByCapability = new Map([
-    ["capability-one", "owner-one"],
-    ["capability-two", "owner-two"],
+  const byCapability = new Map([
+    ["owner-a-capability", "owner-a"],
+    ["owner-b-capability", "owner-b"],
   ]);
-  const request = async (capability: string, command: unknown) =>
+  const call = (capabilityValue: string, command: unknown) =>
     handleLocalBasketStateRequest(
       attachLocalBasketCapability(
         new Request("http://local-basket-state.internal/inventory", {
@@ -185,316 +134,118 @@ test("review-operation journal callbacks stay scoped to the request capability",
           headers: { "content-type": "application/json" },
           body: JSON.stringify(command),
         }),
-        capability,
+        capabilityValue,
       ),
       storage,
-      async (value) => ownerByCapability.get(value),
+      async (value) => byCapability.get(value),
     );
   const operation = (accountIdentity: string) => ({
     kind: "review-operation-write",
     operation: {
       operationId: "native-submit:44",
-      generation: "attempt-one",
+      generation: "attempt:1",
       accountIdentity,
       kind: "submit",
-      name: "Dinner",
-      cleanupStatus: "pending",
-      cleanupWarning: "Cleanup is pending.",
-      listId: 44,
+      name: "Synthetic dinner",
       items: [{ productId: 7, quantity: 2 }],
     },
   });
-
   assert.equal(
-    (await request("capability-one", operation("account-one"))).status,
+    (await call("owner-a-capability", operation("account-a"))).status,
     200,
   );
   assert.equal(
-    (await request("capability-two", operation("account-two"))).status,
+    (await call("owner-b-capability", operation("account-b"))).status,
     200,
   );
-
-  const first = await request("capability-one", {
-    kind: "review-operation-read",
-    operationId: "native-submit:44",
-  });
-  const second = await request("capability-two", {
-    kind: "review-operation-read",
-    operationId: "native-submit:44",
-  });
-  assert.equal(first.status, 200);
-  assert.equal(second.status, 200);
-  assert.equal(
-    (
-      (await first.json()) as {
-        accountIdentity: string;
-        cleanupStatus: string;
-        cleanupWarning: string;
-      }
-    ).accountIdentity,
-    "account-one",
-  );
-  const firstOperation = (await request("capability-one", {
-    kind: "review-operation-read",
-    operationId: "native-submit:44",
-  }).then((response) => response.json())) as {
-    cleanupStatus: string;
-    cleanupWarning: string;
-  };
-  assert.equal(firstOperation.cleanupStatus, "pending");
-  assert.equal(firstOperation.cleanupWarning, "Cleanup is pending.");
-  assert.equal(
-    ((await second.json()) as { accountIdentity: string }).accountIdentity,
-    "account-two",
-  );
+  const read = async (cap: string) =>
+    call(cap, {
+      kind: "review-operation-read",
+      operationId: "native-submit:44",
+    }).then((response) => response.json()) as Promise<{
+      accountIdentity: string;
+    }>;
+  assert.equal((await read("owner-a-capability")).accountIdentity, "account-a");
+  assert.equal((await read("owner-b-capability")).accountIdentity, "account-b");
 });
 
-test("Local basket callback rejects credential-bearing egress before storage", async () => {
-  let storageCalls = 0;
-  const storage = {
-    idFromName: () => {
-      storageCalls += 1;
-      return principalKey;
-    },
-    get: () => {
-      storageCalls += 1;
-      return {
-        read: async () => createOwnerLocalBasketInventory(principalKey),
-        mutate: async () => undefined,
-      };
-    },
-  };
-  const request = new Request("http://local-basket-state.internal/inventory", {
-    headers: { authorization: "Bearer synthetic-secret" },
-  });
-
-  const response = await handleLocalBasketStateRequest(
-    attachLocalBasketCapability(request, "container-owned-capability"),
-    storage,
-    async () => principalKey,
-  );
-  assert.equal(response.status, 403);
-
-  assert.equal(storageCalls, 0);
-});
-
-test("Local basket callback validates and strips product snapshot authority", async () => {
-  let persisted: unknown;
-  const storage = {
-    idFromName: (ownerId: string) => ownerId,
-    get: () => ({
-      read: async (ownerId: string) => createOwnerLocalBasketInventory(ownerId),
-      mutate: async (_ownerId: string, command: unknown) => {
-        persisted = command;
-        return { accepted: true };
-      },
-    }),
-  };
-  const post = (view: Record<string, unknown>) =>
-    new Request("http://local-basket-state.internal/inventory", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        kind: "create",
-        lines: [{ productId: 7, quantity: 1, view }],
-      }),
-    });
-  const owner = async () => principalKey;
-  const capability = "container-owned-capability";
-  const safeView = {
-    context: "details",
-    status: "complete",
-    product: {
-      id: 7,
-      name: "Fixture",
-      labels: [],
-      tags: [],
-      credential: "must-not-persist",
-    },
-    authority: { token: "must-not-persist" },
-  };
-
-  const accepted = await handleLocalBasketStateRequest(
-    attachLocalBasketCapability(post(safeView), capability),
-    storage,
-    owner,
-  );
-  assert.equal(accepted.status, 200);
-  const cleanView = (
-    persisted as {
-      lines: Array<{ view: Record<string, unknown> }>;
-    }
-  ).lines[0]!.view;
-  assert.equal("authority" in cleanView, false);
-  assert.equal(
-    "credential" in (cleanView.product as Record<string, unknown>),
-    false,
-  );
-
-  persisted = undefined;
-  const rejected = await handleLocalBasketStateRequest(
-    attachLocalBasketCapability(
-      post({ ...safeView, status: "pending" }),
-      capability,
-    ),
-    storage,
-    owner,
-  );
-  assert.equal(rejected.status, 400);
-  assert.equal(persisted, undefined);
-});
-
-test("callback serializes an absent selection as JSON null", async () => {
-  const response = await handleLocalBasketStateRequest(
-    attachLocalBasketCapability(
-      new Request("http://local-basket-state.internal/inventory", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ kind: "selection", selectionKey: "session" }),
-      }),
-      "container-owned-capability",
-    ),
-    {
-      idFromName: (ownerId: string) => ownerId,
-      get: () => ({ mutate: async () => undefined }),
-    },
-    async () => principalKey,
-  );
-
-  assert.equal(response.status, 200);
-  assert.equal(await response.json(), null);
-});
-
-test(
-  "Workers callback keeps an absent selection JSON-readable",
-  { timeout: 30_000 },
-  async () => {
-    const response = await runWorkersSelection();
-
-    assert.equal(response.status, 200);
-    assert.equal(response.body, "null");
-  },
-);
-
-test("callback returns JSON-safe acknowledgements after committed deletion", async () => {
-  const values = new Map<string, unknown>();
-  const storage = {
-    idFromName: (ownerId: string) => ownerId,
-    get: () => ({
-      mutate: async (
-        ownerId: string,
-        command: Parameters<typeof mutateOwnerLocalBasketInventory>[2],
-      ) => {
-        const access: LocalBasketStorageAccess = {
-          async get<T>(key: string) {
-            return values.get(key) as T | undefined;
-          },
-          async put<T>(key: string, value: T) {
-            values.set(key, structuredClone(value));
-          },
-          async delete(key: string) {
-            values.delete(key);
-          },
-          async setAlarm() {},
-          async deleteAlarm() {},
-        };
-        return mutateOwnerLocalBasketInventory(
-          {
-            ...access,
-            async transaction<T>(
-              action: (tx: LocalBasketStorageAccess) => Promise<T>,
-            ) {
-              return action(access);
-            },
-          },
-          ownerId,
-          command,
-        );
-      },
-    }),
-  };
-  const request = (body: unknown) =>
-    attachLocalBasketCapability(
-      new Request("http://local-basket-state.internal/inventory", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-      }),
-      "container-owned-capability",
-    );
-  const call = (body: unknown) =>
+test("callback keeps capacity and generic storage failures safe", async () => {
+  const command = { kind: "review-operation-read", operationId: "submit:44" };
+  const call = (failure: unknown) =>
     handleLocalBasketStateRequest(
-      request(body),
-      storage,
-      async () => principalKey,
-    );
-  const view = {
-    context: "details",
-    status: "complete",
-    product: { id: 17, name: "Fixture", labels: [], tags: [] },
-  };
-  const createdResponse = await call({
-    kind: "create",
-    lines: [{ productId: 17, quantity: 1, view }],
-  });
-  assert.equal(createdResponse.status, 200);
-  const created = (await createdResponse.json()) as {
-    basket: { basketId: string };
-  };
-
-  const deletedResponse = await call({
-    kind: "delete",
-    basketId: created.basket.basketId,
-  });
-  assert.equal(deletedResponse.status, 200);
-  assert.deepEqual(await deletedResponse.json(), {
-    basketId: created.basket.basketId,
-    deleted: true,
-  });
-  assert.equal(values.size, 0);
-});
-
-test("callback distinguishes missing baskets, conflicts, and storage failures", async () => {
-  const call = (error: Error) =>
-    handleLocalBasketStateRequest(
-      attachLocalBasketCapability(
-        new Request("http://local-basket-state.internal/inventory", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ kind: "list" }),
-        }),
-        "container-owned-capability",
-      ),
+      request(command),
       {
         idFromName: (ownerId: string) => ownerId,
         get: () => ({
           mutate: async () => {
-            throw error;
+            throw failure;
           },
         }),
       },
       async () => principalKey,
     );
+  const capacity = await call({ code: "LOCAL_BASKET_OPERATION_CAPACITY" });
+  assert.equal(capacity.status, 429);
+  assert.match(await capacity.text(), /recovery storage is full/u);
+  const unavailable = await call(new Error("private storage details"));
+  assert.equal(unavailable.status, 500);
+  assert.doesNotMatch(await unavailable.text(), /private storage details/u);
+});
 
-  const missingError = Object.assign(new Error("serialized missing basket"), {
-    code: "LOCAL_BASKET_NOT_FOUND",
-    name: "LocalBasketNotFoundError",
-  });
-  const missing = await call(missingError);
-  assert.equal(missing.status, 404);
-  assert.equal(await missing.text(), "Local basket is unavailable.");
+test("retired inventory commands are rejected before storage access", async () => {
+  let storageCalls = 0;
+  const storage = {
+    idFromName: () => {
+      storageCalls++;
+      return principalKey;
+    },
+    get: () => {
+      storageCalls++;
+      return { mutate: async () => undefined };
+    },
+  };
+  for (const command of [
+    { kind: "list" },
+    { kind: "selection", selectionKey: "synthetic" },
+    { kind: "create", lines: [] },
+    { kind: "read", basketId: "00000000-0000-4000-8000-000000000001" },
+    {
+      kind: "edit",
+      basketId: "00000000-0000-4000-8000-000000000001",
+      edit: { kind: "remove", productIds: [7] },
+    },
+    { kind: "delete", basketId: "00000000-0000-4000-8000-000000000001" },
+    { kind: "heartbeat", basketId: "00000000-0000-4000-8000-000000000001" },
+  ]) {
+    const response = await handleLocalBasketStateRequest(
+      request(command),
+      storage,
+      async () => principalKey,
+    );
+    assert.equal(response.status, 400, command.kind);
+  }
+  assert.equal(storageCalls, 0);
+});
 
-  const conflictError = Object.assign(
-    new Error("serialized revision conflict"),
-    { code: "LOCAL_BASKET_CONFLICT", name: "LocalBasketConflictError" },
+test("credential-bearing callback egress is rejected before storage", async () => {
+  let storageCalls = 0;
+  const response = await handleLocalBasketStateRequest(
+    request(
+      { kind: "review-operation-read", operationId: "submit:44" },
+      { authorization: "Bearer synthetic-secret" },
+    ),
+    {
+      idFromName: () => {
+        storageCalls++;
+        return principalKey;
+      },
+      get: () => {
+        storageCalls++;
+        return { mutate: async () => undefined };
+      },
+    },
+    async () => principalKey,
   );
-  const conflict = await call(conflictError);
-  assert.equal(conflict.status, 409);
-  assert.match(await conflict.text(), /changed/u);
-
-  const failed = await call(new Error("private owner detail"));
-  assert.equal(failed.status, 500);
-  const failureText = await failed.text();
-  assert.match(failureText, /temporarily unavailable/u);
-  assert.doesNotMatch(failureText, /private owner detail/u);
+  assert.equal(response.status, 403);
+  assert.equal(storageCalls, 0);
 });

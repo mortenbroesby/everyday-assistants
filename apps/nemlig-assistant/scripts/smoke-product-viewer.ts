@@ -3,12 +3,7 @@ import { mkdir } from "node:fs/promises";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  chromium,
-  type FrameLocator,
-  type Locator,
-  type Page,
-} from "playwright";
+import { chromium, type FrameLocator, type Page } from "playwright";
 import { readProductViewerArtifact } from "../src/product-viewer.js";
 import type { ProductReviewSnapshot } from "../src/product-review.js";
 import { readLocalViewerGeneration } from "./viewer-generation.js";
@@ -39,12 +34,11 @@ declare global {
     hostErrors: string[];
     providerWrites: number;
     failNext: boolean;
+    failNoWriteNext: boolean;
     failGenericNext: boolean;
     deferGenericNext: boolean;
     submissionAttempts: number;
-    heartbeatCalls: number;
     getBasketState: () => { selected?: string; ids: string[] };
-    advanceSyntheticClock: (milliseconds: number) => void;
     sendPassive: () => void;
     sendPassivePicker: () => void;
     cancelPendingTool: () => void;
@@ -68,28 +62,6 @@ async function openBasket(
   assert.equal(
     await page.evaluate(() => window.calls.at(-1)?.args.basket_id),
     basketId,
-    message,
-  );
-}
-
-async function setSyntheticClock(viewer: Locator) {
-  await viewer.evaluate(() => {
-    let now = Date.now();
-    Date.now = () => now;
-    (
-      window as Window & { advanceClock?: (milliseconds: number) => void }
-    ).advanceClock = (milliseconds) => {
-      now += milliseconds;
-    };
-  });
-}
-
-async function assertNoDeleteAction(page: Page, message: string) {
-  assert.equal(
-    await page.evaluate(() =>
-      window.calls.some(({ args }) => args.action?.kind === "delete"),
-    ),
-    false,
     message,
   );
 }
@@ -144,7 +116,14 @@ const nativeFixtureJson = JSON.stringify({
   basketId: undefined,
   shoppingListId: 12345678,
   shoppingListName: "Synthetic saved list",
+  reviewContextId: "12345678-1234-4234-8234-123456789def",
   saveStatus: "saved",
+});
+const draftFixtureJson = JSON.stringify({
+  ...initialReview,
+  basketId: undefined,
+  revision: undefined,
+  draftId: "12345678-1234-4234-8234-123456789def",
 });
 const partialFixtureJson = JSON.stringify({
   ...initialReview,
@@ -177,10 +156,9 @@ const parentDocument = (
 ) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
-window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failGenericNext=false; window.deferGenericNext=false; window.heartbeatCalls=0;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failNoWriteNext=false; window.failGenericNext=false; window.deferGenericNext=false;
 const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId;
 let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,basketId:basketIds[0],revision:1}; if(mode==='idless'){delete review.basketId;delete review.revision;delete review.submissionAttempted}
-let syntheticNow=Date.now(); Date.now=()=>syntheticNow; window.advanceSyntheticClock=(milliseconds)=>{syntheticNow+=milliseconds};
 const inventory=basketIds.map((basketId,index)=>({basketId,createdAt:Date.parse('2026-10-01T10:00:00.000Z'),lastActivityAt:Date.parse('2026-10-09T10:00:00.000Z'),expiresAt:Date.parse('2026-10-10T10:00:00.000Z'),revision:index+1,productCount:index+2,submissionAttempted:false}));
 const basketReview=(basketId)=>({...JSON.parse(${JSON.stringify(reviewJson)}),basketId,revision:1,submissionAttempted:false,submission:undefined});
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
@@ -191,8 +169,6 @@ const payload=(data)=>({structuredContent:data});
 const apply=(action,args)=>{
  if(action.kind==='list') return payload({baskets:inventory,selectedBasketId,selectionRequired:true});
  if(action.kind==='select'){selectedBasketId=args.shopping_list_id?String(args.shopping_list_id):args.basket_id;review=args.shopping_list_id?{...review,draftId:undefined,saveStatus:'saved',saveProgress:undefined,items:review.items.slice(0,1)}:basketReview(selectedBasketId);return result(review)}
- if(action.kind==='delete'){const index=inventory.findIndex(basket=>basket.basketId===args.basket_id);if(index>=0)inventory.splice(index,1);if(selectedBasketId===args.basket_id)selectedBasketId=undefined;return payload({baskets:inventory,selectedBasketId,selectionRequired:true})}
- if(action.kind==='heartbeat'){window.heartbeatCalls++;review.revision++;inventory.find(basket=>basket.basketId===args.basket_id).lastActivityAt=Date.parse('2026-10-10T10:00:00.000Z');return result(review)}
  if(action.kind==='show') return result(review);
  if(action.kind==='navigate') review.destination=action.destination;
  if(action.kind==='quantity') review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;
@@ -216,6 +192,7 @@ window.addEventListener('message',event=>{
   const {name,arguments:args}=message.params; window.calls.push({name,args});
   if(name==='submit_product_review'){
    window.submissionAttempts++;
+   if(window.failNoWriteNext){window.failNoWriteNext=false;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Could not verify the saved list. No basket write was sent.'}})}
    if(window.failNext){window.failNext=false;review.submission={submission_id:args.submission_id,status:'uncertain',review:{}};return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
    return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});
   }
@@ -229,6 +206,7 @@ window.addEventListener('message',event=>{
 const hostDocuments = new Map([
   ["/host", parentDocument(fixtureJson)],
   ["/host-native", parentDocument(nativeFixtureJson)],
+  ["/host-draft", parentDocument(draftFixtureJson)],
   ["/host-partial", parentDocument(partialFixtureJson)],
   ["/host-long", parentDocument(longFixtureJson)],
   ["/host-picker", parentDocument(fixtureJson, "picker")],
@@ -360,7 +338,22 @@ try {
   const frame = page.frameLocator('iframe[title="viewer"]');
   await frame
     .getByRole("heading", { name: "Shopping list", exact: true })
-    .waitFor();
+    .waitFor({ timeout: 10_000 })
+    .catch(async (error: unknown) => {
+      const debug = await Promise.race([
+        frame
+          .locator("body")
+          .innerText()
+          .catch(() => "<no viewer body>"),
+        page.waitForTimeout(1_000).then(() => "<viewer read timed out>"),
+      ]);
+      throw new Error(
+        `Initial viewer did not load: ${debug}; frames=${JSON.stringify(page.frames().map((item) => item.url()))}`,
+        {
+          cause: error,
+        },
+      );
+    });
   assert.equal(
     await page.evaluate(() => window.calls.length),
     0,
@@ -471,69 +464,6 @@ try {
     0,
     "legacy local basket reached the provider submission tool",
   );
-  const callsBeforeBasketPicker = await basketPage.evaluate(
-    () => window.calls.length,
-  );
-  await basketFrame.locator(".basket-menu > button").click();
-  await basketFrame
-    .getByRole("menuitem", { name: "Choose another shopping list" })
-    .click();
-  await basketPage.waitForFunction(
-    (before) =>
-      window.calls
-        .slice(before)
-        .some(({ args }) => args.action?.kind === "list"),
-    callsBeforeBasketPicker,
-  );
-  await basketFrame
-    .getByRole("button", {
-      name: `Open shopping list ${basketIds[0].slice(0, 8)}`,
-    })
-    .waitFor();
-  await openBasket(
-    basketPage,
-    basketFrame,
-    basketIds[1],
-    "second-chat selection did not carry its explicit basket ID",
-  );
-  assert.equal(
-    await basketFrame
-      .getByRole("heading", { name: "Nemlig confirmed the addition" })
-      .count(),
-    0,
-    "basket switch preserved the previous submission confirmation",
-  );
-
-  await basketFrame.locator(".basket-menu > button").click();
-  await basketFrame
-    .getByRole("menuitem", { name: "Choose another shopping list" })
-    .click();
-  await basketFrame.locator("#title").waitFor();
-  const deleteTarget = basketFrame.locator(".basket-picker li").first();
-  await deleteTarget
-    .getByRole("button", { name: `Delete basket ${basketIds[0].slice(0, 8)}` })
-    .click();
-  await assertNoDeleteAction(basketPage, "delete happened before confirmation");
-  await deleteTarget.getByRole("button", { name: "Keep" }).click();
-  await assertNoDeleteAction(basketPage, "cancelled deletion reached the host");
-  await deleteTarget
-    .getByRole("button", { name: `Delete basket ${basketIds[0].slice(0, 8)}` })
-    .click();
-  await deleteTarget
-    .getByRole("button", { name: "Delete", exact: true })
-    .click();
-  await basketPage.waitForFunction(() =>
-    window.calls.some(({ args }) => args.action?.kind === "delete"),
-  );
-  assert.equal(
-    await basketPage.evaluate(
-      () =>
-        window.calls.find(({ args }) => args.action?.kind === "delete")?.args
-          .basket_id,
-    ),
-    basketIds[0],
-    "delete was not bound to the confirmed basket",
-  );
   await basketPage.close();
 
   const legacyPage = await context.newPage();
@@ -553,17 +483,13 @@ try {
   await restoredFrame
     .getByRole("heading", { name: "Shopping list", exact: true })
     .waitFor();
-  await setSyntheticClock(restoredFrame.locator(".viewer"));
   await restoredFrame.locator(".viewer").evaluate(() => {
-    (
-      window as Window & { advanceClock?: (milliseconds: number) => void }
-    ).advanceClock?.(2 * 60 * 60 * 1_000);
     window.dispatchEvent(new Event("focus"));
   });
   assert.equal(
-    await restoredPage.evaluate(() => window.heartbeatCalls),
+    await restoredPage.evaluate(() => window.calls.length),
     0,
-    "passive restore renewed a basket",
+    "passive restore sent an obsolete basket heartbeat",
   );
   await restoredPage.close();
 
@@ -791,61 +717,6 @@ try {
     "a stale rejection replaced the current selection with an error",
   );
   await staleFailurePage.close();
-
-  const activePage = await context.newPage();
-  await activePage.goto(`http://127.0.0.1:${address.port}/host-picker`);
-  const activeFrame = activePage.frameLocator('iframe[title="viewer"]');
-  await openBasket(
-    activePage,
-    activeFrame,
-    basketIds[0],
-    "heartbeat setup did not select the explicit basket ID",
-  );
-  await setSyntheticClock(activeFrame.locator(".viewer"));
-  assert.equal(
-    await activePage.evaluate(() => window.heartbeatCalls),
-    0,
-    "selection triggered an immediate heartbeat",
-  );
-  await activeFrame.locator(".viewer").evaluate(() => {
-    (
-      window as Window & { advanceClock?: (milliseconds: number) => void }
-    ).advanceClock?.(60 * 60 * 1_000);
-    window.dispatchEvent(new Event("focus"));
-  });
-  await activePage.waitForFunction(() => window.heartbeatCalls === 1);
-  assert.equal(
-    await activePage.evaluate(
-      () =>
-        window.calls.find(({ args }) => args.action?.kind === "heartbeat")?.args
-          .basket_id,
-    ),
-    basketIds[0],
-    "heartbeat was not bound to the active basket",
-  );
-  await activeFrame
-    .locator('[data-viewer-component="product-summary"]')
-    .first()
-    .click();
-  await activeFrame.locator(".product-detail-modal").waitFor();
-  await activeFrame.locator(".viewer").evaluate(() => {
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "hidden",
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    (
-      window as Window & { advanceClock?: (milliseconds: number) => void }
-    ).advanceClock?.(60 * 60 * 1_000);
-    window.dispatchEvent(new Event("focus"));
-  });
-  await activePage.waitForTimeout(100);
-  assert.equal(
-    await activePage.evaluate(() => window.heartbeatCalls),
-    1,
-    "background tab renewed a basket",
-  );
-  await activePage.close();
 
   const milkCard = frame
     .locator(".product-card")
@@ -1218,7 +1089,29 @@ try {
   const partialPage = await context.newPage();
   await partialPage.goto(`http://127.0.0.1:${address.port}/host-partial`);
   const partialFrame = partialPage.frameLocator('iframe[title="viewer"]');
-  await partialFrame.getByRole("button", { name: "Resume saving" }).click();
+  const resumeSaving = partialFrame.getByRole("button", {
+    name: "Resume saving",
+  });
+  try {
+    await resumeSaving.waitFor({ timeout: 5_000 });
+  } catch (error) {
+    const content = await partialPage
+      .locator('iframe[title="viewer"]')
+      .evaluate(
+        (iframe) =>
+          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
+      );
+    await partialPage.screenshot({
+      path: resolve(
+        process.cwd(),
+        "../../.codex/review/partial-save-state.png",
+      ),
+    });
+    throw new Error(`Partial-save controls not rendered: ${content}`, {
+      cause: error,
+    });
+  }
+  await resumeSaving.click();
   await partialPage.waitForFunction(() => window.calls.length > 0);
   assert.deepEqual(
     await partialPage.evaluate(() => window.calls.at(-1)?.args),
@@ -1255,9 +1148,26 @@ try {
   const nativePage = await context.newPage();
   await nativePage.goto(`http://127.0.0.1:${address.port}/host-native`);
   const nativeFrame = nativePage.frameLocator('iframe[title="viewer"]');
-  await nativeFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
+  try {
+    await nativeFrame
+      .getByRole("heading", { name: "Synthetic saved list", exact: true })
+      .waitFor({ timeout: 5_000 });
+  } catch (error) {
+    const content = await nativePage
+      .locator('iframe[title="viewer"]')
+      .evaluate(
+        (iframe) =>
+          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
+      );
+    const hostErrors = await nativePage.evaluate(() => window.hostErrors);
+    await nativePage.screenshot({
+      path: resolve(process.cwd(), "../../.codex/review/native-list-state.png"),
+    });
+    throw new Error(
+      `Native-list review did not render: ${content}; hostErrors=${JSON.stringify(hostErrors)}`,
+      { cause: error },
+    );
+  }
   assert.equal(
     await nativeFrame
       .getByRole("button", { name: "Submit to Nemlig basket" })
@@ -1320,14 +1230,163 @@ try {
     .click();
   await uncertainPage.waitForFunction(() => window.submissionAttempts === 1);
   await uncertainFrame
-    .getByRole("heading", { name: "We could not verify the addition" })
+    .getByRole("dialog")
+    .getByRole("heading", { name: "Check your Nemlig basket" })
     .waitFor();
+  await uncertainFrame
+    .getByRole("dialog")
+    .getByRole("button", { name: "Inspect Nemlig basket in conversation" })
+    .waitFor();
+  assert.equal(
+    await uncertainFrame
+      .getByText(/known result is that no product was sent/iu)
+      .count(),
+    0,
+    "uncertain provider response was presented as a confirmed no-write",
+  );
   assert.equal(
     await uncertainPage.evaluate(() => window.submissionAttempts),
     1,
     "uncertain write was retried",
   );
+  const uncertainDialog = uncertainFrame.getByRole("dialog");
+  assert.equal(
+    await uncertainDialog.evaluate((dialog) =>
+      dialog.contains(dialog.ownerDocument.activeElement),
+    ),
+    true,
+    "recovery dialog did not receive focus",
+  );
+  await uncertainDialog.press("Escape");
+  await uncertainFrame.getByRole("dialog").waitFor({ state: "detached" });
+  const recoveredSurface = await uncertainFrame
+    .locator("body")
+    .evaluate((body) => {
+      const active = body.ownerDocument.activeElement;
+      return {
+        focusRestored:
+          active?.id === "title" || active?.classList.contains("viewer"),
+        contents: (body as HTMLBodyElement).innerText,
+      };
+    });
+  assert.equal(
+    recoveredSurface.focusRestored,
+    true,
+    "Escape did not return focus to the review surface",
+  );
+  assert.match(
+    recoveredSurface.contents,
+    /Inspect the actual Nemlig basket before making another request/u,
+    "uncertain state did not retain its no-replay recovery guidance",
+  );
+  assert.equal(
+    await uncertainFrame
+      .getByRole("button", { name: "Inspect Nemlig basket in conversation" })
+      .isVisible(),
+    true,
+    "uncertain state did not retain its read-only recovery action",
+  );
+  assert.equal(
+    await uncertainFrame
+      .getByRole("button", { name: "Submit to Nemlig basket" })
+      .count(),
+    0,
+    "uncertain state offered a replay action",
+  );
   await uncertainPage.close();
+
+  const noWritePage = await context.newPage();
+  await noWritePage.goto(`http://127.0.0.1:${address.port}/host-native`, {
+    waitUntil: "domcontentloaded",
+  });
+  const noWriteFrame = noWritePage.frameLocator('iframe[title="viewer"]');
+  await noWriteFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await noWritePage.evaluate(() => {
+    window.failNoWriteNext = true;
+  });
+  await noWriteFrame
+    .getByRole("button", { name: "Submit to Nemlig basket" })
+    .click();
+  const noWriteDialog = noWriteFrame.getByRole("dialog");
+  try {
+    await noWriteDialog
+      .getByRole("heading", { name: "Submission was not sent" })
+      .waitFor();
+  } catch (error) {
+    const content = await noWritePage
+      .locator('iframe[title="viewer"]')
+      .evaluate(
+        (iframe) =>
+          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
+      );
+    const hostErrors = await noWritePage.evaluate(() => window.hostErrors);
+    await noWritePage.screenshot({
+      path: resolve(process.cwd(), "../../.codex/review/no-write-state.png"),
+    });
+    throw new Error(
+      `Known no-write recovery did not render: ${content}; hostErrors=${JSON.stringify(hostErrors)}`,
+      { cause: error },
+    );
+  }
+  await noWriteDialog
+    .getByRole("button", { name: "Review shopping list" })
+    .click();
+  await noWriteFrame.getByRole("dialog").waitFor({ state: "detached" });
+  assert.equal(
+    await noWritePage.evaluate(() => window.submissionAttempts),
+    1,
+    "known no-write recovery retried submission instead of refreshing",
+  );
+  assert.equal(
+    await noWriteFrame.getByText("Synthetic milk", { exact: true }).count(),
+    1,
+    "known no-write recovery lost the reviewed products",
+  );
+  await noWritePage.close();
+
+  const saveFailurePage = await context.newPage();
+  await saveFailurePage.goto(`http://127.0.0.1:${address.port}/host-draft`, {
+    waitUntil: "domcontentloaded",
+  });
+  const saveFailureFrame = saveFailurePage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await saveFailureFrame
+    .getByRole("heading", { name: "Draft products", exact: true })
+    .waitFor();
+  await saveFailureFrame
+    .getByLabel("Nemlig shopping list name")
+    .fill("Fixture list");
+  await saveFailurePage.evaluate(() => {
+    window.failGenericNext = true;
+  });
+  await saveFailureFrame
+    .getByRole("button", { name: "Save shopping list" })
+    .click();
+  await saveFailureFrame
+    .getByRole("dialog", { name: "Save was not confirmed" })
+    .waitFor();
+  await saveFailureFrame
+    .getByRole("dialog")
+    .getByRole("button", { name: "Return to draft" })
+    .click();
+  await saveFailureFrame.getByRole("dialog").waitFor({ state: "detached" });
+  await saveFailureFrame
+    .getByRole("heading", { name: "Draft products", exact: true })
+    .waitFor();
+  assert.equal(
+    await saveFailureFrame.getByText("Synthetic milk", { exact: true }).count(),
+    1,
+    "Save recovery left the original draft visible",
+  );
+  assert.equal(
+    await saveFailurePage.evaluate(() => window.submissionAttempts),
+    0,
+    "Save recovery unexpectedly attempted basket submission",
+  );
+  await saveFailurePage.close();
 
   const removePage = await context.newPage();
   await removePage.goto(`http://127.0.0.1:${address.port}/host`);
