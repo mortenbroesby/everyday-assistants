@@ -122,7 +122,6 @@ const reviewSnapshotSchema = z.object({
     .strict()
     .optional(),
   actionNotice: z.string().max(300).optional(),
-  basketId: z.string().uuid().optional(),
   revision: z.number().int().nonnegative().optional(),
   submissionAttempted: z.boolean().optional(),
   destination: z.enum(["needs-review", "ready", "alternatives"]),
@@ -169,8 +168,6 @@ const localActionSchema = z.discriminatedUnion("kind", [
     kind: z.literal("select"),
     accept_saved_subset_draft_id: z.string().uuid().optional(),
   }),
-  z.object({ kind: z.literal("delete") }),
-  z.object({ kind: z.literal("heartbeat") }),
 ]);
 const addReviewActionSchema = z.object({
   kind: z.literal("add"),
@@ -239,7 +236,6 @@ const modelReviewActionSchema = z.discriminatedUnion("kind", [
   alternativesReviewActionSchema,
   replaceReviewActionSchema,
 ]);
-// Older mounted cards may still send these actions; the service rejects them without changing state.
 const reviewActionSchema = z.discriminatedUnion("kind", [
   showReviewActionSchema,
   endReviewActionSchema,
@@ -270,13 +266,6 @@ const reviewActionSchema = z.discriminatedUnion("kind", [
   replaceReviewActionSchema,
 ]);
 const reviewTargetFields = {
-  basket_id: z
-    .string()
-    .uuid()
-    .optional()
-    .describe(
-      "Legacy Local basket ID. It only opens native shopping lists and is never read or changed.",
-    ),
   draft_id: z
     .string()
     .uuid()
@@ -301,10 +290,9 @@ const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
     .object({ ...reviewTargetFields, action })
     .strict()
     .refine(
-      ({ basket_id, draft_id, shopping_list_id }) =>
-        [basket_id, draft_id, shopping_list_id].filter(
-          (target) => target !== undefined,
-        ).length <= 1,
+      ({ draft_id, shopping_list_id }) =>
+        [draft_id, shopping_list_id].filter((target) => target !== undefined)
+          .length <= 1,
       { message: "Target exactly one draft or shopping list." },
     );
 const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
@@ -312,8 +300,11 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
 ) =>
   z
     .object({
-      basket_id: reviewTargetFields.basket_id,
-      shopping_list_id: reviewTargetFields.shopping_list_id,
+      shopping_list_id: reviewTargetFields.shopping_list_id
+        .unwrap()
+        .describe(
+          "Exact native Nemlig shopping-list ID shown in the reviewed card.",
+        ),
       review_context_id: reviewTargetFields.review_context_id,
       submission_id: submissionId,
       reviewed_list: z
@@ -337,14 +328,7 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
           "The exact saved-list name, product IDs, and quantities the user reviewed. Include this to submit after a card or server restart; the server re-reads and compares the list before any basket write.",
         ),
     })
-    .strict()
-    .refine(
-      ({ basket_id, shopping_list_id }) => !(basket_id && shopping_list_id),
-      {
-        message:
-          "Target one exact native shopping list or legacy Local basket.",
-      },
-    );
+    .strict();
 
 export type Candidate = z.infer<typeof candidateSchema>;
 
@@ -527,13 +511,13 @@ export function createMcpServer(
     {
       instructions: `Search Nemlig products with find_groceries, read the actual basket with show_my_basket, and use native Nemlig shopping lists to review products before adding them.
 
-The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. Added quantities are additional units. Local basket edits never write to Nemlig.
+The real Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots. Added quantities are additional units. Draft edits never write to Nemlig.
 
-For discovery, use a concise Danish catalogue phrase and preserve a distinctive brand when useful. Search results describe one provider response, not the entire catalogue; an empty result differs from a failure. Search and conversation edits do not open cards. When the user asks to see products visually, use start_product_review with exact returned IDs and quantities. Omit items in start_product_review to explicitly open the native shopping-list picker. New products start in an unsaved draft; only explicit Save creates a native shopping list. Repeating the same product-ID set reopens its current edited draft. A different set preserves the existing draft and returns a conflict; add with update_product_review_conversation or explicitly end it before starting a replacement. Native-list edits stay staged until explicit Update verifies the same list. Honor explicit requests not to start a draft, save a list, or edit a saved list; continue in text. Existing Local basket cards are stale: show the native shopping-list picker and never read, edit, delete, or submit their old Local basket IDs. Use update_product_review_conversation action=list to open the picker; show without a target never guesses another chat's draft or list. Without host conversation metadata, continue drafts with draft_id and saved-list cards with both shopping_list_id and review_context_id. Submit may use exact reviewed_list contents after the transient context expires; edits require a live matching context or a refreshed list. After an unconfirmed action, show current state; never replay it.
+For discovery, use a concise Danish catalogue phrase and preserve a distinctive brand when useful. Search results describe one provider response, not the entire catalogue; an empty result differs from a failure. Search and conversation edits do not open cards. When the user asks to see products visually, use start_product_review with exact returned IDs and quantities. Omit items in start_product_review to explicitly open the native shopping-list picker. New products start in an unsaved draft; only explicit Save creates a native shopping list. Repeating the same product-ID set reopens its current edited draft. A different set preserves the existing draft and returns a conflict; add with update_product_review_conversation or explicitly end it before starting a replacement. Native-list edits stay staged until explicit Update verifies the same list. Honor explicit requests not to start a draft, save a list, or edit a saved list; continue in text. Retired Local Basket identifiers and actions fail tool argument validation and never trigger provider inventory reads or writes; start a new draft or explicitly select a native list to continue. Use update_product_review_conversation action=list to open the picker; show without a target never guesses another chat's draft or list. Without host conversation metadata, continue drafts with draft_id and saved-list cards with both shopping_list_id and review_context_id. Submit may use exact reviewed_list contents after the transient context expires; edits require a live matching context or a refreshed list. After an unconfirmed action, show current state; never replay it.
 
 Only an explicit Submit action from a clean, saved native shopping list may add to the actual basket. Submit uses that exact list ID once, verifies additive basket readback, and never retries an uncertain transfer. After verified transfer, the temporary source list may be deleted; if cleanup is uncertain, the completed transfer receipt prevents replay. Nemlig may change a list concurrently between the final check and dispatch; report this limitation without claiming atomicity. Searching, drafts, Save, and Update never change the actual basket.
 
-When a stale card supplies basket_id without a draft_id or shopping_list_id, show native shopping lists and explain that the old Local basket is no longer active. Never infer a native list from an old basket ID or matching name. Direct stdio use is process-local and text-only. A tool result or image URL does not prove ChatGPT rendered a card; provide a text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
+Direct stdio use is process-local and text-only. A tool result or image URL does not prove ChatGPT rendered a card; provide a text fallback when needed. check_nemlig_connection distinguishes Nemlig account access from ChatGPT app connection and directs users to the secure page without collecting credentials in chat.`,
       supportedProtocolVersions: SUPPORTED_PROTOCOL_VERSIONS,
     },
   );
@@ -781,20 +765,9 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
     };
   };
-  const basketSummarySchema = z.object({
-    basketId: z.string().uuid(),
-    createdAt: z.number().int().nonnegative(),
-    lastActivityAt: z.number().int().nonnegative(),
-    expiresAt: z.number().int().nonnegative(),
-    revision: z.number().int().nonnegative(),
-    productCount: z.number().int().nonnegative(),
-    submissionAttempted: z.boolean(),
-  });
   const durableReviewResultSchema = z.object({
     review: reviewSnapshotSchema.optional(),
     result: applyResultSchema.optional(),
-    baskets: z.array(basketSummarySchema).optional(),
-    selectedBasketId: z.string().uuid().nullable().optional(),
     shoppingLists: z
       .array(
         z.object({
@@ -826,13 +799,10 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       reviews.end(owner, draftId);
       return { ended: true as const };
     }
-    if (
-      action.kind === "list" ||
-      action.kind === "select" ||
-      action.kind === "delete" ||
-      action.kind === "heartbeat"
-    ) {
-      throw new NemligError("Durable Local basket storage is unavailable.");
+    if (action.kind === "list" || action.kind === "select") {
+      throw new NemligError(
+        "Open the native shopping-list picker or select an exact saved-list target.",
+      );
     }
     if (action.kind === "prepare_submission") {
       const review = reviews.active(owner, draftId);
@@ -877,18 +847,12 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       },
       message,
     );
-  const listNativeListsForLegacyBasket = (signal: AbortSignal) =>
-    listNativeShoppingLists(
-      signal,
-      "Local baskets are no longer active. Select a native Nemlig shopping list; saved account data was not changed.",
-    );
   // Target routing keeps stale cards, account scope, and list identity checks together.
   // fallow-ignore-next-line complexity
   const updateReviewTarget = async (
     owner: string,
     action: z.infer<typeof reviewActionSchema>,
     targets: {
-      basketId?: string;
       draftId?: string;
       shoppingListId?: number;
     },
@@ -933,15 +897,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         targets.draftId,
         "Unsaved draft expired or is unavailable. Start a new draft; old cards cannot restore it.",
       );
-    }
-    if (
-      targets.basketId ||
-      action.kind === "delete" ||
-      action.kind === "heartbeat"
-    ) {
-      return targets.basketId
-        ? listNativeListsForLegacyBasket(signal)
-        : listNativeShoppingLists(signal);
     }
     if (action.kind === "show" && !reviews.active(owner)) {
       return success({ unavailable: true as const });
@@ -1018,12 +973,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     if (action.kind === "select") {
       return openNativeShoppingList(owner, listId, signal);
     }
-    if (
-      action.kind === "list" ||
-      action.kind === "delete" ||
-      action.kind === "end" ||
-      action.kind === "heartbeat"
-    ) {
+    if (action.kind === "list" || action.kind === "end") {
       throw new NemligError(
         "Native shopping lists cannot be deleted or cleared here.",
       );
@@ -1058,28 +1008,17 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
   };
   const submitReview = async (
     owner: string,
-    basketId: string | undefined,
-    shoppingListId: number | undefined,
+    shoppingListId: number,
     submissionId: string,
     signal: AbortSignal,
     reviewedList?: ReviewedShoppingList,
   ) => {
-    if (basketId) {
-      throw new NemligError(
-        "Local basket submission is no longer supported. Select a native Nemlig shopping list.",
-      );
-    }
-    if (shoppingListId) {
-      return submitProcessReview(
-        owner,
-        submissionId,
-        shoppingListId,
-        signal,
-        reviewedList,
-      );
-    }
-    throw new NemligError(
-      "Select the exact native Nemlig shopping list before submitting.",
+    return submitProcessReview(
+      owner,
+      submissionId,
+      shoppingListId,
+      signal,
+      reviewedList,
     );
   };
 
@@ -1387,10 +1326,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       annotations: draftActionAnnotations,
       _meta: { ui: { visibility: ["model"] } },
     },
-    (
-      { action, basket_id, draft_id, shopping_list_id, review_context_id },
-      ctx,
-    ) => {
+    ({ action, draft_id, shopping_list_id, review_context_id }, ctx) => {
       const perform = async () => {
         const owner = reviewOwner(ctx, {
           draftId: draft_id,
@@ -1403,7 +1339,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           owner,
           action,
           {
-            basketId: basket_id,
             draftId: draft_id,
             shoppingListId: shopping_list_id,
           },
@@ -1417,7 +1352,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         action.kind === "list" ||
         action.kind === "select" ||
         action.kind === "prepare_submission" ||
-        basket_id !== undefined ||
         shopping_list_id !== undefined ||
         (action.kind === "show" && draft_id === undefined)
         ? runAuthenticatedRead("update_product_review_conversation", perform)
@@ -1431,7 +1365,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Update your shopping list",
       description:
-        "Internal UI action for this exact unsaved draft or native shopping list. Legacy Local basket IDs only open the native shopping-list picker and never mutate the old saved data.",
+        "Internal UI action for this exact unsaved draft or native shopping list. Retired Local Basket IDs and actions are unsupported.",
       inputSchema: reviewInputSchema(reviewActionSchema),
       outputSchema: draftActionOutputSchema,
       annotations: draftActionAnnotations,
@@ -1439,10 +1373,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     },
     // Model may resolve a conversation target; widget mutations are tied to this card's exact list ID.
     // fallow-ignore-next-line code-duplication
-    (
-      { action, basket_id, draft_id, shopping_list_id, review_context_id },
-      ctx,
-    ) => {
+    ({ action, draft_id, shopping_list_id, review_context_id }, ctx) => {
       const perform = async () => {
         const owner = reviewOwner(ctx, {
           draftId: draft_id,
@@ -1455,7 +1386,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
           owner,
           action,
           {
-            basketId: basket_id,
             draftId: draft_id,
             shoppingListId: shopping_list_id,
           },
@@ -1469,7 +1399,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
         action.kind === "prepare_submission" ||
         action.kind === "list" ||
         action.kind === "select" ||
-        basket_id !== undefined ||
         shopping_list_id !== undefined ||
         (action.kind === "show" && draft_id === undefined)
         ? runAuthenticatedRead("update_product_review", perform)
@@ -1482,7 +1411,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Submit the exact shopping list to Nemlig",
       description:
-        "Add the exact reviewed saved Nemlig shopping list to the basket once after explicit user authorization. Pass shopping_list_id and reviewed_list from the user's reviewed list, including its name and every product ID and quantity. The server re-reads that list and rejects changed contents before transfer; an active card or in-memory review is not required. Uncertain transfers are never retried. Legacy Local basket IDs are rejected.",
+        "Add the exact reviewed saved Nemlig shopping list to the basket once after explicit user authorization. Pass shopping_list_id and reviewed_list from the user's reviewed list, including its name and every product ID and quantity. The server re-reads that list and rejects changed contents before transfer; an active card or in-memory review is not required. Uncertain transfers are never retried.",
       inputSchema: submitReviewInputSchema(
         z
           .string()
@@ -1500,13 +1429,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       _meta: { ui: { visibility: ["model"] } },
     },
     (
-      {
-        basket_id,
-        shopping_list_id,
-        submission_id,
-        reviewed_list,
-        review_context_id,
-      },
+      { shopping_list_id, submission_id, reviewed_list, review_context_id },
       ctx,
     ) =>
       runMcpOperation("submit_product_review_conversation", () =>
@@ -1516,7 +1439,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
             reviewContextId: review_context_id,
             allowMissingReviewContext: true,
           }),
-          basket_id,
           shopping_list_id,
           submission_id,
           ctx.mcpReq.signal,
@@ -1530,7 +1452,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
     {
       title: "Submit the current shopping list",
       description:
-        "Internal one-click action for the exact saved native shopping list shown in the viewer. Passes the reviewed list contents so a card or server restart does not require an active in-memory review. Writes a durable attempt fence before transfer, verifies additive basket readback, and never retries an uncertain transfer. Legacy Local basket IDs are rejected.",
+        "Internal one-click action for the exact saved native shopping list shown in the viewer. Passes the reviewed list contents so a card or server restart does not require an active in-memory review. Writes a durable attempt fence before transfer, verifies additive basket readback, and never retries an uncertain transfer.",
       inputSchema: submitReviewInputSchema(z.string().uuid()),
       outputSchema: durableReviewResultSchema,
       annotations: {
@@ -1541,13 +1463,7 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
       _meta: { ui: { visibility: ["app"] }, "openai/widgetAccessible": true },
     },
     (
-      {
-        basket_id,
-        shopping_list_id,
-        submission_id,
-        reviewed_list,
-        review_context_id,
-      },
+      { shopping_list_id, submission_id, reviewed_list, review_context_id },
       ctx,
     ) =>
       runMcpOperation("submit_product_review", () =>
@@ -1557,7 +1473,6 @@ When a stale card supplies basket_id without a draft_id or shopping_list_id, sho
             reviewContextId: review_context_id,
             allowMissingReviewContext: true,
           }),
-          basket_id,
           shopping_list_id,
           submission_id,
           ctx.mcpReq.signal,

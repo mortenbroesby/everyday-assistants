@@ -38,7 +38,6 @@ export type ReviewItem = {
   view: ProductView;
 };
 export type Review = {
-  basketId?: string;
   shoppingListId?: number;
   reviewContextId?: string;
   shoppingListName?: string;

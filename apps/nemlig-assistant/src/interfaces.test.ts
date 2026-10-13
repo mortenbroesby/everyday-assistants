@@ -375,26 +375,14 @@ const friendlyCatalog = [
     "Submit the exact shopping list to Nemlig",
     false,
     false,
-    [
-      "basket_id",
-      "shopping_list_id",
-      "submission_id",
-      "reviewed_list",
-      "review_context_id",
-    ],
+    ["shopping_list_id", "submission_id", "reviewed_list", "review_context_id"],
   ],
   [
     "update_product_review_conversation",
     "Update your shopping list",
     false,
     false,
-    [
-      "action",
-      "basket_id",
-      "draft_id",
-      "shopping_list_id",
-      "review_context_id",
-    ],
+    ["action", "draft_id", "shopping_list_id", "review_context_id"],
   ],
 ] as const;
 
@@ -1023,7 +1011,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /Local basket edits never write to Nemlig/u,
+        /Draft edits never write to Nemlig/u,
       );
       assert.match(
         mcp.getInstructions() ?? "",
@@ -1106,7 +1094,10 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
         instructions,
         /only explicit Save creates a native shopping list/u,
       );
-      assert.match(instructions, /Existing Local basket cards are stale/u);
+      assert.match(
+        instructions,
+        /Retired Local Basket identifiers and actions fail tool argument validation/u,
+      );
       assert.match(instructions, /real Nemlig basket is add-only/u);
       assert.match(
         instructions,
@@ -1451,57 +1442,63 @@ test("MCP basket viewer uses basket summaries without fetching product details",
   assert.equal(productReads, 0);
 });
 
-test("legacy Local basket widget cards open native lists without legacy storage access", async () => {
-  const basketId = "00000000-0000-4000-8000-000000000099";
-  const originalFetch = globalThis.fetch;
-  let legacyStorageRequests = 0;
-  globalThis.fetch = async (input, init) => {
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url;
-    if (url.startsWith("http://local-basket-state.internal/")) {
-      legacyStorageRequests += 1;
-    }
-    return originalFetch(input, init);
+test("retired Local Basket targets and actions reject without provider access", async () => {
+  let providerReads = 0;
+  let providerWrites = 0;
+  const client = {
+    ...fakeClient(),
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => {
+      providerReads += 1;
+      return [{ id: 44, name: "Family", productCount: 2 }];
+    },
+    getShoppingList: async () => {
+      providerReads += 1;
+      throw new Error("unexpected saved-list read");
+    },
+    addShoppingListToCart: async () => {
+      providerWrites += 1;
+      throw new Error("unexpected transfer");
+    },
   };
-  try {
-    const client = {
-      ...fakeClient(),
-      providerIdentity: () => "account-1",
-      listShoppingLists: async () => [
-        { id: 44, name: "Family", productCount: 2 },
+  await withMcpClient(createMcpServer(client, testCredentials), async (mcp) => {
+    const retiredCalls = [
+      [
+        "update_product_review",
+        {
+          basket_id: "00000000-0000-4000-8000-000000000099",
+          action: { kind: "show" },
+        },
       ],
-    };
-    await withMcpClient(
-      createMcpServer(client, testCredentials),
-      async (mcp) => {
-        for (const action of [
-          { kind: "show" },
-          { kind: "quantity", product_id: 7, quantity: 9 },
-        ]) {
-          const result = await mcp.callTool({
-            name: "update_product_review",
-            arguments: { basket_id: basketId, action },
-          });
-          assert.equal(result.isError, undefined, toolText(result));
-          assert.deepEqual(
-            (result.structuredContent as { shoppingLists: unknown[] })
-              .shoppingLists,
-            [{ id: 44, name: "Family", productCount: 2 }],
-          );
-        }
-      },
-    );
-    assert.equal(legacyStorageRequests, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+      [
+        "update_product_review",
+        { shopping_list_id: 44, action: { kind: "delete" } },
+      ],
+      [
+        "update_product_review_conversation",
+        {
+          draft_id: "00000000-0000-4000-8000-000000000099",
+          action: { kind: "heartbeat" },
+        },
+      ],
+      [
+        "submit_product_review",
+        {
+          basket_id: "00000000-0000-4000-8000-000000000099",
+          submission_id: "00000000-0000-4000-8000-000000000002",
+        },
+      ],
+    ] as const;
+    for (const [name, arguments_] of retiredCalls) {
+      const result = await mcp.callTool({ name, arguments: arguments_ });
+      assert.equal(result.isError, true, `${name}: ${toolText(result)}`);
+    }
+  });
+  assert.equal(providerReads, 0);
+  assert.equal(providerWrites, 0);
 });
 
-test("MCP opens the Local basket picker when a session has no selection", async () => {
+test("explicit list action opens the native shopping-list picker", async () => {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input, init) => {
     const url =
@@ -1857,51 +1854,6 @@ test("native review contexts stay isolated and cross metadata boundaries safely"
   }
 });
 
-test("native shopping-list inventory failures stay visible for legacy cards", async () => {
-  const basketId = "00000000-0000-4000-8000-000000000099";
-  const originalFetch = globalThis.fetch;
-  let legacyStorageRequests = 0;
-  globalThis.fetch = async (input, init) => {
-    const url =
-      typeof input === "string"
-        ? input
-        : input instanceof URL
-          ? input.href
-          : input.url;
-    if (url.startsWith("http://local-basket-state.internal/")) {
-      legacyStorageRequests += 1;
-    }
-    return originalFetch(input, init);
-  };
-  try {
-    const client = {
-      ...fakeClient(),
-      providerIdentity: () => "account-1",
-      listShoppingLists: async () => {
-        throw new NemligError("Nemlig shopping-list inventory is unavailable.");
-      },
-    };
-    await withMcpClient(
-      createMcpServer(client, testCredentials),
-      async (mcp) => {
-        const result = await mcp.callTool({
-          name: "update_product_review_conversation",
-          arguments: { basket_id: basketId, action: { kind: "show" } },
-        });
-        assert.equal(result.isError, true);
-        assert.match(
-          toolText(result),
-          /shopping-list inventory is unavailable/u,
-        );
-        assert.equal(result.structuredContent, undefined);
-      },
-    );
-    assert.equal(legacyStorageRequests, 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-});
-
 test("model-visible product images allow only observed Nemlig HTTPS origins", () => {
   assert.equal(
     safeNemligImageUrl("https://nemlig.com/scommerce/images/milk.jpg?i=1"),
@@ -2252,87 +2204,6 @@ test("supported draft cards share owner state and reject retired identifiers", a
     },
   );
   assert.equal(basketReads, 0);
-  assert.equal(basketWrites, 0);
-});
-
-test("legacy Local basket cards route to native lists without changing old or draft state", async () => {
-  let basketWrites = 0;
-  const client = fakeClient({
-    getCart: async () => {
-      basketWrites++;
-      throw new Error("legacy basket path was used");
-    },
-    addToCart: async () => {
-      basketWrites++;
-      throw new Error("legacy basket path was used");
-    },
-  });
-  const reviews = new ProductReviewService({
-    ...client,
-    providerIdentity: () => "account-1",
-    listShoppingLists: async () => [
-      { id: 12, name: "Weekly shop", productCount: 3 },
-    ],
-  });
-  await withMcpClient(
-    createMcpServer(
-      client,
-      testCredentials,
-      undefined,
-      undefined,
-      undefined,
-      reviews,
-    ),
-    async (mcp) => {
-      const started = await mcp.callTool({
-        name: "start_product_review",
-        arguments: { items: [{ product_id: 7, quantity: 1 }] },
-      });
-      const original = (
-        started.structuredContent as { review: ProductReviewSnapshot }
-      ).review;
-      const update = await mcp.callTool({
-        name: "update_product_review",
-        arguments: {
-          basket_id: "00000000-0000-4000-8000-000000000001",
-          action: { kind: "delete" },
-        },
-      });
-      assert.equal(update.isError, undefined, toolText(update));
-      assert.match(toolText(update), /native Nemlig shopping list/u);
-      assert.deepEqual(
-        (
-          update.structuredContent as {
-            shoppingLists: Array<{ id: number }>;
-          }
-        ).shoppingLists.map(({ id }) => id),
-        [12],
-      );
-      const current = await mcp.callTool({
-        name: "update_product_review_conversation",
-        arguments: {
-          draft_id: original.draftId,
-          action: { kind: "show" },
-        },
-      });
-      assert.deepEqual(
-        (current.structuredContent as { review: ProductReviewSnapshot }).review,
-        original,
-      );
-      const submit = await mcp.callTool({
-        name: "submit_product_review",
-        arguments: {
-          basket_id: "00000000-0000-4000-8000-000000000001",
-          submission_id: "00000000-0000-4000-8000-000000000002",
-        },
-      });
-      assert.equal(submit.isError, true);
-      assert.match(
-        toolText(submit),
-        /Local basket submission is no longer supported/u,
-      );
-    },
-  );
   assert.equal(basketWrites, 0);
 });
 
@@ -2930,7 +2801,7 @@ test("empty and unavailable results retain safe routes and unsaved drafts cannot
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /Local basket edits never write to Nemlig/u,
+        /Draft edits never write to Nemlig/u,
       );
     },
   );

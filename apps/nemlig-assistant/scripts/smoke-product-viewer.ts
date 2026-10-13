@@ -25,7 +25,6 @@ declare global {
           quantity?: number;
           query?: string;
         };
-        basket_id?: string;
         shopping_list_id?: number;
         submission_id?: string;
       };
@@ -43,7 +42,7 @@ declare global {
     sendPassivePicker: () => void;
     cancelPendingTool: () => void;
     rejectDeferredGeneric: () => void;
-    getReview: () => ProductReviewSnapshot & { basketId?: string };
+    getReview: () => ProductReviewSnapshot;
   }
 }
 
@@ -51,17 +50,16 @@ async function openBasket(
   page: Page,
   frame: FrameLocator,
   basketId: string,
+  basketName: string,
   message: string,
 ) {
   await frame
-    .getByRole("button", { name: `Open shopping list ${basketId.slice(0, 8)}` })
+    .getByRole("button", { name: `Open shopping list ${basketName}` })
     .click();
-  await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
-    .waitFor();
+  await frame.getByRole("heading", { name: basketName, exact: true }).waitFor();
   assert.equal(
-    await page.evaluate(() => window.calls.at(-1)?.args.basket_id),
-    basketId,
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    Number(basketId),
     message,
   );
 }
@@ -99,8 +97,7 @@ const fixtureView = (id: number, name: string) => ({
   review: { kind: "review", quantity: 1, approved: false },
 });
 const initialReview = {
-  basketId: "12345678-1234-4234-8234-123456789abc",
-  revision: 1,
+  draftId: "12345678-1234-4234-8234-123456789abc",
   submissionAttempted: false,
   destination: "ready",
   items: [1, 2].map((id) => ({
@@ -113,23 +110,21 @@ const initialReview = {
 const fixtureJson = JSON.stringify(initialReview);
 const nativeFixtureJson = JSON.stringify({
   ...initialReview,
-  basketId: undefined,
-  shoppingListId: 12345678,
+  draftId: undefined,
+  shoppingListId: 44,
   shoppingListName: "Synthetic saved list",
   reviewContextId: "12345678-1234-4234-8234-123456789def",
   saveStatus: "saved",
 });
 const draftFixtureJson = JSON.stringify({
   ...initialReview,
-  basketId: undefined,
   revision: undefined,
   draftId: "12345678-1234-4234-8234-123456789def",
 });
 const partialFixtureJson = JSON.stringify({
   ...initialReview,
-  basketId: undefined,
   draftId: "12345678-1234-4234-8234-123456789def",
-  shoppingListId: 12345678,
+  shoppingListId: 44,
   shoppingListName: "Synthetic partial list",
   saveStatus: "partial",
   saveProgress: { completed: 1, total: 2 },
@@ -146,10 +141,7 @@ const longFixtureJson = JSON.stringify({
     };
   }),
 });
-const basketIds = [
-  "12345678-1234-4234-8234-123456789abc",
-  "abcdef12-1234-4234-8234-123456789abc",
-];
+const basketIds = ["44", "45"];
 const parentDocument = (
   reviewJson: string,
   mode: "normal" | "picker" | "idless" | "restored" = "normal",
@@ -158,17 +150,16 @@ const parentDocument = (
 <script>
 window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failNoWriteNext=false; window.failGenericNext=false; window.deferGenericNext=false;
 const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId;
-let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,basketId:basketIds[0],revision:1}; if(mode==='idless'){delete review.basketId;delete review.revision;delete review.submissionAttempted}
-const inventory=basketIds.map((basketId,index)=>({basketId,createdAt:Date.parse('2026-10-01T10:00:00.000Z'),lastActivityAt:Date.parse('2026-10-09T10:00:00.000Z'),expiresAt:Date.parse('2026-10-10T10:00:00.000Z'),revision:index+1,productCount:index+2,submissionAttempted:false}));
-const basketReview=(basketId)=>({...JSON.parse(${JSON.stringify(reviewJson)}),basketId,revision:1,submissionAttempted:false,submission:undefined});
+let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,draftId:undefined,shoppingListId:Number(basketIds[0]),shoppingListName:'Synthetic saved list',reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved'}; if(mode==='idless'){delete review.draftId;delete review.revision;delete review.submissionAttempted}
+const inventory=basketIds.map((id,index)=>({id:Number(id),name:'Synthetic saved list '+(index+1),productCount:index+2}));
 const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
-const result=(review)=>({structuredContent:{review,...(mode==='normal'?{}:{baskets:inventory,selectedBasketId})}});
+const result=(review)=>({structuredContent:{review,...(mode==='normal'?{}:{shoppingLists:inventory,selectedShoppingListId:selectedBasketId?Number(selectedBasketId):null})}});
 const payload=(data)=>({structuredContent:data});
 const apply=(action,args)=>{
- if(action.kind==='list') return payload({baskets:inventory,selectedBasketId,selectionRequired:true});
- if(action.kind==='select'){selectedBasketId=args.shopping_list_id?String(args.shopping_list_id):args.basket_id;review=args.shopping_list_id?{...review,draftId:undefined,saveStatus:'saved',saveProgress:undefined,items:review.items.slice(0,1)}:basketReview(selectedBasketId);return result(review)}
+ if(action.kind==='list') return payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true});
+ if(action.kind==='select'){selectedBasketId=String(args.shopping_list_id);review={...review,draftId:undefined,shoppingListId:Number(selectedBasketId),shoppingListName:inventory.find(list=>String(list.id)===selectedBasketId)?.name,reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved',saveProgress:undefined,items:args.action.accept_saved_subset_draft_id?review.items.slice(0,1):review.items};return result(review)}
  if(action.kind==='show') return result(review);
  if(action.kind==='navigate') review.destination=action.destination;
  if(action.kind==='quantity') review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;
@@ -178,15 +169,15 @@ const apply=(action,args)=>{
  if(action.kind!=='navigate' && action.kind!=='alternatives') delete review.submission;
  return result(review);
 };
-window.getReview=()=>JSON.parse(JSON.stringify(review)); window.getBasketState=()=>({selected:selectedBasketId,ids:inventory.map(basket=>basket.basketId)});
+window.getReview=()=>JSON.parse(JSON.stringify(review)); window.getBasketState=()=>({selected:selectedBasketId,ids:inventory.map(list=>String(list.id))});
 window.sendPassive=()=>{const older=JSON.parse(JSON.stringify(review));older.items=[{product_id:99,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(older)},location.origin)};
-window.sendPassivePicker=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:payload({baskets:inventory,selectedBasketId,selectionRequired:true})},location.origin);
+window.sendPassivePicker=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true})},location.origin);
 let deferredGeneric; window.cancelPendingTool=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'synthetic cancellation'}},location.origin); window.rejectDeferredGeneric=()=>{if(deferredGeneric){const {event,message}=deferredGeneric;deferredGeneric=undefined;post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
- if(message.method==='ui/notifications/initialized'){const initial=mode==='picker'?payload({baskets:inventory,selectionRequired:true}):mode==='idless'?payload({review,baskets:inventory,selectionRequired:true}):result(review);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
+ if(message.method==='ui/notifications/initialized'){const initial=mode==='picker'?payload({shoppingLists:inventory,selectionRequired:true}):mode==='idless'?payload({review,shoppingLists:inventory,selectionRequired:true}):result(review);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
  if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
@@ -337,7 +328,7 @@ try {
   console.log("Synthetic viewer smoke: host page loaded");
   const frame = page.frameLocator('iframe[title="viewer"]');
   await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor({ timeout: 10_000 })
     .catch(async (error: unknown) => {
       const debug = await Promise.race([
@@ -376,10 +367,10 @@ try {
   );
   assert.equal(
     await frame
-      .getByRole("button", { name: "Submit to Nemlig basket" })
+      .getByRole("button", { name: "Save list before review" })
       .isDisabled(),
     true,
-    "legacy local basket was offered for native-list submission",
+    "unsaved draft allowed submission before saving a native list",
   );
   assert.equal(
     await frame.getByRole("button", { name: "Clear", exact: true }).isVisible(),
@@ -426,7 +417,8 @@ try {
     basketPage,
     basketFrame,
     basketIds[0],
-    "selection did not carry the explicit basket ID",
+    "Synthetic saved list 1",
+    "selection did not carry the explicit native shopping-list ID",
   );
 
   await basketFrame
@@ -439,30 +431,30 @@ try {
     .click();
   await basketPage.waitForFunction(() =>
     window.calls.some(
-      ({ args }) => args.action?.kind === "quantity" && args.basket_id,
+      ({ args }) => args.action?.kind === "quantity" && args.shopping_list_id,
     ),
   );
   assert.equal(
     await basketPage.evaluate(
       () =>
         window.calls.find(({ args }) => args.action?.kind === "quantity")?.args
-          .basket_id,
+          .shopping_list_id,
     ),
-    basketIds[0],
-    "quantity update was not bound to the selected basket",
+    Number(basketIds[0]),
+    "quantity update was not bound to the selected native list",
   );
 
   assert.equal(
     await basketFrame
       .getByRole("button", { name: "Submit to Nemlig basket" })
       .isDisabled(),
-    true,
-    "legacy local basket was offered for native-list submission",
+    false,
+    "selected native shopping list was not ready for submission",
   );
   assert.equal(
     await basketPage.evaluate(() => window.submissionAttempts),
     0,
-    "legacy local basket reached the provider submission tool",
+    "selection unexpectedly submitted without user action",
   );
   await basketPage.close();
 
@@ -481,7 +473,7 @@ try {
   await restoredPage.goto(`http://127.0.0.1:${address.port}/host-restored`);
   const restoredFrame = restoredPage.frameLocator('iframe[title="viewer"]');
   await restoredFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   await restoredFrame.locator(".viewer").evaluate(() => {
     window.dispatchEvent(new Event("focus"));
@@ -501,7 +493,7 @@ try {
     'iframe[title="viewer"]',
   );
   await passivePickerFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   await passivePickerFrame
     .locator(".product-action-row")
@@ -518,7 +510,7 @@ try {
   );
   await passivePickerPage.evaluate(() => window.sendPassivePicker());
   await passivePickerFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   assert.equal(
     await passivePickerFrame
@@ -539,9 +531,9 @@ try {
       window.calls.find(({ args }) => args.action?.kind === "quantity")?.args,
   );
   assert.equal(
-    passiveQuantity?.basket_id,
-    basketIds[0],
-    "passive picker retargeted the pending quantity to another basket",
+    passiveQuantity?.shopping_list_id,
+    Number(basketIds[0]),
+    "passive picker retargeted the pending quantity to another list",
   );
   assert.equal(
     passiveQuantity?.action?.quantity,
@@ -556,7 +548,7 @@ try {
     'iframe[title="viewer"]',
   );
   await pickerFlushFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   await pickerFlushFrame
     .locator(".product-action-row")
@@ -594,9 +586,9 @@ try {
     "picker list was requested before the pending quantity was saved",
   );
   assert.equal(
-    pickerFlushCalls[flushedQuantityIndex]?.basket_id,
-    basketIds[0],
-    "picker flush was not bound to the original basket ID",
+    pickerFlushCalls[flushedQuantityIndex]?.shopping_list_id,
+    Number(basketIds[0]),
+    "picker flush was not bound to the original native list",
   );
   assert.equal(
     pickerFlushCalls[flushedQuantityIndex]?.action?.quantity,
@@ -613,7 +605,7 @@ try {
     'iframe[title="viewer"]',
   );
   await pickerFlushFailureFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   await pickerFlushFailureFrame
     .locator(".product-action-row")
@@ -635,7 +627,7 @@ try {
     .waitFor();
   assert.equal(
     await pickerFlushFailureFrame
-      .getByRole("heading", { name: "Shopping list", exact: true })
+      .getByRole("heading", { name: "Synthetic saved list", exact: true })
       .count(),
     1,
     "failed quantity flush left the original basket",
@@ -670,7 +662,7 @@ try {
     'iframe[title="viewer"]',
   );
   await staleFailureFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
     .waitFor();
   await staleFailureFrame
     .locator(".product-action-row")
@@ -914,7 +906,7 @@ try {
   );
   await frame.getByRole("button", { name: "Back to shopping list" }).click();
   await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   const callsBeforeMenu = await page.evaluate(() => window.calls.length);
   const box = await milkDisclosure.boundingBox();
@@ -1009,7 +1001,7 @@ try {
   const backCalls = await page.evaluate(() => window.calls.length);
   await frame.getByRole("button", { name: "Back to shopping list" }).click();
   await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   assert.equal(
     await page.evaluate(() => window.calls.length),
@@ -1025,7 +1017,7 @@ try {
   await frame.locator(".product-inline-actions").press("Escape");
   await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
   await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   await page.evaluate(() => window.sendPassive());
   assert.equal(
@@ -1048,7 +1040,7 @@ try {
     })
     .click();
   await frame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   const replacement = await page.evaluate(() =>
     window
@@ -1080,10 +1072,10 @@ try {
   await frame.locator(".product-inline-actions").press("Escape");
   assert.equal(
     await frame
-      .getByRole("button", { name: "Submit to Nemlig basket" })
+      .getByRole("button", { name: "Save list before review" })
       .isDisabled(),
     true,
-    "legacy local basket was offered for native-list submission",
+    "unsaved draft allowed submission before saving a native list",
   );
 
   const partialPage = await context.newPage();
@@ -1134,7 +1126,7 @@ try {
         kind: "select",
         accept_saved_subset_draft_id: "12345678-1234-4234-8234-123456789def",
       },
-      shopping_list_id: 12345678,
+      shopping_list_id: 44,
     },
     "partial-list review did not target its exact native list",
   );
@@ -1190,7 +1182,7 @@ try {
     () =>
       window.calls.find(({ name }) => name === "submit_product_review")?.args,
   );
-  assert.equal(nativeSubmit?.shopping_list_id, 12345678);
+  assert.equal(nativeSubmit?.shopping_list_id, 44);
   assert.equal(typeof nativeSubmit?.submission_id, "string");
   await nativePage.close();
 
@@ -1259,6 +1251,16 @@ try {
   );
   await uncertainDialog.press("Escape");
   await uncertainFrame.getByRole("dialog").waitFor({ state: "detached" });
+  await uncertainPage.waitForFunction(
+    () => {
+      const active = document.querySelector<HTMLIFrameElement>(
+        'iframe[title="viewer"]',
+      )?.contentDocument?.activeElement;
+      return active?.id === "title" || active?.classList.contains("viewer");
+    },
+    undefined,
+    { timeout: 2_000 },
+  );
   const recoveredSurface = await uncertainFrame
     .locator("body")
     .evaluate((body) => {
@@ -1392,7 +1394,7 @@ try {
   await removePage.goto(`http://127.0.0.1:${address.port}/host`);
   const removeFrame = removePage.frameLocator('iframe[title="viewer"]');
   await removeFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   const removeProduct = async (name: string, remaining: number) => {
     await removeFrame
@@ -1591,7 +1593,7 @@ try {
   await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
   const longFrame = longPage.frameLocator('iframe[title="viewer"]');
   await longFrame
-    .getByRole("heading", { name: "Shopping list", exact: true })
+    .getByRole("heading", { name: "Draft products", exact: true })
     .waitFor();
   await longFrame.locator(".product-action-row").first().waitFor();
   const longList = await longFrame.locator(".viewer").evaluate((viewer) => ({

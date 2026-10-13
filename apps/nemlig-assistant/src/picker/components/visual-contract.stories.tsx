@@ -326,7 +326,9 @@ function FixturePage({
             baskets: localBaskets,
             selectedBasketId:
               activeScreen.kind === "review"
-                ? activeScreen.review.basketId
+                ? activeScreen.review.shoppingListId === undefined
+                  ? undefined
+                  : String(activeScreen.review.shoppingListId)
                 : undefined,
           });
           setHostMessage("Storybook opened the Local basket picker.");
@@ -338,8 +340,13 @@ function FixturePage({
             kind: "review",
             review: {
               ...review,
-              basketId,
-              revision: 1,
+              draftId: undefined,
+              shoppingListId: Number(basketId),
+              shoppingListName: localBaskets.find(
+                (list) => list.basketId === basketId,
+              )?.shoppingListName,
+              reviewContextId: "12345678-1234-4234-8234-123456789def",
+              saveStatus: "saved",
               submissionAttempted: false,
               submission: undefined,
             },
@@ -683,22 +690,18 @@ const meta = {
 
 const inventory = [
   {
-    basketId: "12345678-1234-4234-8234-123456789abc",
-    createdAt: Date.parse("2026-10-01T10:00:00.000Z"),
-    lastActivityAt: Date.parse("2026-10-09T10:00:00.000Z"),
-    expiresAt: Date.parse("2026-10-10T10:00:00.000Z"),
-    revision: 3,
+    basketId: "44",
+    nativeShoppingList: true as const,
+    shoppingListName: "Synthetic weekly shop",
     productCount: 4,
     submissionAttempted: false,
   },
   {
-    basketId: "abcdef12-1234-4234-8234-123456789abc",
-    createdAt: Date.parse("2026-10-02T10:00:00.000Z"),
-    lastActivityAt: Date.parse("2026-10-08T10:00:00.000Z"),
-    expiresAt: Date.parse("2026-10-09T10:00:00.000Z"),
-    revision: 6,
+    basketId: "45",
+    nativeShoppingList: true as const,
+    shoppingListName: "Synthetic pantry list",
     productCount: 2,
-    submissionAttempted: true,
+    submissionAttempted: false,
   },
 ];
 
@@ -838,8 +841,10 @@ export const RestartFencedBasket: Story = {
   render: () => {
     const fencedReview = {
       ...review,
-      basketId: inventory[1]!.basketId,
-      revision: 7,
+      shoppingListId: Number(inventory[1]!.basketId),
+      shoppingListName: inventory[1]!.shoppingListName,
+      reviewContextId: "12345678-1234-4234-8234-123456789def",
+      saveStatus: "saved",
       submissionAttempted: true,
       submission: undefined,
     } satisfies Review;

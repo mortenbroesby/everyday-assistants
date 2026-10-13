@@ -31,7 +31,7 @@ reflect their provider-writing actions even though unsaved draft edits are local
   behavior-matched annotations distinguishing unsaved edits from provider writes
 
 #### Scenario: A widget includes a retired identifier
-- **WHEN** a widget supplies an old local basket ID or obsolete authority fields
+- **WHEN** a widget supplies retired `basket_id`, `delete`, or `heartbeat` fields/actions
 - **THEN** validation rejects it without translating it into another native list
 
 #### Scenario: Multiple supported cards use the current Draft list

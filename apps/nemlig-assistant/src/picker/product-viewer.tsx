@@ -93,7 +93,7 @@ function isReview(value: unknown): value is Review {
     return false;
   }
   if (
-    (value.basketId !== undefined && !isBasketId(value.basketId)) ||
+    value.basketId !== undefined ||
     (value.shoppingListId !== undefined &&
       !isPositiveSafeInteger(value.shoppingListId)) ||
     (value.reviewContextId !== undefined &&
@@ -221,7 +221,7 @@ function isDraftId(value: unknown): value is string {
 function reviewTargetId(review: Review): string | undefined {
   return review.shoppingListId !== undefined
     ? String(review.shoppingListId)
-    : (review.draftId ?? review.basketId);
+    : review.draftId;
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
   if (review.draftId !== undefined) {
@@ -235,48 +235,13 @@ function reviewTargetArgs(review: Review): Record<string, unknown> {
         : {}),
     };
   }
-  return review.basketId ? { basket_id: review.basketId } : {};
+  return {};
 }
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function hasValidBasketTimestamps(value: Record<string, unknown>) {
-  return (
-    isNonnegativeSafeInteger(value.createdAt) &&
-    isNonnegativeSafeInteger(value.lastActivityAt) &&
-    isNonnegativeSafeInteger(value.expiresAt)
-  );
-}
-function hasValidBasketCounts(value: Record<string, unknown>) {
-  return (
-    isNonnegativeSafeInteger(value.revision) &&
-    isNonnegativeSafeInteger(value.productCount)
-  );
-}
-function hasValidBasketIdentity(value: Record<string, unknown>) {
-  return (
-    isBasketId(value.basketId) &&
-    hasValidBasketTimestamps(value) &&
-    hasValidBasketCounts(value) &&
-    typeof value.submissionAttempted === "boolean"
-  );
-}
-function isBasketSummary(value: unknown): value is BasketSummary {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (value.nativeShoppingList === true) {
-    return (
-      /^[1-9]\d{0,14}$/u.test(String(value.basketId)) &&
-      typeof value.shoppingListName === "string" &&
-      isNonnegativeSafeInteger(value.productCount) &&
-      value.submissionAttempted === false
-    );
-  }
-  return hasValidBasketIdentity(value);
 }
 // Keep the complete untrusted tool-payload validation at the rendering boundary.
 // fallow-ignore-next-line complexity
@@ -392,22 +357,12 @@ function readBasketSummaries(
       };
     });
   }
-  if (envelope.baskets === undefined) {
-    return [];
-  }
-  if (
-    !Array.isArray(envelope.baskets) ||
-    !envelope.baskets.every(isBasketSummary)
-  ) {
-    return undefined;
-  }
-  return envelope.baskets;
+  return envelope.baskets === undefined ? [] : undefined;
 }
 function hasUnselectedReview(value: unknown) {
   return (
     isRecord(value) &&
     isReview(value) &&
-    !isBasketId(value.basketId) &&
     !isPositiveSafeInteger(value.shoppingListId) &&
     !isDraftId(value.draftId)
   );
@@ -447,9 +402,6 @@ function readPayload(value: unknown): ViewerScreen | undefined {
       review: envelope.review,
       active: true,
     };
-  }
-  if (Array.isArray(envelope.baskets)) {
-    return { kind: "picker", baskets, selectedBasketId };
   }
   if (envelope.ended === true) {
     return {
@@ -705,7 +657,6 @@ export function ProductViewer() {
         lastConfirmedReview.current = next.review;
         const submissionChanged =
           !sameReview ||
-          next.review.basketId !== previous?.review.basketId ||
           next.review.submission?.submission_id !==
             previous?.review.submission?.submission_id;
         if (submissionChanged) {
@@ -732,14 +683,6 @@ export function ProductViewer() {
           ignorePassivePayloads.current = true;
           submitBlockedRef.current = true;
           setSubmitBlocked(true);
-        }
-        const payloadRecord = isRecord(payload)
-          ? isRecord(payload.structuredContent)
-            ? payload.structuredContent
-            : payload
-          : undefined;
-        if (payloadRecord && Array.isArray(payloadRecord.baskets)) {
-          setBaskets(payloadRecord.baskets as BasketSummary[]);
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
@@ -912,41 +855,46 @@ export function ProductViewer() {
     if (name === "update_product_review") {
       const action = isRecord(requestArgs.action) ? requestArgs.action : {};
       const kind = action.kind;
+      if (
+        requestArgs.basket_id !== undefined ||
+        kind === "delete" ||
+        kind === "heartbeat"
+      ) {
+        setMessage(
+          "This older selection is unsupported. Open a current draft or choose a native shopping list explicitly.",
+        );
+        return false;
+      }
       if (kind !== "list") {
         const explicitTarget = kind === "select" || kind === "show";
         const targetReview = activeReview.current?.review;
         const targetArgs = explicitTarget
-          ? requestArgs.basket_id !== undefined
-            ? { basket_id: requestArgs.basket_id }
-            : requestArgs.shopping_list_id !== undefined
-              ? {
-                  shopping_list_id: requestArgs.shopping_list_id,
-                  ...(requestArgs.review_context_id !== undefined
-                    ? { review_context_id: requestArgs.review_context_id }
-                    : {}),
-                }
-              : requestArgs.draft_id !== undefined
-                ? { draft_id: requestArgs.draft_id }
-                : {}
+          ? requestArgs.shopping_list_id !== undefined
+            ? {
+                shopping_list_id: requestArgs.shopping_list_id,
+                ...(requestArgs.review_context_id !== undefined
+                  ? { review_context_id: requestArgs.review_context_id }
+                  : {}),
+              }
+            : requestArgs.draft_id !== undefined
+              ? { draft_id: requestArgs.draft_id }
+              : {}
           : targetReview
             ? reviewTargetArgs(targetReview)
             : {};
         const targetId =
           targetArgs.shopping_list_id !== undefined
             ? String(targetArgs.shopping_list_id)
-            : (targetArgs.draft_id ?? targetArgs.basket_id);
+            : targetArgs.draft_id;
         if (!isBasketId(targetId)) {
           setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
-        delete requestArgs.basket_id;
         delete requestArgs.draft_id;
         delete requestArgs.shopping_list_id;
         delete requestArgs.review_context_id;
         Object.assign(requestArgs, targetArgs);
-      } else {
-        delete requestArgs.basket_id;
       }
     } else if (name === "submit_product_review") {
       const targetReview = activeReview.current?.review;
@@ -955,13 +903,7 @@ export function ProductViewer() {
         return false;
       }
       const targetArgs = reviewTargetArgs(targetReview);
-      if (
-        !isBasketId(
-          targetArgs.shopping_list_id !== undefined
-            ? String(targetArgs.shopping_list_id)
-            : targetArgs.basket_id,
-        )
-      ) {
+      if (!isBasketId(String(targetArgs.shopping_list_id))) {
         setMessage("Choose a shopping list before continuing.");
         setScreen({ kind: "picker", baskets, selectedBasketId });
         return false;
@@ -1006,18 +948,10 @@ export function ProductViewer() {
         }
         throw new Error(detail);
       }
-      if (background) {
-        const payloadRecord = isRecord(result.structuredContent)
-          ? result.structuredContent
-          : undefined;
-        if (
-          payloadRecord &&
-          Array.isArray(payloadRecord.baskets) &&
-          payloadRecord.baskets.every(isBasketSummary)
-        ) {
-          setBaskets(payloadRecord.baskets);
-        }
-      } else if (!applyPayload(result, true, adoptPresentationDestination)) {
+      if (
+        !background &&
+        !applyPayload(result, true, adoptPresentationDestination)
+      ) {
         throw new Error("Could not confirm the updated shopping list.");
       }
       if (
@@ -1279,9 +1213,10 @@ export function ProductViewer() {
     const nativeShoppingList = selected
       ? selected.nativeShoppingList === true
       : activeReview.current?.review.shoppingListId === Number(basketId);
-    const targetArgs = nativeShoppingList
-      ? { shopping_list_id: Number(basketId) }
-      : { basket_id: basketId };
+    if (!nativeShoppingList) {
+      return;
+    }
+    const targetArgs = { shopping_list_id: Number(basketId) };
     changeBasket(basketId);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
     await call(
@@ -1306,10 +1241,8 @@ export function ProductViewer() {
       );
       return;
     }
-    if (selectedBasketIdRef.current) {
-      const targetArgs = activeReview.current?.review
-        ? reviewTargetArgs(activeReview.current.review)
-        : { basket_id: selectedBasketIdRef.current };
+    if (activeReview.current?.review) {
+      const targetArgs = reviewTargetArgs(activeReview.current.review);
       await call(
         "update_product_review",
         {
@@ -1319,7 +1252,9 @@ export function ProductViewer() {
         true,
       );
     } else {
-      await openPicker();
+      setMessage(
+        "This older selection is no longer supported. Open the current draft or select a native shopping list explicitly.",
+      );
     }
   };
   const endDraft = async () => {

@@ -142,9 +142,8 @@ clear transient state without deleting a list; explicit list deletion is separat
 - **THEN** native lists remain available and no prior submission approval is restored
 
 #### Scenario: A host retains a card after the Draft list is lost
-- **WHEN** an old card targets an expired unsaved draft, deleted native list or retired local ID
-- **THEN** it performs no mutation and shows selection recovery; an uncertain
-  prior submission directs the user to inspect the actual basket
+- **WHEN** an old card targets an expired draft or deleted native list, or sends a retired Local Basket ID/action
+- **THEN** validation rejects retired fields/actions without provider inventory reads or writes; expired current targets fail closed, and an uncertain prior submission directs the user to inspect the actual basket
 
 ### Requirement: Persistent local review interaction
 Current supported cards SHALL distinguish an exact process-local draft target
