@@ -1135,7 +1135,7 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
         );
         assert.match(
           tool?.description ?? "",
-          /not tied to the current Local basket or an alternative target/u,
+          /not tied to the current temporary draft or an alternative target/u,
         );
         return {
           result: await mcp.callTool({
