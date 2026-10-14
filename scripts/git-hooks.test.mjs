@@ -16,9 +16,7 @@ const root = join(import.meta.dirname, "..");
 
 const runHook = (
   hook,
-  exitCode = 0,
-  upstream = "origin/main",
-  whitespaceExit = 0,
+  { exitCode = 0, upstream = "origin/main", whitespaceExit = 0 } = {},
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "git-hook-test-"));
   try {
@@ -26,9 +24,25 @@ const runHook = (
     const logPath = join(directory, "commands.log");
     mkdirSync(bin);
     const stubs = {
-      git: `#!/bin/sh\nprintf 'git %s\\n' "$*" >> "$HOOK_TEST_LOG"\ncase "$1" in\n  diff) exit "$HOOK_TEST_WHITESPACE_EXIT" ;;\n  rev-parse) [ -n "$HOOK_TEST_UPSTREAM" ] || exit 1; printf '%s\\n' "$HOOK_TEST_UPSTREAM" ;;\n  merge-base) printf '%s\\n' base-sha ;;\n  *) exit 97 ;;\nesac\n`,
-      fallow: `#!/bin/sh\nprintf 'fallow %s\\n' "$*" >> "$HOOK_TEST_LOG"\nexit "$HOOK_TEST_EXIT"\n`,
-      pnpm: `#!/bin/sh\nprintf 'pnpm %s\\n' "$*" >> "$HOOK_TEST_LOG"\nexit "$HOOK_TEST_EXIT"\n`,
+      git: `#!/bin/sh
+printf 'git %s\n' "$*" >> "$HOOK_TEST_LOG"
+case "$1" in
+  diff) exit "$HOOK_TEST_WHITESPACE_EXIT" ;;
+  rev-parse)
+    [ -n "$HOOK_TEST_UPSTREAM" ] || exit 1
+    printf '%s\n' "$HOOK_TEST_UPSTREAM" ;;
+  merge-base) printf '%s\n' base-sha ;;
+  *) exit 97 ;;
+esac
+`,
+      fallow: `#!/bin/sh
+printf 'fallow %s\n' "$*" >> "$HOOK_TEST_LOG"
+exit "$HOOK_TEST_EXIT"
+`,
+      pnpm: `#!/bin/sh
+printf 'pnpm %s\n' "$*" >> "$HOOK_TEST_LOG"
+exit "$HOOK_TEST_EXIT"
+`,
     };
     for (const [name, source] of Object.entries(stubs)) {
       const path = join(bin, name);
@@ -64,7 +78,7 @@ const runHook = (
 for (const upstream of ["origin/main", "origin/feature", ""]) {
   for (const exitCode of [0, 17]) {
     test(`pre-commit retains new-only Fallow audit (${upstream || "fallback"}, exit ${exitCode})`, () => {
-      const result = runHook("pre-commit", exitCode, upstream);
+      const result = runHook("pre-commit", { exitCode, upstream });
       assert.equal(result.status, exitCode);
       assert.equal(result.signal, null);
       assert.deepEqual(result.commands, [
@@ -78,14 +92,14 @@ for (const upstream of ["origin/main", "origin/feature", ""]) {
 }
 
 test("pre-commit stops before audit when staged whitespace fails", () => {
-  const result = runHook("pre-commit", 0, "origin/main", 23);
+  const result = runHook("pre-commit", { whitespaceExit: 23 });
   assert.equal(result.status, 23);
   assert.deepEqual(result.commands, ["git diff --cached --check"]);
 });
 
 for (const exitCode of [0, 17]) {
   test(`pre-push runs only fast verify and propagates exit ${exitCode}`, () => {
-    const result = runHook("pre-push", exitCode);
+    const result = runHook("pre-push", { exitCode });
     assert.equal(result.status, exitCode);
     assert.equal(result.signal, null);
     assert.deepEqual(result.commands, ["pnpm verify"]);
