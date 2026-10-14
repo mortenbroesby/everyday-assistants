@@ -122,6 +122,27 @@ Use evidence to select the layer before changing it:
    is required and evidence confirms that this ChatGPT integration is updated
    from that package. A ZIP download/upload menu alone is not evidence.
 
+## Shopping-list creation validation after a server update
+
+The native-list contract introduced in PR #315 requires `items` and a
+`creation_id` UUID together. An older installed tool snapshot can advertise
+only `items`, so ChatGPT cannot supply the new field and the server rejects the
+call before creating a list. This is a tool-definition mismatch, not evidence
+of a Nemlig login or basket failure.
+
+Use **Refresh tools** on the existing Nemlig Assistant settings page. Verify
+that its action details describe native list creation, and that a fresh tool
+catalog exposes `creation_id`. The server's `tools/list` includes the paired
+input requirement and clear recovery guidance for rejected calls. Do not
+replace the OAuth connection or automatically generate a different creation ID
+after an uncertain provider operation. Respect any earlier instruction not to
+save a native list; the retired unsaved draft cannot be reopened as an editor.
+
+The UI shows progress once mounted; before the tool returns a card, ChatGPT
+controls its loading display using the tool's invocation-status metadata.
+Neither a refresh acknowledgement nor passing local tests proves a real
+shopping-list creation succeeded.
+
 ## What failed
 
 The first failing boundary was the old ChatGPT connector registration, before

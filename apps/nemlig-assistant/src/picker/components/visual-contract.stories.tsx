@@ -876,6 +876,16 @@ export const Loading: Story = {
       },
     ),
 };
+export const SavingShoppingListEdit: Story = {
+  render: () =>
+    activeReview(review, "ready", undefined, {
+      model: {
+        busy: true,
+        message: "Saving quantity change to your Nemlig shopping list…",
+        pendingQuantities: new Map([[milk.product.id!, 3]]),
+      },
+    }),
+};
 export const Error: Story = {
   render: () =>
     page({

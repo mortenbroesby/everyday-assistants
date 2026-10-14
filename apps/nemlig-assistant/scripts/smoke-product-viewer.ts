@@ -611,7 +611,21 @@ try {
     true,
     "basket action enabled before native refresh completed",
   );
+  await delayedFrame
+    .getByRole("status")
+    .filter({ hasText: "Refreshing this Nemlig shopping list…" })
+    .waitFor();
+  assert.equal(
+    await delayedFrame.locator(".progress-spinner").isVisible(),
+    true,
+  );
+  assert.equal(
+    await delayedFrame.getByRole("main").getAttribute("aria-busy"),
+    "true",
+  );
+  await capture("native-shopping-list-loading");
   await page.evaluate(() => window.resolveDeferredShow());
+  await delayedFrame.locator(".progress-spinner").waitFor({ state: "hidden" });
   await openRowActions(delayedFrame, 1);
   await delayedFrame
     .getByRole("button", { name: "Increase quantity of Synthetic milk" })

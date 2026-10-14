@@ -1123,7 +1123,7 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
     {
       title: "Create or open a Nemlig shopping list",
       description:
-        "Create and open a native Nemlig shopping list when the user selects exact returned product IDs and quantities. The list is created and verified immediately; use shopping_list_name only when the user supplied one. Omit items to discover existing native lists without creating or changing one, or pass shopping_list_id to reopen that exact list. Product edits persist to the selected list immediately; browsing and alternatives stay read-only. Creation or editing never changes the actual Nemlig basket. Explicit Submit separately rechecks the exact saved list and basket baseline, transfers once, verifies additive basket readback, and applies existing source cleanup and durable no-replay safeguards. Cards carry the exact shopping_list_id and transient review_context_id; after restart, show/select that exact ID to refresh and establish a new context. Never infer a target from its name or replay an uncertain write.",
+        "Create and open a native Nemlig shopping list when the user selects exact returned product IDs and quantities. When items are supplied, creation_id UUID is required: generate it once for this intentional creation and retain it for recovery; never generate a different ID to retry an uncertain write. If your tool schema lacks creation_id, refresh this app’s tools before proceeding. The list is created and verified immediately; use shopping_list_name only when the user supplied one. Omit items to discover existing native lists without creating or changing one, or pass shopping_list_id to reopen that exact list. Product edits persist to the selected list immediately; browsing and alternatives stay read-only. Creation or editing never changes the actual Nemlig basket. Explicit Submit separately rechecks the exact saved list and basket baseline, transfers once, verifies additive basket readback, and applies existing source cleanup and durable no-replay safeguards. Cards carry the exact shopping_list_id and transient review_context_id; after restart, show/select that exact ID to refresh and establish a new context. Never infer a target from its name or replay an uncertain write.",
       inputSchema: z
         .object({
           items: z
@@ -1151,7 +1151,7 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
             .uuid()
             .optional()
             .describe(
-              "Protocol recovery ID. Generate once for a new list and reuse only to inspect/recover that same creation after an uncertain result.",
+              "Required when items are supplied; omit when opening or listing existing lists. Generate one UUID for an intentional new list and reuse only to inspect/recover that same creation after an uncertain result.",
             ),
           shopping_list_id: z
             .number()
@@ -1172,8 +1172,26 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
             items?.length
               ? creation_id !== undefined
               : creation_id === undefined,
-          { message: "A new selection requires one creation_id." },
-        ),
+          {
+            path: ["creation_id"],
+            message:
+              "Creating a shopping list requires items and one creation_id UUID together; omit both to open existing lists. No shopping list was created by this rejected call. If creation_id is absent from your available tool schema, use Refresh tools in Nemlig Assistant settings. Do not invent a new ID to retry an uncertain creation.",
+          },
+        )
+        // Zod refinements are not exported to tools/list; expose the same alternatives.
+        .meta({
+          anyOf: [
+            {
+              required: ["items", "creation_id"],
+              not: { required: ["shopping_list_id"] },
+            },
+            {
+              not: {
+                anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
+              },
+            },
+          ],
+        }),
       outputSchema: durableReviewResultSchema,
       annotations: {
         readOnlyHint: false,
@@ -1183,6 +1201,8 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
       },
       _meta: {
         ...(requestContext ? PRODUCT_VIEWER_RESOURCE_METADATA : {}),
+        "openai/toolInvocation/invoking": "Opening your Nemlig shopping list…",
+        "openai/toolInvocation/invoked": "Shopping-list result received",
         ui: {
           ...(requestContext
             ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }
@@ -1253,7 +1273,12 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
       ),
       outputSchema: draftActionOutputSchema,
       annotations: reviewActionAnnotations,
-      _meta: { ui: { visibility: ["model"] } },
+      _meta: {
+        ui: { visibility: ["model"] },
+        "openai/toolInvocation/invoking":
+          "Working on your Nemlig shopping list…",
+        "openai/toolInvocation/invoked": "Shopping-list result received",
+      },
     },
     ({ action, shopping_list_id, review_context_id }, ctx) => {
       const perform = async () => {
@@ -1349,7 +1374,12 @@ Direct stdio use is process-local and text-only. A tool result or image URL does
         destructiveHint: false,
         openWorldHint: true,
       },
-      _meta: { ui: { visibility: ["model"] } },
+      _meta: {
+        ui: { visibility: ["model"] },
+        "openai/toolInvocation/invoking":
+          "Adding your shopping list to Nemlig basket…",
+        "openai/toolInvocation/invoked": "Basket-transfer result received",
+      },
     },
     (
       { shopping_list_id, submission_id, reviewed_list, review_context_id },

@@ -49,18 +49,21 @@ export function ViewerShell({
   children,
   maxWidth,
   headerActions,
+  busy,
 }: {
   title?: string;
   intro?: ReactNode;
   children: ReactNode;
   maxWidth?: number;
   headerActions?: ReactNode;
+  busy?: boolean;
 }) {
   return (
     <ViewerRoot className="app-frame" data-viewer-component="viewer-shell">
       <Viewer
         className="viewer"
         tabIndex={-1}
+        aria-busy={busy || undefined}
         aria-label={title ? undefined : "Nemlig Assistant Shopping list"}
         aria-labelledby={title ? "title" : undefined}
         style={maxWidth ? { maxWidth } : undefined}
