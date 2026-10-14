@@ -28,8 +28,13 @@ script also excludes `src/**/generated/**`, `src/**/*.generated.ts`,
 `release/**/generated/**`, and `release/**/*.generated.ts`.
 
 From the repository root, `pnpm verify` runs fast lint only (no build, formatting,
-TypeScript check, or tests). Commits check staged whitespace; pushes run this
-lint check. The required CI `verify` job retains OpenSpec/privacy checks, lint,
+TypeScript check, or tests). Commits check staged whitespace and run the pinned
+Fallow audit with `--gate new-only`; pushes run fast lint. The audit reports
+changed-code findings relative to the upstream merge-base (or `main` without an
+upstream), not an isolated staged-index snapshot. It still builds the project
+graph and may analyze the base revision to distinguish introduced findings.
+
+The required CI `verify` job retains OpenSpec/privacy checks, lint,
 formatting, build, type checks, all tests, package/Cloudflare checks, dead-code
 regressions, and browser smoke. A green local command does not establish a green
 build or correct behavior; inspect CI on the exact PR head before merge.

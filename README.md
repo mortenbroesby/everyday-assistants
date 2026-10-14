@@ -93,8 +93,9 @@ supported by nemlig.com or OpenAI.
 pnpm verify # fast lint only; no build or full test run
 ```
 
-Run focused tests for the behavior you changed. Commits check staged whitespace;
-pushes run fast lint. Required CI handles the full build, type checks, tests,
+Run focused tests for the behavior you changed. Commits check staged whitespace
+and run Fallow's changed-code audit (new findings only); pushes run fast lint.
+Required CI handles the full build, type checks, tests,
 formatting, and smoke checks before merge. See the [validation guide](docs/codex-refactoring-skills.md#repository-fit-and-checks)
 for targeted commands and the limits of local verification.
 
