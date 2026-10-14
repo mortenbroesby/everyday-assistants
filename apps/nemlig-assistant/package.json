@@ -102,7 +102,7 @@
     "storybook": "10.6.1",
     "tsdown": "0.22.14",
     "tsx": "4.23.13",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "7.3.6",
     "wrangler": "4.127.1"
   },
