@@ -239,10 +239,11 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
       arguments: { action: { kind: "show" } },
     });
     assert.notEqual(initialLists.isError, true);
-    assert.deepEqual(
-      (initialLists.structuredContent as { shoppingLists?: unknown })
-        ?.shoppingLists,
-      [],
+    assert.equal(
+      (initialLists.structuredContent as { unavailable?: boolean })
+        ?.unavailable,
+      true,
+      "an untargeted show does not infer native shopping lists",
     );
     for (let index = 0; index < 501; index += 1) {
       const result = await client.callTool({

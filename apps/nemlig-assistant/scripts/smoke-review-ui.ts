@@ -312,12 +312,12 @@ document.getElementById('run').onclick = async () => {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; transcript=undefined; initialized=false;
   const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await loaded; await wait(()=>initialized);
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}}); publish();
-  await wait(()=>title()==='Unsaved shopping list'&&doc().querySelectorAll('.product-list article').length===2);
+  await wait(()=>title()==='Draft products'&&doc().querySelectorAll('.product-list article').length===2);
   check(doc().querySelectorAll('input[type=checkbox]').length===0,'Unified list rendered checkbox selection');
   check(!buttons().some(b=>b.textContent.includes('To decide')||b.textContent.includes('Ready (')),'Unified list rendered destination tabs');
   check(transcript.structuredContent.review.items.every(item=>item.state==='ready'),'Fresh basket rows are not all Ready');
   const beforeReload=widgetCalls.length; const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
-  await wait(()=>title()==='Unsaved shopping list'&&doc().querySelectorAll('.product-list article').length===2);
+  await wait(()=>title()==='Draft products'&&doc().querySelectorAll('.product-list article').length===2);
   check(widgetCalls.length===beforeReload,'Reload made an unnecessary service call');
   const summary=doc().querySelector('.product-list article [data-viewer-component="product-summary"]'); check(summary,'Product summary missing'); summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
   await wait(()=>doc().querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type'));
@@ -375,7 +375,7 @@ document.getElementById('flow').onclick = async () => {
   await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}]}});
   initialized=false; frame.src='/viewer'; await wait(()=>initialized);
-  await wait(()=>title()==='Unsaved shopping list'&&doc().querySelectorAll('.product-list article').length===2);
+  await wait(()=>title()==='Draft products'&&doc().querySelectorAll('.product-list article').length===2);
   await saveList('Unknown price list');
   await wait(()=>text().includes('Unknown price'));
   check(!button('Submit to Nemlig basket').disabled,'Unknown-price native-list Submit was unavailable');
@@ -398,7 +398,7 @@ document.getElementById('alternatives').onclick = async () => {
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; initialized=false;
   transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}}); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
-  await wait(()=>title()==='Unsaved shopping list'&&doc().querySelectorAll('.product-list article').length===2);
+  await wait(()=>title()==='Draft products'&&doc().querySelectorAll('.product-list article').length===2);
   const draftId=transcript.structuredContent.review.draftId;
   const before=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'},draft_id:draftId}});
   const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
@@ -406,12 +406,12 @@ document.getElementById('alternatives').onclick = async () => {
   const beforeMenu=widgetCalls.length; const find=[...doc().querySelectorAll('.product-inline-actions button')].find(item=>item.getAttribute('aria-label')==='Find alternatives'); check(find,'Find alternative action missing'); find.click(); await wait(()=>title()==='Find an alternative');
   check(widgetCalls.length===beforeMenu+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
   const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'},draft_id:draftId}})).structuredContent.review;
-  check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the Local basket');
+  check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the draft products');
   const query=doc().querySelector('#alternative-query'); check(query,'Alternative search missing');
   Object.getOwnPropertyDescriptor(doc().defaultView.HTMLInputElement.prototype,'value').set.call(query,'unavailable');
   query.dispatchEvent(new Event('input',{bubbles:true})); query.form.requestSubmit();
   await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
-  const back=button('Back to shopping list'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Unsaved shopping list');
+  const back=button('Back to shopping list'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Draft products');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');
   status.textContent='PASS: alternative search/navigation leaves shopping list unchanged; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}

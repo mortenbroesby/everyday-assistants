@@ -12,6 +12,7 @@ import {
 import {
   basketFingerprint,
   BasketProposalService,
+  BasketTransferNotDispatchedError,
   type ProposalAuditEvent,
   VerifiedPartialAdditionsError,
 } from "./proposals.js";
@@ -2146,5 +2147,167 @@ test("Ready submission preparation bypasses cached product facts", async () => {
   assert.equal(
     (review.review.lines as Array<{ item_price: number }>)[0]?.item_price,
     3,
+  );
+});
+
+test("native list transfer invokes real client methods with their receiver and verifies readback", async () => {
+  const events: string[] = [];
+  let transferred = false;
+  let transferRequests = 0;
+  const routes = [
+    [
+      "/AntiForgery",
+      () => {
+        const headers = new Headers();
+        headers.append("set-cookie", "XSRF-TOKEN=test-xsrf; Path=/");
+        headers.append("set-cookie", "XSRF-COOKIE-TOKEN=test-cookie; Path=/");
+        return Response.json(
+          { Header: "X-XSRF-TOKEN", Value: "test-xsrf" },
+          { headers },
+        );
+      },
+    ],
+    [
+      "/ShoppingList/getShoppingList",
+      () => {
+        events.push("source-read");
+        return Response.json({
+          Id: 44,
+          Name: "Family",
+          Lines: [
+            { Id: "7", Quantity: 1 },
+            { Id: "8", Quantity: 2 },
+          ],
+        });
+      },
+    ],
+    [
+      "/basket/GetBasket",
+      () => {
+        events.push("basket-read");
+        return Response.json({
+          Lines: transferred
+            ? [
+                { Id: "9", Name: "Milk", Quantity: 1, Total: 12.5 },
+                { Id: "7", Name: "Banan", Quantity: 1, Total: 2.5 },
+                { Id: "8", Name: "Pear", Quantity: 2, Total: 8 },
+              ]
+            : [{ Id: "9", Name: "Milk", Quantity: 1, Total: 12.5 }],
+          TotalProductsPrice: transferred ? 23 : 12.5,
+          DeliveryPrice: 0,
+          NumberOfProducts: transferred ? 4 : 1,
+        });
+      },
+    ],
+    [
+      "/basket/addShoppingListToBasket",
+      (init?: RequestInit) => {
+        events.push("transfer");
+        transferRequests++;
+        assert.equal(init?.method, "POST");
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          ListId: 44,
+          ConfirmMissingProducts: false,
+        });
+        transferred = true;
+        return Response.json({});
+      },
+    ],
+  ] as const;
+  const client = new NemligClient(async (input, init) => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    const route = routes.find(([suffix]) => url.pathname.endsWith(suffix));
+    if (!route) {
+      throw new Error(`Unexpected mock request: ${url.pathname}`);
+    }
+    return route[1](init);
+  });
+  Object.assign(client, { loggedIn: true, userId: "account-1" });
+  const service = new BasketProposalService(client);
+  const result = await service.transferNativeShoppingList(
+    44,
+    shoppingListFingerprint({
+      id: 44,
+      name: "Family",
+      items: [
+        { productId: 7, quantity: 1 },
+        { productId: 8, quantity: 2 },
+      ],
+    }),
+    [
+      { product_id: 7, quantity: 1 },
+      { product_id: 8, quantity: 2 },
+    ],
+    {
+      items: [{ id: 9, name: "Milk", quantity: 1, total: 12.5 }],
+      productsPrice: 12.5,
+      deliveryPrice: 0,
+      numberOfProducts: 1,
+      deliveryTime: undefined,
+    },
+    async () => {
+      events.push("fence");
+    },
+  );
+  assert.equal(result.status, "completed");
+  assert.equal(result.basket?.number_of_products, 4);
+  assert.equal(transferRequests, 1);
+  assert.deepEqual(result.basket?.items, [
+    { id: 9, name: "Milk", quantity: 1, total: 12.5 },
+    { id: 7, name: "Banan", quantity: 1, total: 2.5 },
+    { id: 8, name: "Pear", quantity: 2, total: 8 },
+  ]);
+  assert.deepEqual(events, [
+    "source-read",
+    "basket-read",
+    "fence",
+    "transfer",
+    "basket-read",
+  ]);
+});
+
+test("native list source read failure is truthfully pre-dispatch", async () => {
+  const requests: string[] = [];
+  const client = new NemligClient(async (input) => {
+    const url = new URL(typeof input === "string" ? input : input.toString());
+    requests.push(url.pathname);
+    if (url.pathname.endsWith("/AntiForgery")) {
+      const headers = new Headers();
+      headers.append("set-cookie", "XSRF-TOKEN=test-xsrf; Path=/");
+      headers.append("set-cookie", "XSRF-COOKIE-TOKEN=test-cookie; Path=/");
+      return Response.json(
+        { Header: "X-XSRF-TOKEN", Value: "test-xsrf" },
+        { headers },
+      );
+    }
+    if (url.pathname.endsWith("/ShoppingList/getShoppingList")) {
+      return Response.json({}, { status: 503 });
+    }
+    throw new Error(`Unexpected mock request: ${url.pathname}`);
+  });
+  Object.assign(client, { loggedIn: true, userId: "account-1" });
+  let dispatched = false;
+  await assert.rejects(
+    new BasketProposalService(client).transferNativeShoppingList(
+      44,
+      shoppingListFingerprint({
+        id: 44,
+        name: "Family",
+        items: [{ productId: 7, quantity: 1 }],
+      }),
+      [{ product_id: 7, quantity: 1 }],
+      emptyBasket(),
+      async () => {
+        dispatched = true;
+      },
+    ),
+    (error: unknown) =>
+      error instanceof BasketTransferNotDispatchedError &&
+      /No basket write was sent/u.test(error.message),
+  );
+  assert.equal(dispatched, false);
+  assert.equal(
+    requests.some((path) => path.endsWith("/basket/addShoppingListToBasket")),
+    false,
   );
 });

@@ -38,8 +38,8 @@ export type ReviewItem = {
   view: ProductView;
 };
 export type Review = {
-  basketId?: string;
   shoppingListId?: number;
+  reviewContextId?: string;
   shoppingListName?: string;
   draftId?: string;
   draftExpiresAt?: number;
@@ -124,6 +124,9 @@ export type ViewerPageModel = {
   continueSubmitted: boolean;
   submitBlocked: boolean;
   knownNoWrite: boolean;
+  recoveryKnownNoWrite: boolean;
+  submitErrorOpen: boolean;
+  recoveryOperation?: "submit" | "save" | "update";
   baskets: BasketSummary[];
   selectedBasketId?: string;
 };
@@ -138,7 +141,6 @@ export type ViewerPageActions = {
   onRefresh: () => void;
   onOpenPicker: () => void;
   onSelectBasket: (basketId: string, acceptSavedSubsetDraftId?: string) => void;
-  onDeleteBasket: (basketId: string) => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
@@ -154,6 +156,7 @@ export type ViewerPageActions = {
   onConfirmSubmit: () => void;
   onContinueSubmitted: () => void;
   onInspectBasket: () => void;
+  onDismissSubmitError: () => void;
   onSendFollowUp: (text: string) => void;
   onRequestEnd: () => void;
   onCancelEnd: () => void;
@@ -604,7 +607,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const [replacementPendingId, setReplacementPendingId] = useState<
     number | undefined
   >();
-  const [confirmDeleteId, setConfirmDeleteId] = useState<string | undefined>();
   const [basketMenuOpen, setBasketMenuOpen] = useState(false);
   const alternativeOpener = useRef<HTMLElement | null>(null);
   const alternativeProductId = useRef<number | undefined>(undefined);
@@ -626,12 +628,15 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     confirmEnd,
     continueSubmitted,
     submitBlocked,
+    knownNoWrite,
+    recoveryKnownNoWrite,
+    submitErrorOpen,
+    recoveryOperation,
     baskets,
     selectedBasketId,
   } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
   useEffect(() => {
-    setConfirmDeleteId(undefined);
     setBasketMenuOpen(false);
   }, [selectedBasketId]);
   const active = screen.kind === "review" && screen.active;
@@ -662,7 +667,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     destination === "alternatives"
       ? "Find an alternative"
       : (review?.shoppingListName ??
-        (review?.draftId ? "Unsaved shopping list" : "Shopping list"));
+        (review?.draftId ? "Draft products" : "Shopping list"));
   const visibleProductCount = review?.items.length ?? 0;
   const preparedProductCount =
     review?.submission?.review.lines?.reduce(
@@ -902,45 +907,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   >
                     Open
                   </Button>
-                  {!basket.nativeShoppingList &&
-                    (confirmDeleteId === basket.basketId ? (
-                      <div
-                        className="basket-delete-confirmation"
-                        role="group"
-                        aria-label={`Confirm deletion of basket ${basket.basketId.slice(0, 8)}`}
-                      >
-                        <p>
-                          Delete this temporary list? This does not change your
-                          real Nemlig basket.
-                        </p>
-                        <Button
-                          color="secondary"
-                          disabled={busy}
-                          onClick={() => setConfirmDeleteId(undefined)}
-                        >
-                          Keep
-                        </Button>
-                        <Button
-                          color="secondary"
-                          disabled={busy}
-                          onClick={() => {
-                            setConfirmDeleteId(undefined);
-                            actions.onDeleteBasket(basket.basketId);
-                          }}
-                        >
-                          Delete
-                        </Button>
-                      </div>
-                    ) : (
-                      <Button
-                        color="secondary"
-                        aria-label={`Delete basket ${basket.basketId.slice(0, 8)}`}
-                        disabled={busy}
-                        onClick={() => setConfirmDeleteId(basket.basketId)}
-                      >
-                        Delete
-                      </Button>
-                    ))}
                 </li>
               ))}
             </ul>
@@ -1569,6 +1535,96 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             {message}
           </p>
         )}
+      <Dialog.Root
+        open={submitErrorOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            actions.onDismissSubmitError();
+          }
+        }}
+      >
+        <Dialog.Portal>
+          <Dialog.Overlay className="product-overlay-backdrop" />
+          <Dialog.Content
+            className="submission-recovery-dialog"
+            aria-describedby="submission-recovery-description"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              (
+                document.getElementById("title") ??
+                document.querySelector<HTMLElement>(".viewer")
+              )?.focus({ preventScroll: true });
+            }}
+          >
+            <Dialog.Title>
+              {recoveryOperation === "save"
+                ? recoveryKnownNoWrite
+                  ? "Save was not sent to Nemlig"
+                  : "Save was not confirmed"
+                : recoveryOperation === "update"
+                  ? recoveryKnownNoWrite
+                    ? "Update was not sent to Nemlig"
+                    : "Update was not confirmed"
+                  : knownNoWrite
+                    ? "Submission was not sent"
+                    : "Check your Nemlig basket"}
+            </Dialog.Title>
+            <Dialog.Description id="submission-recovery-description">
+              {message ||
+                (recoveryOperation === "save"
+                  ? "The draft is still shown. Keep its products and quantities, then refresh it before trying again."
+                  : recoveryOperation === "update"
+                    ? "Refresh this exact list before continuing. Do not replay an update whose result is uncertain."
+                    : knownNoWrite
+                      ? "No basket write was sent. Review the current list before submitting again."
+                      : "Nemlig did not confirm the basket addition. Do not submit this list again until you inspect the actual basket.")}
+            </Dialog.Description>
+            <div className="submission-recovery-actions">
+              {recoveryOperation === "save" ? (
+                <Dialog.Close asChild>
+                  <Button color="primary">Return to draft</Button>
+                </Dialog.Close>
+              ) : recoveryOperation === "update" ? (
+                <Button
+                  color="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    actions.onDismissSubmitError();
+                    actions.onRefresh();
+                  }}
+                >
+                  Refresh shopping list
+                </Button>
+              ) : knownNoWrite ? (
+                <Button
+                  color="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    actions.onDismissSubmitError();
+                    actions.onRefresh();
+                  }}
+                >
+                  Review shopping list
+                </Button>
+              ) : (
+                <Button
+                  color="primary"
+                  disabled={busy}
+                  onClick={() => {
+                    actions.onDismissSubmitError();
+                    actions.onInspectBasket();
+                  }}
+                >
+                  Inspect Nemlig basket in conversation
+                </Button>
+              )}
+              <Dialog.Close asChild>
+                <Button color="secondary">Close</Button>
+              </Dialog.Close>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
+      </Dialog.Root>
     </ViewerShell>
   );
 }

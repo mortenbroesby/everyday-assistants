@@ -1,9 +1,13 @@
+## Current implementation checkpoint (2026-10-14)
+
+This bounded checkpoint keeps product drafts separate from saved Nemlig lists, preserves draft edits on conflicting product sets, and carries saved-list edits in a principal-bound transient review context across host metadata changes. Exact reviewed-list submission remains independent of that expiring context. It fixes the native transfer's lost method receiver, classifies pre-dispatch versus uncertain outcomes truthfully, and adds accessible recoveries that do not replay writes. Obsolete repository-backed Local Basket review paths, inventory callback commands, heartbeat and delete UI behavior were removed. The five-command durable review-operation journal, owner storage class, binding, namespace, and migrations remain in place. Namespace and deployed-binding retirement in 5.2/5.3, broader epic verification, and live ChatGPT/Nemlig acceptance are still open; this checkpoint does not complete the epic.
+
 ## 1. Establish provider contracts and delivery baseline
 
 - [x] 1.1 Rebase the implementation branch on current main containing merged PR #294; verify its successful-transfer cleanup and warning tests remain present. Record the issue, branch and integration owner.
 - [ ] 1.2 Capture sanitized native inventory, pagination, account/list identity and not-found fixtures; implement enumeration in the existing client and test empty, multiple-page, duplicate-name, malformed, unauthorized and unavailable responses.
 - [ ] 1.3 Characterize absolute list quantities, removal and partial replacement with focused client tests; demonstrate writes are not automatically retried.
-- [x] 1.4 Record the provider's lack of conditional transfer and the owner's acceptance of the possible native-edit race when exact source and basket checks, one transfer, additive readback, and a durable no-replay fence are used. Issue #295 selects consuming the complete source after confirmed completion; the current native path still retains it, so cleanup remains open under 3.3.
+- [x] 1.4 Record the provider's lack of conditional transfer and the owner's acceptance of the possible native-edit race when exact source and basket checks, one transfer, additive readback, and a durable no-replay fence are used. Issue #295 selects consuming the complete source after confirmed completion; verified transfers remove the unchanged source, while changed or uncertain sources remain with a warning as tracked under 3.3.
 
 ## 2. Add explicit saving and move saved selections to native lists
 
@@ -12,7 +16,7 @@
 - [ ] 2.3 Keep the entire ideated draft transient until explicit Save as shopping list; save its displayed exact product rows/quantities once with verified readback and switch the existing view to the returned native ID. Test no writes on ideation/accept/edit, saving To decide and Ready rows without persisting their review flags, duplicate clicks, partial/uncertain creation, and no replay after restart.
 - [ ] 2.4 Distinguish confirmed deletion from transport/auth failures and stale content; test picker recovery with no recreation, retargeting, lost hint on outage or replay of failed actions.
 
-- [ ] 2.5 Define bounded process-local draft inactivity handling without DO persistence; test explicit interaction renews activity, passive refresh does not, unsaved expiry rejects stale actions, in-flight Save settles before eviction, and saved native lists never expire through this mechanism. Record the idle interval in the implementation.
+- [ ] 2.5 Define bounded process-local draft inactivity handling without DO persistence; test explicit interaction renews activity, passive refresh does not, unsaved expiry rejects stale actions, in-flight Save settles before eviction, and provider-owned native lists never expire or delete through this mechanism. Clean native-list editor views may expire after two hours and are rebuilt by selecting the exact list; dirty or unresolved views remain protected. Record the idle interval in the implementation.
 - [ ] 2.6 Require saving before submission of an unsaved draft and verified Update before submission of dirty native lists; test Save/Update grant no basket authority and direct submission cannot bypass either boundary.
 - [ ] 2.7 Add a narrow durable journal only for explicitly initiated Save/Update operations. Reconcile the exact same account/list and intended change after interruption; test restart during create/population, update, partial readback, duplicate click, cancellation and uncertain outcome without blind replay or a durable editable-list mirror.
 

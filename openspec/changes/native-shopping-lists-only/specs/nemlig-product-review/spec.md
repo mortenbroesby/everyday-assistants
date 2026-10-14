@@ -9,6 +9,37 @@ without a durable editable local mirror. Native contents SHALL be written only
 after explicit Update and exact readback. Neither draft edits, saving nor staged
 saved-list edits SHALL change the actual basket.
 
+When a host omits conversation metadata, the server SHALL NOT reuse an implicit
+principal-wide draft or selected-list slot. Draft continuation SHALL use its
+exact draft ID within the authenticated principal; native-list continuation
+SHALL use an opaque transient review context bound to the authenticated
+principal and exact native list ID. An exact reviewed-list Submit SHALL remain
+valid after that transient context expires. A new product request with the same active
+draft product-ID set SHALL preserve current edits. A different set SHALL return
+a recoverable conflict without replacing the unsaved draft. A clean saved-list
+review may be replaced by a new draft only after exact product hydration
+succeeds; dirty, in-flight, or uncertain saved-list state SHALL remain available.
+
+#### Scenario: New product request meets a different unsaved draft
+- **WHEN** a start request supplies a different product-ID set while an unsaved draft is active
+- **THEN** the active draft and quantities remain unchanged and the response tells the user to add through the edit action or explicitly end the draft
+
+#### Scenario: Host conversation metadata is absent
+- **WHEN** a card continues a draft or saved list without host conversation metadata
+- **THEN** only its exact principal-bound draft ID or review context bound to the exact native list resolves; show without a target does not reuse another implicit selection
+
+#### Scenario: Two conversations open the same native list
+- **WHEN** two conversations stage edits to the same account list using different review contexts
+- **THEN** each transient buffer remains isolated, while an exact reviewed-list Submit can be independently revalidated after a context expires
+
+#### Scenario: Start from a clean saved-list review
+- **WHEN** exact new products are requested while a clean saved native list is open
+- **THEN** the new unsaved draft appears after hydration and the provider's saved-list contents remain unchanged
+
+#### Scenario: Start while saved-list edits are unresolved
+- **WHEN** a new draft is requested while saved-list edits or an operation are dirty, in-flight, or uncertain
+- **THEN** the pending review remains active and the new draft is not created
+
 #### Scenario: Accept some products
 - **WHEN** exact candidate products are accepted in an unsaved draft
 - **THEN** they remain in the unsaved draft until explicit Save; accepting alone
@@ -28,6 +59,28 @@ saved-list edits SHALL change the actual basket.
 - **WHEN** an unsaved draft is lost after inactivity, finish, restart or memory eviction
 - **THEN** unsaved products disappear, saved shopping-list contents remain on
   Nemlig, and neither a draft nor a list is silently recreated
+
+### Requirement: Bounded transient review cache
+The process-local review cache SHALL hold at most eight owners per
+principal-scoped service. The hosted context cache SHALL remain bounded to
+sixteen authenticated principal contexts. Ordinary inactive drafts and clean
+saved-list editor views MAY expire after two hours of inactivity and clean native
+views MAY be reclaimed earlier under capacity pressure. Unexpired drafts and
+recoverable state SHALL NOT be evicted to make room. Expiry or capacity
+reclamation SHALL NOT delete native lists or durable operation receipts. Dirty,
+busy, partial, uncertain, or otherwise recoverable state SHALL NOT be silently
+evicted; when no disposable entry is available, a new review SHALL fail before
+product or list hydration. Confirmed submission views MAY be reclaimed
+because the durable receipt retains the no-replay fence. Exact reviewed-list
+Submit SHALL remain available after transient view expiry.
+
+#### Scenario: Cache pressure protects recoverable work
+- **WHEN** all cached slots contain unexpired drafts, staged edits, or unresolved operations
+- **THEN** opening another review fails before provider reads and leaves each existing view unchanged
+
+#### Scenario: Clean saved-list view expires
+- **WHEN** a clean saved-list editor view remains inactive for two hours
+- **THEN** its transient handle expires without deleting the provider list or durable receipt, and selecting that exact list rebuilds the view
 
 ### Requirement: Contextual alternatives and reversible navigation
 The system SHALL offer alternatives for an identified candidate or saved item,
@@ -111,9 +164,8 @@ clear transient state without deleting a list; explicit list deletion is separat
 - **THEN** native lists remain available and no prior submission approval is restored
 
 #### Scenario: A host retains a card after the Draft list is lost
-- **WHEN** an old card targets an expired unsaved draft, deleted native list or retired local ID
-- **THEN** it performs no mutation and shows selection recovery; an uncertain
-  prior submission directs the user to inspect the actual basket
+- **WHEN** an old card targets an expired draft or deleted native list, or sends a retired Local Basket ID/action
+- **THEN** validation rejects retired fields/actions without provider inventory reads or writes; expired current targets fail closed, and an uncertain prior submission directs the user to inspect the actual basket
 
 ### Requirement: Persistent local review interaction
 Current supported cards SHALL distinguish an exact process-local draft target

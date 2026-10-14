@@ -47,7 +47,7 @@ function submitFailureCopy(detail: string): string | undefined {
   ) {
     return "The Nemlig basket changed before the addition. No product was sent.";
   }
-  if (/no (?:provider|basket) write was sent/iu.test(detail)) {
+  if (isKnownNoWriteFailure(detail)) {
     return detail;
   }
   if (
@@ -58,6 +58,18 @@ function submitFailureCopy(detail: string): string | undefined {
     return detail;
   }
   return undefined;
+}
+
+export function isKnownNoWriteFailure(detail: string): boolean {
+  return /no (?:basket|provider) write was sent|no transfer was sent/iu.test(
+    detail,
+  );
+}
+
+function isKnownSaveUpdateNoWriteFailure(detail: string): boolean {
+  return /Shopping-list recovery storage is full\. This Save or Update did not reach Nemlig|no products were changed in Nemlig|no Nemlig shopping list was created or changed/iu.test(
+    detail,
+  );
 }
 
 function isReviewItem(value: unknown): value is ReviewItem {
@@ -87,9 +99,11 @@ function isReview(value: unknown): value is Review {
     return false;
   }
   if (
-    (value.basketId !== undefined && !isBasketId(value.basketId)) ||
+    value.basketId !== undefined ||
     (value.shoppingListId !== undefined &&
       !isPositiveSafeInteger(value.shoppingListId)) ||
+    (value.reviewContextId !== undefined &&
+      !isDraftId(value.reviewContextId)) ||
     (value.shoppingListName !== undefined &&
       typeof value.shoppingListName !== "string") ||
     (value.draftId !== undefined && typeof value.draftId !== "string") ||
@@ -213,57 +227,27 @@ function isDraftId(value: unknown): value is string {
 function reviewTargetId(review: Review): string | undefined {
   return review.shoppingListId !== undefined
     ? String(review.shoppingListId)
-    : (review.draftId ?? review.basketId);
+    : review.draftId;
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
   if (review.draftId !== undefined) {
     return { draft_id: review.draftId };
   }
   if (review.shoppingListId !== undefined) {
-    return { shopping_list_id: review.shoppingListId };
+    return {
+      shopping_list_id: review.shoppingListId,
+      ...(review.reviewContextId
+        ? { review_context_id: review.reviewContextId }
+        : {}),
+    };
   }
-  return review.basketId ? { basket_id: review.basketId } : {};
+  return {};
 }
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
 function isNonnegativeSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
-}
-function hasValidBasketTimestamps(value: Record<string, unknown>) {
-  return (
-    isNonnegativeSafeInteger(value.createdAt) &&
-    isNonnegativeSafeInteger(value.lastActivityAt) &&
-    isNonnegativeSafeInteger(value.expiresAt)
-  );
-}
-function hasValidBasketCounts(value: Record<string, unknown>) {
-  return (
-    isNonnegativeSafeInteger(value.revision) &&
-    isNonnegativeSafeInteger(value.productCount)
-  );
-}
-function hasValidBasketIdentity(value: Record<string, unknown>) {
-  return (
-    isBasketId(value.basketId) &&
-    hasValidBasketTimestamps(value) &&
-    hasValidBasketCounts(value) &&
-    typeof value.submissionAttempted === "boolean"
-  );
-}
-function isBasketSummary(value: unknown): value is BasketSummary {
-  if (!isRecord(value)) {
-    return false;
-  }
-  if (value.nativeShoppingList === true) {
-    return (
-      /^[1-9]\d{0,14}$/u.test(String(value.basketId)) &&
-      typeof value.shoppingListName === "string" &&
-      isNonnegativeSafeInteger(value.productCount) &&
-      value.submissionAttempted === false
-    );
-  }
-  return hasValidBasketIdentity(value);
 }
 // Keep the complete untrusted tool-payload validation at the rendering boundary.
 // fallow-ignore-next-line complexity
@@ -379,22 +363,12 @@ function readBasketSummaries(
       };
     });
   }
-  if (envelope.baskets === undefined) {
-    return [];
-  }
-  if (
-    !Array.isArray(envelope.baskets) ||
-    !envelope.baskets.every(isBasketSummary)
-  ) {
-    return undefined;
-  }
-  return envelope.baskets;
+  return envelope.baskets === undefined ? [] : undefined;
 }
 function hasUnselectedReview(value: unknown) {
   return (
     isRecord(value) &&
     isReview(value) &&
-    !isBasketId(value.basketId) &&
     !isPositiveSafeInteger(value.shoppingListId) &&
     !isDraftId(value.draftId)
   );
@@ -434,9 +408,6 @@ function readPayload(value: unknown): ViewerScreen | undefined {
       review: envelope.review,
       active: true,
     };
-  }
-  if (Array.isArray(envelope.baskets)) {
-    return { kind: "picker", baskets, selectedBasketId };
   }
   if (envelope.ended === true) {
     return {
@@ -510,12 +481,6 @@ export function ProductViewer() {
         screen.review.submission?.status === "partial"),
   );
   const cancellationEpoch = useRef(0);
-  const heartbeatByBasket = useRef(
-    new Map<
-      string,
-      { attemptedAt: number; renewedAt: number; intentAt: number }
-    >(),
-  );
   const [reviewDisclosures, setReviewDisclosures] = useState<
     Map<number, Set<string>>
   >(() => new Map());
@@ -528,12 +493,18 @@ export function ProductViewer() {
       (screen.review.submissionAttempted === true ||
         screen.review.submission?.status === "uncertain"),
   );
+  const [submitErrorOpen, setSubmitErrorOpen] = useState(false);
+  const [recoveryKnownNoWrite, setRecoveryKnownNoWrite] = useState(false);
+  const [recoveryOperation, setRecoveryOperation] = useState<
+    "submit" | "save" | "update" | undefined
+  >();
   const submitBlockedRef = useRef(
     screen.kind === "review" &&
       (screen.review.submissionAttempted === true ||
         screen.review.submission?.status === "uncertain"),
   );
   const submissionFailure = useRef<string | undefined>(undefined);
+  const submissionNoWrite = useRef(false);
   const [pendingQuantities, setPendingQuantities] = useState<
     Map<number, number>
   >(() => new Map());
@@ -563,6 +534,9 @@ export function ProductViewer() {
     setMessage("");
     ignorePassivePayloads.current = false;
     submissionFailure.current = undefined;
+    submissionNoWrite.current = false;
+    setSubmitErrorOpen(false);
+    setRecoveryOperation(undefined);
   };
   const changeBasket = (basketId: string | undefined) => {
     if (selectedBasketIdRef.current === basketId) {
@@ -690,7 +664,6 @@ export function ProductViewer() {
         lastConfirmedReview.current = next.review;
         const submissionChanged =
           !sameReview ||
-          next.review.basketId !== previous?.review.basketId ||
           next.review.submission?.submission_id !==
             previous?.review.submission?.submission_id;
         if (submissionChanged) {
@@ -717,14 +690,6 @@ export function ProductViewer() {
           ignorePassivePayloads.current = true;
           submitBlockedRef.current = true;
           setSubmitBlocked(true);
-        }
-        const payloadRecord = isRecord(payload)
-          ? isRecord(payload.structuredContent)
-            ? payload.structuredContent
-            : payload
-          : undefined;
-        if (payloadRecord && Array.isArray(payloadRecord.baskets)) {
-          setBaskets(payloadRecord.baskets as BasketSummary[]);
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
@@ -826,7 +791,7 @@ export function ProductViewer() {
       setMessage(submissionFailure.current);
       return;
     }
-    if (/no (?:basket|provider) write was sent/iu.test(text)) {
+    if (isKnownNoWriteFailure(text)) {
       submitBlockedRef.current = false;
       setSubmitBlocked(false);
       setMessage(submissionFailure.current ?? text);
@@ -897,39 +862,46 @@ export function ProductViewer() {
     if (name === "update_product_review") {
       const action = isRecord(requestArgs.action) ? requestArgs.action : {};
       const kind = action.kind;
+      if (
+        requestArgs.basket_id !== undefined ||
+        kind === "delete" ||
+        kind === "heartbeat"
+      ) {
+        setMessage(
+          "This older selection is unsupported. Open a current draft or choose a native shopping list explicitly.",
+        );
+        return false;
+      }
       if (kind !== "list") {
-        const explicitTarget =
-          kind === "select" ||
-          kind === "show" ||
-          kind === "delete" ||
-          kind === "heartbeat";
+        const explicitTarget = kind === "select" || kind === "show";
         const targetReview = activeReview.current?.review;
         const targetArgs = explicitTarget
-          ? requestArgs.basket_id !== undefined
-            ? { basket_id: requestArgs.basket_id }
-            : requestArgs.shopping_list_id !== undefined
-              ? { shopping_list_id: requestArgs.shopping_list_id }
-              : requestArgs.draft_id !== undefined
-                ? { draft_id: requestArgs.draft_id }
-                : {}
+          ? requestArgs.shopping_list_id !== undefined
+            ? {
+                shopping_list_id: requestArgs.shopping_list_id,
+                ...(requestArgs.review_context_id !== undefined
+                  ? { review_context_id: requestArgs.review_context_id }
+                  : {}),
+              }
+            : requestArgs.draft_id !== undefined
+              ? { draft_id: requestArgs.draft_id }
+              : {}
           : targetReview
             ? reviewTargetArgs(targetReview)
             : {};
         const targetId =
           targetArgs.shopping_list_id !== undefined
             ? String(targetArgs.shopping_list_id)
-            : (targetArgs.draft_id ?? targetArgs.basket_id);
+            : targetArgs.draft_id;
         if (!isBasketId(targetId)) {
           setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
-        delete requestArgs.basket_id;
         delete requestArgs.draft_id;
         delete requestArgs.shopping_list_id;
+        delete requestArgs.review_context_id;
         Object.assign(requestArgs, targetArgs);
-      } else {
-        delete requestArgs.basket_id;
       }
     } else if (name === "submit_product_review") {
       const targetReview = activeReview.current?.review;
@@ -938,13 +910,7 @@ export function ProductViewer() {
         return false;
       }
       const targetArgs = reviewTargetArgs(targetReview);
-      if (
-        !isBasketId(
-          targetArgs.shopping_list_id !== undefined
-            ? String(targetArgs.shopping_list_id)
-            : targetArgs.basket_id,
-        )
-      ) {
+      if (!isBasketId(String(targetArgs.shopping_list_id))) {
         setMessage("Choose a shopping list before continuing.");
         setScreen({ kind: "picker", baskets, selectedBasketId });
         return false;
@@ -955,12 +921,14 @@ export function ProductViewer() {
     cancelledCallPending.current = false;
     if (name === "submit_product_review") {
       submissionFailure.current = undefined;
+      submissionNoWrite.current = false;
     }
     const requestEpoch = cancellationEpoch.current;
     const requestSelectionEpoch =
       expectedSelection?.epoch ?? selectionEpoch.current;
     const requestController = new AbortController();
     activeToolController.current = requestController;
+    let explicitToolError = false;
     if (!background) {
       setBusy(true);
       setMessage("Updating…");
@@ -977,6 +945,7 @@ export function ProductViewer() {
         return false;
       }
       if (result.isError) {
+        explicitToolError = true;
         const detail =
           (result.content ?? [])
             .filter((content) => content.type === "text")
@@ -984,21 +953,14 @@ export function ProductViewer() {
             .join(" ") || "Update failed";
         if (name === "submit_product_review") {
           submissionFailure.current = submitFailureCopy(detail);
+          submissionNoWrite.current = isKnownNoWriteFailure(detail);
         }
         throw new Error(detail);
       }
-      if (background) {
-        const payloadRecord = isRecord(result.structuredContent)
-          ? result.structuredContent
-          : undefined;
-        if (
-          payloadRecord &&
-          Array.isArray(payloadRecord.baskets) &&
-          payloadRecord.baskets.every(isBasketSummary)
-        ) {
-          setBaskets(payloadRecord.baskets);
-        }
-      } else if (!applyPayload(result, true, adoptPresentationDestination)) {
+      if (
+        !background &&
+        !applyPayload(result, true, adoptPresentationDestination)
+      ) {
         throw new Error("Could not confirm the updated shopping list.");
       }
       if (
@@ -1012,6 +974,42 @@ export function ProductViewer() {
       }
       return true;
     } catch (cause) {
+      if (name === "submit_product_review") {
+        const detail = cause instanceof Error ? cause.message : "Update failed";
+        submissionFailure.current = submitFailureCopy(detail);
+        if (isKnownNoWriteFailure(detail)) {
+          submissionNoWrite.current = true;
+        }
+      }
+      const actionKind = isRecord(requestArgs.action)
+        ? requestArgs.action.kind
+        : undefined;
+      if (
+        name === "update_product_review" &&
+        (actionKind === "save" || actionKind === "update") &&
+        requestEpoch === cancellationEpoch.current &&
+        requestSelectionEpoch === selectionEpoch.current
+      ) {
+        ignorePassivePayloads.current = true;
+        const detail = cause instanceof Error ? cause.message : "Update failed";
+        const knownNoWrite =
+          explicitToolError && isKnownSaveUpdateNoWriteFailure(detail);
+        setRecoveryKnownNoWrite(knownNoWrite);
+        const recoveryGuidance =
+          actionKind === "save"
+            ? "Nemlig did not confirm saving this draft. Keep the draft and check your saved lists before trying again."
+            : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.";
+        setMessage(
+          knownNoWrite
+            ? detail
+            : detail === "Update failed"
+              ? recoveryGuidance
+              : `${detail} ${recoveryGuidance}`,
+        );
+        setRecoveryOperation(actionKind);
+        setSubmitErrorOpen(true);
+        return false;
+      }
       if (
         !background &&
         requestEpoch === cancellationEpoch.current &&
@@ -1040,165 +1038,6 @@ export function ProductViewer() {
       }
     }
   };
-  const callRef = useRef(call);
-  callRef.current = call;
-  useEffect(() => {
-    const hour = 60 * 60 * 1_000;
-    const activeInteractions = new Set<string>();
-    const releaseFrames = new Set<number>();
-    const getHeartbeatState = (basketId: string) => {
-      const state = heartbeatByBasket.current.get(basketId) ?? {
-        attemptedAt: 0,
-        renewedAt: 0,
-        intentAt: 0,
-      };
-      heartbeatByBasket.current.set(basketId, state);
-      return state;
-    };
-    const isVisibleAndFocused = () =>
-      document.visibilityState === "visible" && document.hasFocus();
-    const hasBasketContext = (
-      basketId: string | undefined,
-      current: { active: boolean } | undefined,
-    ): basketId is string => Boolean(basketId && current?.active);
-    const canRenewBasket = (
-      basketId: string | undefined,
-      current: { active: boolean } | undefined,
-    ): basketId is string =>
-      hasBasketContext(basketId, current) &&
-      isVisibleAndFocused() &&
-      !callLock.current &&
-      activeInteractions.size === 0;
-    const hasRenewalIntent = (state: {
-      attemptedAt: number;
-      renewedAt: number;
-      intentAt: number;
-    }) => state.intentAt > state.renewedAt;
-    const rememberIntent = (basketId: string) => {
-      const state = getHeartbeatState(basketId);
-      const now = Date.now();
-      state.intentAt = now;
-      if (state.attemptedAt === 0) {
-        state.attemptedAt = now;
-      }
-      return state;
-    };
-    const pointerInteractionKey = (event: Event) => {
-      if (event.type !== "pointerdown" || !("pointerId" in event)) {
-        return undefined;
-      }
-      return `pointer:${String(event.pointerId)}`;
-    };
-    const keyboardInteractionKey = (event: Event) => {
-      if (event.type !== "keydown" || !("key" in event)) {
-        return undefined;
-      }
-      return `key:${String(event.key)}`;
-    };
-    const interactionKey = (event: Event) =>
-      pointerInteractionKey(event) ?? keyboardInteractionKey(event);
-    const trackInteraction = (event: Event) => {
-      const key = interactionKey(event);
-      if (key) {
-        activeInteractions.add(key);
-      }
-    };
-    const tick = () => {
-      const basketId = selectedBasketIdRef.current;
-      const current = activeReview.current;
-      if (!canRenewBasket(basketId, current)) {
-        return;
-      }
-      const state = getHeartbeatState(basketId);
-      const now = Date.now();
-      if (!hasRenewalIntent(state) || now - state.attemptedAt < hour) {
-        return;
-      }
-      state.attemptedAt = now;
-      heartbeatByBasket.current.set(basketId, state);
-      const requestEpoch = selectionEpoch.current;
-      void callRef
-        .current(
-          "update_product_review",
-          { action: { kind: "heartbeat" }, basket_id: basketId },
-          true,
-          false,
-          false,
-          true,
-        )
-        .then((ok) => {
-          if (
-            ok &&
-            basketId === selectedBasketIdRef.current &&
-            requestEpoch === selectionEpoch.current
-          ) {
-            state.renewedAt = Date.now();
-          }
-        });
-    };
-    const recordIntent = (event: Event) => {
-      if (!event.isTrusted) {
-        return;
-      }
-      const basketId = selectedBasketIdRef.current;
-      if (!basketId) {
-        return;
-      }
-      rememberIntent(basketId);
-      trackInteraction(event);
-    };
-    const scheduleInteractionRelease = (key: string) => {
-      const frame = requestAnimationFrame(() => {
-        activeInteractions.delete(key);
-        releaseFrames.delete(frame);
-      });
-      releaseFrames.add(frame);
-    };
-    const releasePointer = (event: PointerEvent) =>
-      scheduleInteractionRelease(`pointer:${event.pointerId}`);
-    const releaseKey = (event: KeyboardEvent) =>
-      scheduleInteractionRelease(`key:${event.key}`);
-    const pauseActivity = () => {
-      activeInteractions.clear();
-      const basketId = selectedBasketIdRef.current;
-      const state = basketId
-        ? heartbeatByBasket.current.get(basketId)
-        : undefined;
-      if (state) {
-        state.intentAt = state.renewedAt;
-      }
-    };
-    const visibilityChanged = () => {
-      if (document.visibilityState === "visible") {
-        tick();
-      } else {
-        pauseActivity();
-      }
-    };
-    document.addEventListener("pointerdown", recordIntent, true);
-    document.addEventListener("keydown", recordIntent, true);
-    document.addEventListener("pointerup", releasePointer, true);
-    document.addEventListener("pointercancel", releasePointer, true);
-    document.addEventListener("keyup", releaseKey, true);
-    document.addEventListener("visibilitychange", visibilityChanged);
-    window.addEventListener("focus", tick);
-    window.addEventListener("blur", pauseActivity);
-    const timer = setInterval(tick, 60_000);
-    return () => {
-      clearInterval(timer);
-      for (const frame of releaseFrames) {
-        cancelAnimationFrame(frame);
-      }
-      document.removeEventListener("pointerdown", recordIntent, true);
-      document.removeEventListener("keydown", recordIntent, true);
-      document.removeEventListener("pointerup", releasePointer, true);
-      document.removeEventListener("pointercancel", releasePointer, true);
-      document.removeEventListener("keyup", releaseKey, true);
-      document.removeEventListener("visibilitychange", visibilityChanged);
-      window.removeEventListener("focus", tick);
-      window.removeEventListener("blur", pauseActivity);
-    };
-  }, []);
   const review = screen.kind === "review" ? screen.review : undefined;
   const update = async (action: Record<string, unknown>) => {
     const expected = selectionContext();
@@ -1393,17 +1232,11 @@ export function ProductViewer() {
     const nativeShoppingList = selected
       ? selected.nativeShoppingList === true
       : activeReview.current?.review.shoppingListId === Number(basketId);
-    const targetArgs = nativeShoppingList
-      ? { shopping_list_id: Number(basketId) }
-      : { basket_id: basketId };
+    if (!nativeShoppingList) {
+      return;
+    }
+    const targetArgs = { shopping_list_id: Number(basketId) };
     changeBasket(basketId);
-    const heartbeat = heartbeatByBasket.current.get(basketId) ?? {
-      attemptedAt: 0,
-      renewedAt: 0,
-      intentAt: 0,
-    };
-    heartbeat.intentAt = Date.now();
-    heartbeatByBasket.current.set(basketId, heartbeat);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
     await call(
       "update_product_review",
@@ -1420,20 +1253,6 @@ export function ProductViewer() {
       true,
     );
   };
-  const deleteBasket = async (basketId: string) => {
-    if (
-      !busy &&
-      isBasketId(basketId) &&
-      !baskets.find((basket) => basket.basketId === basketId)
-        ?.nativeShoppingList
-    ) {
-      await call(
-        "update_product_review",
-        { action: { kind: "delete" }, basket_id: basketId },
-        true,
-      );
-    }
-  };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
       setMessage(
@@ -1441,10 +1260,8 @@ export function ProductViewer() {
       );
       return;
     }
-    if (selectedBasketIdRef.current) {
-      const targetArgs = activeReview.current?.review
-        ? reviewTargetArgs(activeReview.current.review)
-        : { basket_id: selectedBasketIdRef.current };
+    if (activeReview.current?.review) {
+      const targetArgs = reviewTargetArgs(activeReview.current.review);
       await call(
         "update_product_review",
         {
@@ -1454,7 +1271,9 @@ export function ProductViewer() {
         true,
       );
     } else {
-      await openPicker();
+      setMessage(
+        "This older selection is no longer supported. Open the current draft or select a native shopping list explicitly.",
+      );
     }
   };
   const endDraft = async () => {
@@ -1534,6 +1353,8 @@ export function ProductViewer() {
         submissionFailure.current ??
           "Nemlig did not confirm whether the basket addition completed. Inspect the basket; do not retry.",
       );
+      setRecoveryOperation("submit");
+      setSubmitErrorOpen(true);
     }
   };
   const displayedViews =
@@ -1573,7 +1394,10 @@ export function ProductViewer() {
         confirmEnd,
         continueSubmitted,
         submitBlocked,
-        knownNoWrite: submissionFailure.current !== undefined,
+        knownNoWrite: submissionNoWrite.current,
+        recoveryKnownNoWrite,
+        submitErrorOpen,
+        recoveryOperation,
         baskets,
         selectedBasketId,
       }}
@@ -1583,7 +1407,6 @@ export function ProductViewer() {
         onOpenPicker: () => void openPicker(),
         onSelectBasket: (basketId, acceptSavedSubsetDraftId) =>
           void selectBasket(basketId, acceptSavedSubsetDraftId),
-        onDeleteBasket: (basketId) => void deleteBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {
             const next = new Map(previous);
@@ -1626,6 +1449,7 @@ export function ProductViewer() {
           void sendFollowUp(
             "Inspect the actual Nemlig basket for this uncertain submission. Do not retry or add anything.",
           ),
+        onDismissSubmitError: () => setSubmitErrorOpen(false),
         onSendFollowUp: (text) => void sendFollowUp(text),
         onRequestEnd: () => setConfirmEnd(true),
         onCancelEnd: () => setConfirmEnd(false),

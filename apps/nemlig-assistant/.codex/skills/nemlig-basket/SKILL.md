@@ -44,8 +44,7 @@ pnpm nemlig --help
 4. Treat the real Nemlig basket as sacred and add-only. Never remove, decrease,
    replace, swap, or clear its contents, even if asked or explicitly approved;
    explain that the user can manage those actions directly on Nemlig.com. This
-   prohibition applies to MCP, CLI, provider APIs, and production tests. Local
-   Local basket removal and clearing are different operations and remain allowed.
+   prohibition applies to MCP, CLI, provider APIs, and production tests.
 
    A requested quantity is an amount to add, not an absolute final quantity.
    If Nemlig already has two and the user authorizes adding two, the final
@@ -57,12 +56,12 @@ pnpm nemlig --help
    quantity. Separate external edits made directly on Nemlig.com can still race
    the provider's non-atomic read/set boundary; do not claim cross-client locking.
 
-5. A clear conversational instruction to add the exact unchanged Local basket
-   is itself authorization for that exact positive addition. Do not
-   ask for a redundant second conversational approval. For any other addition,
-   obtain approval of the exact unchanged products and added quantities. Show
-   current prices as estimates; Nemlig may change them before or during the
-   addition. Local basket state alone is not provider-write authorization.
+5. A clear conversational instruction to add exact products and positive
+   quantities is authorization for that exact addition. Do not ask for
+   redundant approval. For any other addition, obtain approval of the exact
+   products and added quantities. Show current prices as estimates; Nemlig may
+   change them before or during the addition. A draft or saved list alone is
+   not provider-write authorization.
    Product identity, quantity, or basket-content changes require a fresh review.
    A product confirmed unavailable or missing may be skipped and reported while
    other approved products continue. A failed lookup is not proof of absence.
@@ -84,26 +83,21 @@ remove or reduce anything, direct them to manage that directly on Nemlig.com.
 
 ## MCP workflow
 
-Model-visible basket writes never call a direct mutation tool. Additions use
-the Local basket's `prepare_submission` → its existing exact confirmation →
-`submit_product_review`. This is the assistant provider-basket write
-path and only adds positive quantities. A clear instruction to add the exact
-unchanged Local basket supplies authorization without a redundant second
-chat approval; UI confirmation remains as designed. The path preserves fresh
-validation, principal binding, single-use authority, serialization and verified
-basket readback. Never retry an indeterminate result; inspect the draft and
-actual basket before deliberately creating a fresh addition review.
-The user's clear conversational instruction to add the exact unchanged Local
-basket is authorization for that prepared payload; do not ask for redundant
-chat approval. Other additions require approval of the exact prepared change.
-Never retry an indeterminate result; inspect the Local basket and actual basket
-before deliberately preparing a fresh addition.
+Model-visible basket writes never call a direct mutation tool. Create product
+rows in an unsaved draft, explicitly Save it as a native Nemlig shopping list,
+and use explicit Update to persist any staged saved-list edits. Submit only the
+exact reviewed `shopping_list_id` and `reviewed_list` after user authorization.
+Carry `review_context_id` with saved-list edits when available; exact reviewed
+submission remains valid after that transient context expires. The server
+re-reads the same list, applies the existing durable no-replay fence, and verifies
+additive basket readback. Never retry an indeterminate result; inspect the actual
+basket and reconcile the saved list without replaying the write.
 
-Use `start_product_review` for an explicit new Local basket. To reopen, first use
-`update_product_review` with action `show`. Only after it reports no active basket
-may you ask to start fresh. Never replay a failed edit or restore old submission
-authority. Every Local basket row is a submission candidate, including after a
-replacement. Local removal and ending do not mutate the actual Nemlig basket.
+Retired Local Basket IDs and actions, including `basket_id`, `delete`, and
+`heartbeat`, fail tool argument validation. They do not open a picker or resolve
+to another list. Start a current draft or explicitly use action `list` and select
+a native list by its exact ID. A draft continues only through its exact `draft_id`.
+Local draft removal and ending do not mutate the actual Nemlig basket.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

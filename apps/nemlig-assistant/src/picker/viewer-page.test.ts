@@ -62,6 +62,8 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
+    recoveryKnownNoWrite: false,
+    submitErrorOpen: false,
     baskets: [],
     selectedBasketId: undefined,
   },
@@ -71,7 +73,6 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onRefresh: noop,
     onOpenPicker: noop,
     onSelectBasket: noop,
-    onDeleteBasket: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -84,6 +85,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
+    onDismissSubmitError: noop,
     onSendFollowUp: noop,
     onRequestEnd: noop,
     onCancelEnd: noop,
@@ -147,21 +149,6 @@ test("only saved Nemlig shopping lists can be submitted to the basket", () => {
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
   }
-  pageProps.model.screen.review.basketId =
-    "12345678-1234-4234-8234-123456789abc";
-  const localMarkup = renderToStaticMarkup(
-    createElement(ViewerPage, pageProps),
-  );
-  const localSubmit = localMarkup.match(
-    /<button[^>]*>[\s\S]*?Submit to Nemlig basket[\s\S]*?<\/button>/u,
-  )?.[0];
-  assert.ok(localSubmit);
-  assert.match(localSubmit, /\sdisabled(?:="")?/u);
-  assert.match(
-    localMarkup,
-    /Open or save a Nemlig shopping list before submitting it/u,
-  );
-
   pageProps.model.screen.review.shoppingListId = 44;
   pageProps.model.screen.review.saveStatus = "saved";
   const savedMarkup = renderToStaticMarkup(
@@ -249,10 +236,13 @@ test("a recovered submission fence explains the uncertainty without inventing an
   }
   pageProps.model.screen.review = {
     ...pageProps.model.screen.review,
-    basketId: "12345678-1234-4234-8234-123456789abc",
+    shoppingListId: 44,
+    shoppingListName: "Synthetic saved list",
+    reviewContextId: "12345678-1234-4234-8234-123456789def",
+    saveStatus: "saved",
     submissionAttempted: true,
   };
-  pageProps.model.selectedBasketId = "12345678-1234-4234-8234-123456789abc";
+  pageProps.model.selectedBasketId = "44";
   pageProps.model.submitBlocked = true;
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(markup, /A previous addition needs checking/u);

@@ -8,6 +8,7 @@ import {
   type Basket,
   type Product,
   type ShoppingClient,
+  type ShoppingList,
   type ShoppingListClient,
   shoppingListFingerprint,
 } from "./client.js";
@@ -825,11 +826,17 @@ export class BasketProposalService {
     // The lock must cover exact-source, basket, and additive-readback checks together.
     // fallow-ignore-next-line complexity
     return this.mutex.run(async () => {
-      const { getShoppingList, addShoppingListToCart } = this.client;
-      if (!getShoppingList || !addShoppingListToCart) {
+      if (!this.client.getShoppingList || !this.client.addShoppingListToCart) {
         throw new NemligError("Shopping-list submission is unavailable.");
       }
-      const currentList = await getShoppingList(listId, signal);
+      let currentList: ShoppingList;
+      try {
+        currentList = await this.client.getShoppingList(listId, signal);
+      } catch {
+        throw new BasketTransferNotDispatchedError(
+          "Could not verify the saved shopping list before transfer. No basket write was sent; refresh the list before continuing.",
+        );
+      }
       const expected = new Map(
         activeLines.map(({ product_id, quantity }) => [product_id, quantity]),
       );
@@ -843,10 +850,15 @@ export class BasketProposalService {
       ) {
         throw new BasketSnapshotChangedError();
       }
-      if (
-        basketFingerprint(await this.client.getCart(signal)) !==
-        basketFingerprint(baseline)
-      ) {
+      let currentBasket: Basket;
+      try {
+        currentBasket = await this.client.getCart(signal);
+      } catch {
+        throw new BasketTransferNotDispatchedError(
+          "Could not verify the actual basket before transfer. No basket write was sent; inspect the basket before continuing.",
+        );
+      }
+      if (basketFingerprint(currentBasket) !== basketFingerprint(baseline)) {
         throw new BasketSnapshotChangedError();
       }
       if (signal?.aborted) {
@@ -862,7 +874,7 @@ export class BasketProposalService {
       }
       let stage: "provider_request" | "basket_readback" = "provider_request";
       try {
-        await addShoppingListToCart(listId, signal);
+        await this.client.addShoppingListToCart(listId, signal);
         stage = "basket_readback";
         const result = await this.client.getCart(signal);
         this.assertShoppingListTransferReadback(baseline, result, activeLines);

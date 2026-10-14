@@ -11,9 +11,13 @@ Update shopping list for staged native-list edits. Native edit actions SHALL
 change only transient state; only the exact Update action may write those edits
 to Nemlig. Draft/native targets SHALL remain distinct. Stale draft references SHALL
 never resolve to another draft or an automatically created list. Widget saved-list actions SHALL require
-`shopping_list_id`; submission SHALL additionally require the exact
-`submission_id`. Native-list conversation actions SHALL use an explicit list ID or a revalidated
-selection hint, never a guessed name. Draft actions SHALL resolve their exact
+`shopping_list_id`; native-list cards SHALL carry an opaque transient
+`review_context_id` scoped to the authenticated principal and exact list so
+staged edits remain conversation-bound. Submission SHALL additionally require
+the exact `submission_id` and reviewed list contents; exact reviewed-list
+validation SHALL remain independent of an active review context. Native-list
+conversation actions SHALL use an explicit list ID or a revalidated selection
+hint, never a guessed name. Draft actions SHALL resolve their exact
 live conversation-bound draft reference. List reads SHALL be read-only; create/edit/
 delete annotations and guidance SHALL truthfully declare provider mutations.
 Only protected submission SHALL add to the actual basket. Native list operations
@@ -27,13 +31,26 @@ reflect their provider-writing actions even though unsaved draft edits are local
   behavior-matched annotations distinguishing unsaved edits from provider writes
 
 #### Scenario: A widget includes a retired identifier
-- **WHEN** a widget supplies an old local basket ID or obsolete authority fields
+- **WHEN** a widget supplies retired `basket_id`, `delete`, or `heartbeat` fields/actions
 - **THEN** validation rejects it without translating it into another native list
 
 #### Scenario: Multiple supported cards use the current Draft list
 - **WHEN** multiple cards act on an account list
 - **THEN** each saved mutation targets its explicit original shopping-list ID
-  and fresh state; changing the chat selection cannot retarget a card
+
+#### Scenario: Start with exact products while another draft is active
+- **WHEN** `start_product_review` receives a different product-ID set from the active unsaved draft
+- **THEN** it reports a recoverable conflict and preserves the active draft; same-ID repeat calls return its current edited state
+
+#### Scenario: Widget call omits host conversation metadata
+- **WHEN** a widget continues an explicit draft or native-list target without the host session hint
+- **THEN** the exact draft ID or principal-and-list-bound review context resolves
+  without reusing an implicit principal-wide selection; changing the chat
+  selection cannot retarget a card
+
+#### Scenario: Reviewed-list Submit survives an expired card context
+- **WHEN** a submit action supplies the exact reviewed list contents after its transient review context has expired
+- **THEN** the server revalidates the same account, list ID, name, products, and quantities and applies the existing durable no-replay fence without requiring an active card
 
 #### Scenario: Save is distinct from submission
 - **WHEN** a conversation or widget requests Save as shopping list

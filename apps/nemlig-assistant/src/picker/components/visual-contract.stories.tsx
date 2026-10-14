@@ -262,6 +262,8 @@ const baseProps = (
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
+    recoveryKnownNoWrite: false,
+    submitErrorOpen: false,
     baskets: screen.kind === "picker" ? screen.baskets : [],
     selectedBasketId: undefined,
     ...overrides.model,
@@ -272,7 +274,6 @@ const baseProps = (
     onRefresh: noop,
     onOpenPicker: noop,
     onSelectBasket: noop,
-    onDeleteBasket: noop,
     onQuantity: noop,
     onRemove: noop,
     onOpenAlternatives: noop,
@@ -285,6 +286,7 @@ const baseProps = (
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
+    onDismissSubmitError: noop,
     onSendFollowUp: noop,
     onRequestEnd: noop,
     onCancelEnd: noop,
@@ -304,7 +306,7 @@ function FixturePage({
 }) {
   const [hostMessage, setHostMessage] = useState("");
   const [activeScreen, setActiveScreen] = useState(screen);
-  const [localBaskets, setLocalBaskets] = useState(
+  const [localBaskets] = useState(
     overrides.model?.baskets ??
       (screen.kind === "picker" ? screen.baskets : []),
   );
@@ -325,7 +327,9 @@ function FixturePage({
             baskets: localBaskets,
             selectedBasketId:
               activeScreen.kind === "review"
-                ? activeScreen.review.basketId
+                ? activeScreen.review.shoppingListId === undefined
+                  ? undefined
+                  : String(activeScreen.review.shoppingListId)
                 : undefined,
           });
           setHostMessage("Storybook opened the Local basket picker.");
@@ -337,28 +341,19 @@ function FixturePage({
             kind: "review",
             review: {
               ...review,
-              basketId,
-              revision: 1,
+              draftId: undefined,
+              shoppingListId: Number(basketId),
+              shoppingListName: localBaskets.find(
+                (list) => list.basketId === basketId,
+              )?.shoppingListName,
+              reviewContextId: "12345678-1234-4234-8234-123456789def",
+              saveStatus: "saved",
               submissionAttempted: false,
               submission: undefined,
             },
             active: true,
           });
           setHostMessage(`Storybook opened Basket ${basketId.slice(0, 8)}.`);
-        }),
-      onDeleteBasket:
-        overrides.actions?.onDeleteBasket ??
-        ((basketId) => {
-          const remaining = localBaskets.filter(
-            (basket) => basket.basketId !== basketId,
-          );
-          setLocalBaskets(remaining);
-          setActiveScreen({
-            kind: "picker",
-            baskets: remaining,
-            selectedBasketId: undefined,
-          });
-          setHostMessage(`Storybook deleted Basket ${basketId.slice(0, 8)}.`);
         }),
       onRefresh:
         overrides.actions?.onRefresh ??
@@ -696,22 +691,18 @@ const meta = {
 
 const inventory = [
   {
-    basketId: "12345678-1234-4234-8234-123456789abc",
-    createdAt: Date.parse("2026-10-01T10:00:00.000Z"),
-    lastActivityAt: Date.parse("2026-10-09T10:00:00.000Z"),
-    expiresAt: Date.parse("2026-10-10T10:00:00.000Z"),
-    revision: 3,
+    basketId: "44",
+    nativeShoppingList: true as const,
+    shoppingListName: "Synthetic weekly shop",
     productCount: 4,
     submissionAttempted: false,
   },
   {
-    basketId: "abcdef12-1234-4234-8234-123456789abc",
-    createdAt: Date.parse("2026-10-02T10:00:00.000Z"),
-    lastActivityAt: Date.parse("2026-10-08T10:00:00.000Z"),
-    expiresAt: Date.parse("2026-10-09T10:00:00.000Z"),
-    revision: 6,
+    basketId: "45",
+    nativeShoppingList: true as const,
+    shoppingListName: "Synthetic pantry list",
     productCount: 2,
-    submissionAttempted: true,
+    submissionAttempted: false,
   },
 ];
 
@@ -788,6 +779,50 @@ export const VerifiedSuccess: Story = {
 export const UncertainOutcome: Story = {
   render: () => activeReview(uncertainReview, "ready"),
 };
+export const UncertainSubmissionRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review: uncertainReview, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          submitBlocked: true,
+          recoveryOperation: "submit",
+          message:
+            "Nemlig returned HTTP 503 for the shopping-list transfer. Inspect the basket; do not retry.",
+        },
+      },
+    ),
+};
+export const SaveRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          recoveryOperation: "save",
+          message:
+            "Nemlig did not confirm saving this draft. Keep the draft and recovery record.",
+        },
+      },
+    ),
+};
+export const SaveNotSentRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          recoveryOperation: "save",
+          recoveryKnownNoWrite: true,
+          message:
+            "Could not record this save safely. No Nemlig shopping list was created or changed.",
+        },
+      },
+    ),
+};
 export const EmptyLocalBasket: Story = {
   decorators: [embeddedConversation],
   render: () => <LocalBasketWalkthroughStory initiallyEnded />,
@@ -822,8 +857,10 @@ export const RestartFencedBasket: Story = {
   render: () => {
     const fencedReview = {
       ...review,
-      basketId: inventory[1]!.basketId,
-      revision: 7,
+      shoppingListId: Number(inventory[1]!.basketId),
+      shoppingListName: inventory[1]!.shoppingListName,
+      reviewContextId: "12345678-1234-4234-8234-123456789def",
+      saveStatus: "saved",
       submissionAttempted: true,
       submission: undefined,
     } satisfies Review;

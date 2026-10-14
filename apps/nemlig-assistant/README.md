@@ -90,6 +90,9 @@ changes or uncertain cleanup keep the list and show a warning.
   products confirmed in the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
+- Save/Update errors preserve the server's explanation in a recoverable dialog.
+  Confirmed no-write failures are distinguished from unconfirmed results;
+  returning to the draft or refreshing the exact list never replays the write.
 - Explicitly **Submit** a clean saved list to add it to the actual basket. The
   app rechecks the exact list and basket baseline, transfers once, verifies
   additive basket readback, and keeps a durable no-replay fence. After the
@@ -137,17 +140,22 @@ destinations are omitted.
 The shared product viewer supports unsaved drafts and selected native shopping
 lists. It reuses product details, alternatives, quantity, remove, and accessible
 touch and keyboard controls. New product choices stay in a process-local draft
-until explicit Save. Saved-list changes stay staged until explicit Update. Save
-and Update use a durable, owner-scoped journal so an interrupted provider write
-can be inspected without blindly replaying it. Recovery storage is bounded; if
-it fills, the action fails closed and existing recovery evidence is retained.
+until explicit Save. Repeating a start for the same product-ID set reopens the
+current edited draft; a different set reports a conflict and preserves it.
+Saved-list changes stay staged until explicit Update. Without host conversation
+metadata, draft cards continue only through their principal-bound draft ID, and
+native-list actions use the explicit list ID. A show without a target does not
+guess a draft or list. Save and Update use a durable, owner-scoped journal so an
+interrupted provider write can be inspected without blindly replaying it.
+Recovery storage is bounded; if it fills, the action fails closed and existing
+recovery evidence is retained.
 
-Old Local Basket cards route to native shopping-list discovery. Their saved data
-and storage namespace have not been deleted, but Local Basket mutations are no
-longer active. A shopping-list transfer uses one native request, additive
-basket readback, a durable no-replay receipt, and a final source-list check
-before cleanup. The provider has no conditional delete, so an edit can race
-that check.
+Retired Local Basket IDs and actions are rejected; they never open native-list
+discovery or target a saved list. Start a current draft or explicitly choose a
+native shopping list. This change does not delete the old storage namespace. A
+shopping-list transfer uses one native request, additive basket readback, a
+durable no-replay receipt, and a final source-list check before cleanup. The
+provider has no conditional delete, so an edit can race that check.
 
 Run `pnpm nemlig:smoke:review-ui` and `pnpm nemlig:build:storybook` from the
 repository root for synthetic viewer coverage. These checks use fixtures and do
@@ -175,8 +183,9 @@ Search and review → explicitly Save or Update a Nemlig shopping list → verif
   recovery record. The assistant does not blindly replay it. If recovery storage
   is full, it fails closed and keeps existing records.
 - Old Local Basket identifiers do not identify native lists. Historical cards
-  route to shopping-list discovery; the legacy Local Basket data and namespace
-  have not been deleted by this change.
+  using retired fields or actions are rejected; they do not open discovery or
+  target a saved list. The legacy Local Basket data and namespace have not been
+  deleted by this change.
 - The assistant never removes basket items, checks out, places an order, or pays.
 
 Repository work, choosing products, or review preparation never authorizes a
@@ -230,29 +239,31 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Show or build a Local basket: `start_product_review`; refresh, change quantity, remove,
-  find alternatives, append products, finish shopping, or prepare the whole list
-  with `update_product_review_conversation`. Show can recover the active
-  conversation review without its opaque reference. A start with exact items
-  creates a separate Local basket; omit items to reopen the remembered basket
-  or show the picker.
-- For a visual product request, search exact products and open the native Local
-  basket without requiring the user to name a tool. This changes only local review
-  state. Omit `items` to reopen an existing list, and add newly found products
-  through `update_product_review_conversation`. If the user forbids local basket
-  state and later asks for a visual view, explain the conflict and ask whether
-  to allow local state; give a concise text result until then.
-  Use `show_my_basket` when the user means products already in Nemlig. Tool
-  success alone does not prove that a client rendered the Local basket viewer.
-- Submit all exact Local basket lines after a clear conversational add instruction
-  or the viewer's separate on-screen exact confirmation:
-  `submit_product_review_conversation`.
-  Local presence alone is not provider-write authorization. The protected
-  tool uses only the unchanged prepared lines; confirmed unavailable products
-  are skipped and reported while other approved products can proceed. Unresolved
-  identity or availability details fail closed; missing price, package, category,
-  or descriptive fields may remain unknown. Ambiguous scope or changed
-  IDs/quantities requires clarification.
+- Show or build an unsaved draft: `start_product_review`; edit, add, remove, or
+  find alternatives with `update_product_review_conversation`. Repeating a start
+  with the same product IDs preserves current quantities and edits; a different
+  product set returns a conflict without replacing the draft. Use the explicit
+  add action or end the draft before starting a replacement. Omit `items` only
+  when intentionally opening the native shopping-list picker.
+- For a visual product request, search exact products and start the draft with
+  those exact returned IDs and quantities. Without host conversation metadata,
+  continue a draft using its exact `draft_id`; saved-list cards carry the
+  transient `review_context_id` with `shopping_list_id` to keep staged edits
+  isolated between chats. Exact reviewed-list submission remains available
+  after that transient context expires. Each principal-scoped service holds at
+  most eight transient reviews; the hosted cache keeps up to sixteen principal
+  contexts. Inactive drafts and clean saved-list editor state can expire after
+  two hours; clean saved-list views can be reclaimed earlier under capacity
+  pressure. Unexpired drafts and dirty or unresolved work are protected from
+  eviction. The provider list and durable operation receipts remain; reopen the
+  exact list to rebuild its view. A show without a target does not choose
+  another draft or enumerate saved lists. Use action `list` to open the picker. Use
+  `show_my_basket` when the user means products already in Nemlig. Tool success
+  alone does not prove that a client rendered the product viewer.
+- Submit the exact saved native shopping list only after the user's explicit
+  Submit action: `submit_product_review_conversation`. The tool re-reads and
+  compares the reviewed list before one additive transfer, verifies basket
+  readback, and never retries an uncertain transfer.
 - Nemlig Assistant is strictly add-only for the real
   basket: it cannot remove, decrease, replace, swap, or clear products. If two
   units are already present and two more are authorized, the resulting line is
@@ -265,16 +276,19 @@ The MCP surface is organized around household actions:
   mounting a widget for every tool call. `start_product_review` is the explicit
   render action: it opens the current products immediately. Use it once while a
   current card is usable; repeat it to reopen the current list when asked.
-  Supported cards share the same server-owned Local basket and read its current
-  state; a new card does not invalidate earlier supported cards or restore an
-  older snapshot. ChatGPT may retain older message cards in the conversation.
+  Draft cards continue through their exact process-local draft ID. Saved-list
+  cards carry the exact shopping_list_id and a transient review_context_id for
+  isolated staged edits. Retired Local Basket IDs and actions fail validation;
+  old cards must be replaced with a current draft or native-list selection.
   Model-side text actions use the `_conversation` tool names. The MCP server
   serves one stable viewer URI; retired resource addresses are inert and cannot
   change shopping state.
   The viewer initializes the MCP Apps bridge and reports connection failures.
-  It can edit the server-owned Local basket and call the protected submission path
-  only after the existing exact confirmation; it never calls Nemlig directly.
-  `update_product_review_conversation show` remains the headless way to recover current state.
+  It stages draft and native-list edits and calls the protected Submit action
+  only for the exact reviewed native list; it never calls Nemlig directly.
+  Use `update_product_review_conversation` with action `show` and the exact
+  `draft_id` or `shopping_list_id` to recover that selection headlessly; include
+  the saved-list card’s `review_context_id` when available.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -286,11 +300,10 @@ invalid tokens also trigger that prompt
 automatically.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
-`clear_cart` MCP tools intentionally do not exist. Every basket change uses the
-Local basket's protected whole-list prepare/submit path, fresh validation and verified readback.
-A clear request to add the current exact Local basket is its own
-authorization; ambiguous or changed contents require approval of their exact
-prepared change.
+`clear_cart` MCP tools intentionally do not exist. Basket additions use the exact saved native shopping list after explicit Submit,
+fresh provider validation and verified additive readback. A clear request to add
+that exact reviewed list can authorize the transfer; ambiguous or changed
+contents require approval of the exact list and quantities.
 
 ### Auth0 and hosted MCP
 

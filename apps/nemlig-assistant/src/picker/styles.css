@@ -98,11 +98,6 @@ h2 {
   color: var(--muted);
   font-size: 0.82rem;
 }
-.basket-delete-confirmation {
-  display: grid;
-  gap: 8px;
-  padding-top: 8px;
-}
 .status,
 .empty {
   color: var(--muted);
@@ -219,6 +214,33 @@ h2 {
   color: var(--ink);
   box-shadow: none;
   transform: translateX(-50%);
+}
+.submission-recovery-dialog {
+  position: fixed;
+  z-index: 21;
+  top: 50%;
+  left: 50%;
+  display: grid;
+  gap: 14px;
+  width: min(92vw, 440px);
+  max-height: 85dvh;
+  overflow: auto;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: 0 18px 60px #0004;
+  transform: translate(-50%, -50%);
+}
+.submission-recovery-dialog p {
+  margin: 0;
+}
+.submission-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
 }
 .product-overlay-header {
   display: flex;
@@ -359,10 +381,6 @@ h2 {
 .product-details {
   flex: 1;
   min-width: 0;
-}
-.product-expanded {
-  padding: 10px 0 4px;
-  overflow-wrap: anywhere;
 }
 .alternatives form {
   display: flex;
