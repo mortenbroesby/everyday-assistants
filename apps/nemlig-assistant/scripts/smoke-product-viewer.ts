@@ -35,10 +35,7 @@ declare global {
     failNext: boolean;
     failNoWriteNext: boolean;
     failGenericNext: boolean;
-    failToolErrorNext: boolean;
-    failMalformedNext: boolean;
-    failUnavailableNext: boolean;
-    failProductsNext: boolean;
+    nextReviewResponse?: "tool" | "malformed" | "unavailable" | "products";
     failMessageNext?: string;
     deferGenericNext: boolean;
     deferSubmitNext: boolean;
@@ -157,7 +154,7 @@ const parentDocument = (
 ) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
-window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failNoWriteNext=false; window.failGenericNext=false; window.failToolErrorNext=false; window.failMessageNext=undefined; window.deferGenericNext=false;
+window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failNoWriteNext=false; window.failGenericNext=false; window.failMessageNext=undefined; window.deferGenericNext=false;
 const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId;
 let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,draftId:undefined,shoppingListId:Number(basketIds[0]),shoppingListName:'Synthetic saved list',reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved'}; if(mode==='idless'){delete review.draftId;delete review.revision;delete review.submissionAttempted}
 const inventory=basketIds.map((id,index)=>({id:Number(id),name:'Synthetic saved list '+(index+1),productCount:index+2}));
@@ -199,10 +196,18 @@ window.addEventListener('message',event=>{
    if(window.failNext){window.failNext=false;review.submission={submission_id:args.submission_id,status:'uncertain',review:{}};return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
    return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});
   }
-  if(name==='update_product_review' && window.failProductsNext){window.failProductsNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{views:[]}}})}
-  if(name==='update_product_review' && window.failUnavailableNext){window.failUnavailableNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{unavailable:true}}})}
-  if(name==='update_product_review' && window.failMalformedNext){window.failMalformedNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{unexpected:true}}})}
-  if(name==='update_product_review' && window.failToolErrorNext){window.failToolErrorNext=false;const failure=window.failMessageNext??'Temporary synthetic failure';window.failMessageNext=undefined;return post(event,{jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:failure}]}})}
+  if(name==='update_product_review' && window.nextReviewResponse){
+    const kind=window.nextReviewResponse;
+    window.nextReviewResponse=undefined;
+    const responses={
+      products:payload({views:[]}),
+      unavailable:payload({unavailable:true}),
+      malformed:payload({unexpected:true}),
+      tool:{isError:true,content:[{type:'text',text:window.failMessageNext??'Temporary synthetic failure'}]},
+    };
+    if(kind==='tool') window.failMessageNext=undefined;
+    return post(event,{jsonrpc:'2.0',id:message.id,result:responses[kind]});
+  }
   if(name==='update_product_review' && window.failGenericNext){window.failGenericNext=false;if(window.deferGenericNext){window.deferGenericNext=false;deferredGeneric={event,message};return}const failure=window.failMessageNext??'Temporary synthetic failure';window.failMessageNext=undefined;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:failure}})}
   try { const response=name==='update_product_review'?apply(args.action,args):result(review); return post(event,{jsonrpc:'2.0',id:message.id,result:response}); }
   catch(error){window.hostErrors.push(String(error));return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32603,message:String(error)}})}
@@ -467,7 +472,7 @@ try {
   });
   await updateRecovery.waitFor();
   await expiredPage.evaluate(() => {
-    window.failUnavailableNext = true;
+    window.nextReviewResponse = "unavailable";
   });
   await updateRecovery
     .getByRole("button", { name: "Refresh shopping list", exact: true })
@@ -524,10 +529,7 @@ try {
       .waitFor({ state: "visible" });
     await draftPage.evaluate((kind) => {
       window.failGenericNext = kind === "transport";
-      window.failToolErrorNext = kind === "tool";
-      window.failMalformedNext = kind === "malformed";
-      window.failUnavailableNext = kind === "unavailable";
-      window.failProductsNext = kind === "products";
+      window.nextReviewResponse = kind === "transport" ? undefined : kind;
     }, failure);
     await draftFrame.getByRole("button", { name: "Find alternatives" }).click();
     const recovery = draftFrame.getByRole("dialog", {
@@ -569,7 +571,7 @@ try {
       "recovery automatically replayed the failed alternatives action",
     );
     await draftPage.evaluate(() => {
-      window.failToolErrorNext = true;
+      window.nextReviewResponse = "tool";
     });
     const replace = draftFrame.getByRole("button", {
       name: "Use Synthetic alternative as the alternative",
@@ -1808,7 +1810,7 @@ try {
     .getByLabel("Nemlig shopping list name")
     .fill("Fixture list");
   await knownNoWriteSavePage.evaluate(() => {
-    window.failToolErrorNext = true;
+    window.nextReviewResponse = "tool";
     window.failMessageNext =
       "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.";
   });
@@ -1866,7 +1868,7 @@ try {
     .getByRole("button", { name: "Update shopping list" })
     .waitFor();
   await knownNoWriteUpdatePage.evaluate(() => {
-    window.failToolErrorNext = true;
+    window.nextReviewResponse = "tool";
     window.failMessageNext =
       "The update could not be recorded safely. No products were changed in Nemlig; refresh this list before continuing.";
   });
