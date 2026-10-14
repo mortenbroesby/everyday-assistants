@@ -263,7 +263,7 @@ test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe in
   assert.match(withFixture, /aria-labelledby="title"/u);
   assert.match(withFixture, /<h1[^>]*id="title"[^>]*>Shopping list<\/h1>/u);
   assert.match(withFixture, /Show details for Fixture yoghurt/u);
-  assert.match(withFixture, /swipe from right to left for actions/u);
+  assert.match(withFixture, /Tap a product for details, or press and hold/u);
   assert.doesNotMatch(withFixture, /Actions for Fixture yoghurt/u);
   assert.match(withFixture, /aria-expanded="false"/u);
   assert.doesNotMatch(
@@ -627,7 +627,7 @@ test("a recovered native-list review exposes and runs its Resume update action",
   assert.ok(operation.completedUntil);
 });
 
-test("busy prepared submission exposes one disabled submit action", () => {
+test("pending prepared submission shows progress while keeping replay fenced", () => {
   const pageProps = props();
   assert.equal(pageProps.model.screen.kind, "review");
   if (pageProps.model.screen.kind !== "review") {
@@ -637,6 +637,8 @@ test("busy prepared submission exposes one disabled submit action", () => {
     ...pageProps.model.screen,
     review: {
       ...pageProps.model.screen.review,
+      shoppingListId: 44,
+      saveStatus: "saved",
       destination: "ready",
       items: pageProps.model.screen.review.items.map((item) => ({
         ...item,
@@ -651,15 +653,18 @@ test("busy prepared submission exposes one disabled submit action", () => {
   };
   pageProps.model.presentationDestination = "ready";
   pageProps.model.busy = true;
+  pageProps.model.submitBlocked = true;
 
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(html, /Estimated product total:/u);
   assert.match(html, /Prices may change/u);
-  const submitButton = html.match(
-    /<button[^>]*>Submit [^<]+Nemlig basket<\/button>/u,
-  )?.[0];
-  assert.ok(submitButton, "prepared submission did not render Submit");
-  assert.match(submitButton, /disabled=""/u);
+  assert.match(html, /Adding the reviewed products to your Nemlig basket/u);
+  assert.doesNotMatch(html, /Submit 0 products to Nemlig basket/u);
+  assert.doesNotMatch(html, /We could not verify the addition/u);
+  assert.doesNotMatch(
+    html,
+    /Inspect the actual Nemlig basket in conversation/u,
+  );
 });
 
 test("shared viewer page distinguishes a verified partial addition from an uncertain one", () => {

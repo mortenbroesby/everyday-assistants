@@ -1951,8 +1951,8 @@ export class ProductReviewService {
       (item) => !present.has(item.product_id),
     );
     let writeFailed = false;
-    // Concurrent row updates may not compose at Nemlig; only exact readback makes a draft submittable.
-    for (let index = 0; index < missing.length; index += 2) {
+    // Row updates may overwrite each other's list snapshots, so serialize writes.
+    for (const item of missing) {
       if (signal?.aborted) {
         await markPartial(
           "Save was cancelled. Refresh this list before continuing.",
@@ -1960,21 +1960,16 @@ export class ProductReviewService {
         );
         throw signal.reason ?? new NemligError("Save was cancelled.");
       }
-      const batch = missing.slice(index, index + 2);
-      const results = await Promise.allSettled(
-        batch.map((item) =>
-          this.client.updateShoppingListProduct!(
-            listId,
-            item.product_id,
-            item.quantity,
-            signal,
-          ),
-        ),
-      );
-      for (const [offset, result] of results.entries()) {
-        if (result.status === "fulfilled") {
-          present.set(batch[offset]!.product_id, batch[offset]!.quantity);
-        }
+      try {
+        await this.client.updateShoppingListProduct!(
+          listId,
+          item.product_id,
+          item.quantity,
+          signal,
+        );
+        present.set(item.product_id, item.quantity);
+      } catch {
+        writeFailed = true;
       }
       completed = present.size;
       stored.snapshot.saveProgress = {
@@ -1987,9 +1982,6 @@ export class ProductReviewService {
           completed,
         );
         throw signal.reason ?? new NemligError("Save was cancelled.");
-      }
-      if (results.some((result) => result.status === "rejected")) {
-        writeFailed = true;
       }
     }
     const saved = await this.client.getShoppingList(listId, signal);

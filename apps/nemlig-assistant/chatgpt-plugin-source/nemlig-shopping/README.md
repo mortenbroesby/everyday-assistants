@@ -11,13 +11,13 @@ same icon for ChatGPT's custom MCP registration form.
 `plugin.json` is the portable plugin manifest. `.app.json` binds this package
 to the registered ChatGPT MCP app; `mcp.json` names the remote Streamable HTTP
 server for portable clients. The skill under `skills/` describes the shopping
-flow and its add-only basket boundary. It also covers durable owner-scoped
-Local baskets (up to 50 baskets, 500 distinct product lines per basket, with a
-24-hour sliding expiry) and the explicit append-or-create choice for new
-grocery requests. A verified successful real-basket submission deletes the
-Local basket; uncertain or partial attempts remain inspect-or-delete only. The
-source for the server, deployment, and OAuth configuration remains in the
-Everyday Assistants repository and its configured providers.
+flow and its add-only basket boundary. New product choices stay in an unsaved
+conversation draft. Explicit Save creates a native Nemlig shopping list;
+explicit Update persists staged list edits. Submission uses the exact reviewed
+list and verifies additive basket readback before deleting its source list.
+An uncertain result must be inspected, never blindly retried. The source for
+the server, deployment, and OAuth configuration remains in the Everyday
+Assistants repository and its configured providers.
 
 Installing the package does not prove that OAuth, tool discovery, or the
 interactive UI works. Verify those separately in a fresh ChatGPT Work

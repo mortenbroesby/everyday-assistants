@@ -38,6 +38,9 @@ declare global {
     failToolErrorNext: boolean;
     failMessageNext?: string;
     deferGenericNext: boolean;
+    deferSubmitNext: boolean;
+    resolveDeferredSubmit: () => void;
+    saveOutcome?: "partial" | "saved";
     submissionAttempts: number;
     markNativeListDirty: boolean;
     getBasketState: () => { selected?: string; ids: string[] };
@@ -164,6 +167,7 @@ const apply=(action,args)=>{
  if(action.kind==='list') return payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true});
  if(action.kind==='select'){selectedBasketId=String(args.shopping_list_id);review={...review,draftId:undefined,shoppingListId:Number(selectedBasketId),shoppingListName:inventory.find(list=>String(list.id)===selectedBasketId)?.name,reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved',saveProgress:undefined,items:args.action.accept_saved_subset_draft_id?review.items.slice(0,1):review.items};return result(review)}
  if(action.kind==='show') return result(review);
+ if(action.kind==='save'&&window.saveOutcome){review={...review,shoppingListId:44,shoppingListName:action.name,saveStatus:window.saveOutcome,saveProgress:{completed:window.saveOutcome==='partial'?1:review.items.length,total:review.items.length}};if(window.saveOutcome==='saved')delete review.draftId;return result(review)}
  if(action.kind==='navigate') review.destination=action.destination;
  if(action.kind==='quantity'){review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;if(review.shoppingListId&&window.markNativeListDirty)review.shoppingListDirty=true}
  if(action.kind==='remove') review.items=review.items.filter(item=>!action.product_ids.includes(item.product_id));
@@ -175,6 +179,7 @@ const apply=(action,args)=>{
 window.getReview=()=>JSON.parse(JSON.stringify(review)); window.getBasketState=()=>({selected:selectedBasketId,ids:inventory.map(list=>String(list.id))});
 window.sendPassive=()=>{const older=JSON.parse(JSON.stringify(review));older.items=[{product_id:99,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(older)},location.origin)};
 window.sendPassivePicker=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true})},location.origin);
+let deferredSubmit; window.resolveDeferredSubmit=()=>{const complete=deferredSubmit;deferredSubmit=undefined;complete?.()};
 let deferredGeneric; window.cancelPendingTool=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'synthetic cancellation'}},location.origin); window.rejectDeferredGeneric=()=>{if(deferredGeneric){const {event,message}=deferredGeneric;deferredGeneric=undefined;post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
@@ -186,6 +191,7 @@ window.addEventListener('message',event=>{
   const {name,arguments:args}=message.params; window.calls.push({name,args});
   if(name==='submit_product_review'){
    window.submissionAttempts++;
+   if(window.deferSubmitNext){window.deferSubmitNext=false;deferredSubmit=()=>post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});return}
    if(window.failNoWriteNext){window.failNoWriteNext=false;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Could not verify the saved list. No basket write was sent.'}})}
    if(window.failNext){window.failNext=false;review.submission={submission_id:args.submission_id,status:'uncertain',review:{}};return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
    return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});
@@ -1082,6 +1088,45 @@ try {
     "unsaved draft allowed submission before saving a native list",
   );
 
+  // Save can change a draft's target identity; Back must still stay on the list.
+  for (const outcome of ["partial", "saved"] as const) {
+    const savePage = await context.newPage();
+    await savePage.goto(`http://127.0.0.1:${address.port}/host-draft`);
+    const saveFrame = savePage.frameLocator('iframe[title="viewer"]');
+    await saveFrame
+      .getByRole("button", { name: "Show details for Synthetic milk" })
+      .press("Shift+F10");
+    await saveFrame
+      .getByRole("button", { name: "Find alternatives", exact: true })
+      .click();
+    await saveFrame
+      .getByRole("heading", { name: "Find an alternative", exact: true })
+      .waitFor();
+    await saveFrame
+      .getByRole("button", { name: "Back to shopping list" })
+      .click();
+    await savePage.evaluate((value) => {
+      window.saveOutcome = value;
+    }, outcome);
+    await saveFrame
+      .getByRole("textbox", { name: "Nemlig shopping list name" })
+      .fill("Synthetic save");
+    await saveFrame
+      .getByRole("button", { name: "Save shopping list", exact: true })
+      .click();
+    await saveFrame
+      .getByRole("heading", { name: "Synthetic save", exact: true })
+      .waitFor();
+    assert.equal(
+      await saveFrame
+        .getByRole("heading", { name: "Find an alternative", exact: true })
+        .count(),
+      0,
+      `${outcome} save reopened stale alternatives`,
+    );
+    await savePage.close();
+  }
+
   const partialPage = await context.newPage();
   await partialPage.goto(`http://127.0.0.1:${address.port}/host-partial`);
   const partialFrame = partialPage.frameLocator('iframe[title="viewer"]');
@@ -1171,9 +1216,29 @@ try {
     false,
     "saved Nemlig shopping list could not be submitted",
   );
+  await nativePage.evaluate(() => {
+    window.deferSubmitNext = true;
+  });
   await nativeFrame
     .getByRole("button", { name: "Submit to Nemlig basket" })
     .click();
+  await nativePage.waitForFunction(() => window.submissionAttempts === 1);
+  await nativeFrame.getByText("Updating…", { exact: true }).waitFor();
+  assert.equal(
+    await nativeFrame
+      .getByRole("heading", { name: "We could not verify the addition" })
+      .count(),
+    0,
+    "pending submit was shown as a failed addition",
+  );
+  assert.equal(
+    await nativeFrame
+      .getByRole("button", { name: "Submit to Nemlig basket", exact: true })
+      .isDisabled(),
+    true,
+    "pending submit allowed another attempt",
+  );
+  await nativePage.evaluate(() => window.resolveDeferredSubmit());
   await nativeFrame
     .getByRole("heading", { name: "Nemlig confirmed the addition" })
     .waitFor();
@@ -1906,5 +1971,5 @@ try {
 }
 
 console.log(
-  "Built React viewer passed synthetic MCP browser smoke: one-list right-to-left swipe actions, explicit alternatives/back and replacement, quantity flush, whole-list exact preparation, cancellation, confirmation, zero provider writes, and no external requests.",
+  "Built React viewer passed synthetic MCP browser smoke: product actions, alternatives/back and replacement, partial/full Save navigation, delayed Submit feedback, quantity flush, cancellation, confirmation, zero provider writes, and no external requests.",
 );

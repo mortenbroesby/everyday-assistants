@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "nemlig": {
+      "type": "streamable-http",
+      "url": "https://nemlig-mcp.broesby.dk/mcp",
+      "headers": {}
+    }
+  }
+}

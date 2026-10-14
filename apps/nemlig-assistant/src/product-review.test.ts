@@ -2038,7 +2038,7 @@ test("restart Save reserves its owner before awaiting the durable journal", asyn
   assert.equal(recovered.shoppingListId, 44);
 });
 
-test("draft save writes at most two products concurrently and verifies the actual list", async () => {
+test("draft save serializes row writes and verifies the actual list", async () => {
   let activeWrites = 0;
   let maximumActiveWrites = 0;
   const native = {
@@ -2072,10 +2072,10 @@ test("draft save writes at most two products concurrently and verifies the actua
 
   assert.equal(saved.saveStatus, "saved");
   assert.equal(native.items.length, 4);
-  assert.equal(maximumActiveWrites, 2);
+  assert.equal(maximumActiveWrites, 1);
 });
 
-test("draft save reports provider-confirmed count when concurrent updates lose a row", async () => {
+test("draft save preserves rows when provider updates replace the list snapshot", async () => {
   let created = false;
   const { journal } = createDurableReviewJournal("owner");
   let native = {
@@ -2104,7 +2104,7 @@ test("draft save reports provider-confirmed count when concurrent updates lose a
     { product_id: 2, quantity: 1 },
   ]);
 
-  const partial = await service.save(
+  const saved = await service.save(
     "owner",
     "List",
     draft.draftId,
@@ -2112,9 +2112,8 @@ test("draft save reports provider-confirmed count when concurrent updates lose a
     journal,
   );
 
-  assert.equal(partial.saveStatus, "partial");
-  assert.deepEqual(partial.saveProgress, { completed: 1, total: 2 });
-  assert.equal(partial.shoppingListId, 46);
+  assert.equal(saved.saveStatus, "saved");
+  assert.equal(saved.shoppingListId, 46);
   const savedSubset = await service.openShoppingList(
     "owner",
     46,
@@ -2125,7 +2124,11 @@ test("draft save reports provider-confirmed count when concurrent updates lose a
   assert.ok((await journal.read(draft.draftId!))?.completedUntil);
   assert.deepEqual(
     savedSubset.items.map(({ product_id }) => product_id),
+    [1, 2],
+  );
+  assert.deepEqual(
     native.items.map(({ productId }) => productId),
+    [1, 2],
   );
 });
 

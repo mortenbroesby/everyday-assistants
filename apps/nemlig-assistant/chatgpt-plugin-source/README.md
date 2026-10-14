@@ -11,12 +11,12 @@ From the repository root, build the ZIP with:
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs
 ```
 
-The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.4.zip`.
+The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.5.zip`.
 To rebuild the tracked upload artifact after changing the source:
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.4.zip
+  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.5.zip
 ```
 
 The packager checks the endpoint against `wrangler.jsonc`, the local skill and
@@ -48,3 +48,17 @@ the registered app to the shopping skill and portable MCP settings. ChatGPT
 Work web currently exposes the registered app; the package page offers an
 "Open in desktop app" link. Updating the ZIP does not update the remote
 server; deploy that separately through the repository's existing workflow.
+
+## Active package
+
+Use `nemlig-shopping` with app `asdk_app_6ac7995a68648191bafab7459ab55953`.
+The older `nemlig-assistant` package points at a retired app and should not be
+installed alongside it. Keep the connected MCP app: the package supplies a
+skill and default prompt; it does not replace that connection.
+
+Version 0.1.5 aligns the package with unsaved drafts → explicit Save/Update →
+reviewed native-list submission. Its desktop compatibility manifest mirrors
+the root manifest. Build from this source and use a guarded Plugin Creator
+update of the existing private package; a repository merge alone does not
+update installed package instructions. Verify the new release in a fresh
+session after updating the desktop installation.

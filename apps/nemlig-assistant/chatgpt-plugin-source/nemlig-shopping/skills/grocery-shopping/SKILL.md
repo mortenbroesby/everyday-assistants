@@ -1,6 +1,6 @@
 ---
 name: grocery-shopping
-description: Use when shopping on Nemlig: search current products, compare exact sizes and prices, review the real basket read-only, build a local shopping list, or add exact selected items after authorization.
+description: Use when shopping on Nemlig: search current products, compare exact sizes and prices, review the real basket read-only, review an unsaved product draft, explicitly save a native shopping list, or add its exact reviewed products after authorization.
 ---
 
 # Grocery shopping
@@ -27,6 +27,7 @@ Reuse the existing flow without inventing a second approval mechanism:
 
 1. Resolve exact product IDs and positive quantities for the draft. Resolve ambiguity before saving or adding. Never substitute an unavailable product without user selection.
 2. Save only when the user intends to create a native Nemlig shopping list. Inspect the exact saved list contents; use its shopping_list_id and current reviewed_list snapshot for submission. Staged changes require explicit action=update and verification against that same list. Carry review_context_id with edits when the card provides one; an expired context does not invalidate an exact reviewed_list submission.
+   A partial Save is not a completed list: state which products are confirmed and which are unresolved. Wait for the final tool result before interpreting an updating card as success or failure. Never silently drop missing products or repeat an uncertain write.
 3. A clear user command to add the current unchanged saved-list contents is sufficient conversational authorization under the existing app flow. Alternatively, require explicit approval of the displayed exact saved-list submission. A search, request to inspect, or draft/save request alone is not authorization to add products to the basket. Do not ask for redundant approval when exact authorization already exists. If IDs, quantities, or scope change after the command, clarify before applying.
 4. Submit only the exact authorized reviewed_list using submit_product_review_conversation with the same shopping_list_id. Fresh validation and independent additive basket readback are mandatory. The source list is deleted only after verified transfer and a final exact-list check. If the attempt is uncertain, inspect the actual Nemlig basket and reconcile the saved list; never replay the uncertain submission or infer that no write occurred.
 

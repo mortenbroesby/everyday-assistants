@@ -515,7 +515,7 @@ export function ProductViewer() {
   );
   const quantityFlush = useRef<Promise<boolean> | undefined>(undefined);
   const callIdleWaiters = useRef<Array<() => void>>([]);
-  const resetBasketUi = () => {
+  const resetBasketUi = (preservePresentationDestination = false) => {
     if (quantityTimer.current) {
       clearTimeout(quantityTimer.current);
     }
@@ -525,7 +525,9 @@ export function ProductViewer() {
     quantityFlush.current = undefined;
     activeReview.current = undefined;
     lastConfirmedReview.current = undefined;
-    setPresentationDestination(undefined);
+    if (!preservePresentationDestination) {
+      setPresentationDestination(undefined);
+    }
     setReviewDisclosures(new Map());
     setConfirmEnd(false);
     setContinueSubmitted(false);
@@ -538,7 +540,10 @@ export function ProductViewer() {
     setSubmitErrorOpen(false);
     setRecoveryOperation(undefined);
   };
-  const changeBasket = (basketId: string | undefined) => {
+  const changeBasket = (
+    basketId: string | undefined,
+    preservePresentationDestination = false,
+  ) => {
     if (selectedBasketIdRef.current === basketId) {
       return;
     }
@@ -546,7 +551,7 @@ export function ProductViewer() {
     selectionEpoch.current++;
     selectedBasketIdRef.current = basketId;
     setSelectedBasketId(basketId);
-    resetBasketUi();
+    resetBasketUi(preservePresentationDestination);
   };
   const clearPendingQuantities = () => {
     pendingQuantitiesRef.current.clear();
@@ -588,6 +593,9 @@ export function ProductViewer() {
       current = false,
       adoptPresentationDestination = false,
     ) => {
+      if (!current && callLock.current) {
+        return true;
+      }
       const next = readPayload(payload);
       if (!current && ignorePassivePayloads.current) {
         return true;
@@ -639,8 +647,16 @@ export function ProductViewer() {
         ) {
           return true;
         }
+        const savedDraft = Boolean(
+          current &&
+          previous?.review.draftId &&
+          selectedBasketIdRef.current === previous.review.draftId &&
+          next.review.shoppingListId !== undefined &&
+          (next.review.draftId === previous.review.draftId ||
+            next.review.draftId === undefined),
+        );
         if (selectedBasketIdRef.current !== nextTargetId) {
-          changeBasket(nextTargetId);
+          changeBasket(nextTargetId, savedDraft);
         }
         if (
           next.review.submission?.status === "submitted" ||
@@ -693,7 +709,7 @@ export function ProductViewer() {
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
-          if (!sameReview || adoptPresentationDestination) {
+          if ((!sameReview && !savedDraft) || adoptPresentationDestination) {
             return next.review.destination;
           }
           if (visible === "alternatives" && !next.review.alternatives) {
