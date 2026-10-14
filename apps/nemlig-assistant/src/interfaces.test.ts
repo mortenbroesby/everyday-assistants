@@ -526,6 +526,38 @@ test("profile exposes the live runtime release without provider access", async (
   assert.equal(providerCalls, 0);
 });
 
+test("creation catalog exposes its conditional input contract and loading status", async () => {
+  await withMcpClient(
+    createMcpServer(fakeClient(), testCredentials),
+    async (mcp) => {
+      const tool = (await mcp.listTools()).tools.find(
+        ({ name }) => name === "start_product_review",
+      );
+      assert.ok(tool);
+      assert.deepEqual(tool.inputSchema.anyOf, [
+        {
+          required: ["items", "creation_id"],
+          not: { required: ["shopping_list_id"] },
+        },
+        {
+          not: {
+            anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
+          },
+        },
+      ]);
+      assert.match(tool.description ?? "", /creation_id UUID/u);
+      assert.equal(
+        tool._meta?.["openai/toolInvocation/invoking"],
+        "Opening your Nemlig shopping list…",
+      );
+      assert.equal(
+        tool._meta?.["openai/toolInvocation/invoked"],
+        "Shopping-list result received",
+      );
+    },
+  );
+});
+
 test("MCP exposes the complete friendly catalog and clean missing-credential errors", async () => {
   const client = fakeClient({ isLoggedIn: () => false });
   await withMcpClient(
@@ -590,6 +622,11 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
           );
         }
       }
+      // Tool descriptions must explain protocol formats; user-facing titles need not.
+      assert.doesNotMatch(
+        tools.map(({ title }) => title).join("\n"),
+        /\buuid\b/iu,
+      );
       const catalogText = tools
         .flatMap(({ name, title, description, inputSchema }) => {
           const properties =
@@ -618,7 +655,7 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
       }
       assert.doesNotMatch(
         catalogText,
-        /\b(?:immutable snapshot|uuid|department_id|internal status)\b/iu,
+        /\b(?:immutable snapshot|department_id|internal status)\b/iu,
       );
       assert.equal(
         tools.some((tool) =>
@@ -2364,6 +2401,11 @@ test("native product selections reject retired draft identifiers without basket 
       });
       assert.equal(missingCreationId.isError, true);
       assert.match(toolText(missingCreationId), /creation_id/u);
+      assert.match(toolText(missingCreationId), /Refresh tools/u);
+      assert.match(
+        toolText(missingCreationId),
+        /No shopping list was created/u,
+      );
       const retiredDraft = await call("update_product_review_conversation", {
         draft_id: "00000000-0000-4000-8000-000000000099",
         action: { kind: "show" },

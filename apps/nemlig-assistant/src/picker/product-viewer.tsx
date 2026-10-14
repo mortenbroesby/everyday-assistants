@@ -31,6 +31,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
+function progressMessage(name: string, args: Record<string, unknown>) {
+  if (name === "submit_product_review") {
+    return "Adding this shopping list to your Nemlig basket…";
+  }
+  const action = isRecord(args.action) ? args.action : {};
+  const messages: Record<string, string> = {
+    list: "Loading your Nemlig shopping lists…",
+    show: "Refreshing this Nemlig shopping list…",
+    select: "Refreshing this Nemlig shopping list…",
+    alternatives: "Searching for alternatives…",
+    replace: "Saving replacement to your Nemlig shopping list…",
+    quantity: "Saving quantity change to your Nemlig shopping list…",
+    remove: "Removing products from your Nemlig shopping list…",
+    add: "Adding products to your Nemlig shopping list…",
+  };
+  return (
+    (typeof action.kind === "string" && messages[action.kind]) ||
+    "Updating your Nemlig shopping list…"
+  );
+}
+
 function isUncertainFailure(
   recovery: boolean,
   uncertainOnFailure: boolean,
@@ -1023,7 +1044,7 @@ export function ProductViewer() {
     activeToolController.current = requestController;
     if (!background) {
       setBusy(true);
-      setMessage("Updating…");
+      setMessage(progressMessage(name, requestArgs));
     }
     try {
       const result = await connectedApp.callServerTool(

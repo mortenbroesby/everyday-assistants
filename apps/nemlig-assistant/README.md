@@ -85,6 +85,8 @@ changes or uncertain cleanup keep the list and show a warning.
   viewer.
 - Create a native shopping list from selected products and quantities. Add,
   remove, replace, and change quantities directly, without separate Save/Update.
+- Show a loading indicator with the current operation while reading, editing,
+  or transferring a list; keep products visible while waiting.
 - Reopen the exact list after a restart or card reload. The viewer reads its
   current Nemlig contents before enabling edits.
 - Failed edits or alternatives requests keep visible products and quantities,

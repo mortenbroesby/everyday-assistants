@@ -174,6 +174,42 @@ test("pending quantity edits are labeled until Nemlig confirms them", () => {
   assert.match(markup, /Add to Nemlig basket/u);
 });
 
+test("loading and provider operations show accessible progress without hiding the list", () => {
+  const pageProps = props();
+  pageProps.model.busy = true;
+  pageProps.model.message =
+    "Saving quantity change to your Nemlig shopping list…";
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.shoppingListId = 44;
+  pageProps.model.screen.review.saveStatus = "saved";
+
+  const busyMarkup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(busyMarkup, /role="status"[^>]*aria-live="polite"/u);
+  assert.match(busyMarkup, /progress-spinner/u);
+  assert.match(busyMarkup, /<main[^>]*aria-busy="true"/u);
+  assert.match(
+    busyMarkup,
+    /Saving quantity change to your Nemlig shopping list/u,
+  );
+  assert.match(busyMarkup, /Fixture yoghurt/u);
+  const submit = busyMarkup.match(
+    /<button[^>]*>[\s\S]*?Add to Nemlig basket[\s\S]*?<\/button>/u,
+  )?.[0];
+  assert.ok(submit);
+  assert.match(submit, /\sdisabled(?:="")?/u);
+
+  pageProps.model.busy = false;
+  pageProps.model.screen = { kind: "loading" };
+  const loadingMarkup = renderToStaticMarkup(
+    createElement(ViewerPage, pageProps),
+  );
+  assert.match(loadingMarkup, /Loading your Nemlig shopping list/u);
+  assert.match(loadingMarkup, /progress-spinner/u);
+  assert.match(loadingMarkup, /<main[^>]*aria-busy="true"/u);
+});
+
 test("partial native creation offers an exact-list review and blocks basket addition", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {

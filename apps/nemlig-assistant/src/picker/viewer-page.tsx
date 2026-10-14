@@ -8,7 +8,13 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDrag } from "@use-gesture/react";
-import { ArrowLeft, ChevronRight, Layers3, ShoppingBasket } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  Layers3,
+  LoaderCircle,
+  ShoppingBasket,
+} from "lucide-react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
@@ -510,6 +516,15 @@ function ProductCard({
   );
 }
 
+function ProgressStatus({ message }: { message: string }) {
+  return (
+    <p className="status progress-status" role="status" aria-live="polite">
+      <LoaderCircle className="progress-spinner" size={18} aria-hidden="true" />
+      <span>{message}</span>
+    </p>
+  );
+}
+
 function BasketList({
   items,
   renderItem,
@@ -843,7 +858,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       intro={outcomeOnly ? undefined : intro}
       maxWidth={maxWidth}
       headerActions={basketMenu}
+      busy={busy || screen.kind === "loading"}
     >
+      {busy && message && <ProgressStatus message={message} />}
       {screen.kind === "picker" &&
         (pickerIsEmpty ? (
           <ShoppingListStarters
@@ -892,16 +909,16 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             {message && <p role="status">{message}</p>}
           </section>
         ))}
-      {screen.kind === "loading" && (
-        <p className="status" role="status">
-          Loading your Nemlig selection…
-        </p>
-      )}
-      {screen.kind === "loading" && connectionMessage && (
-        <p className="status" role="status">
-          {connectionMessage}
-        </p>
-      )}
+      {screen.kind === "loading" &&
+        (connectionMessage?.startsWith("Could not") ? (
+          <p className="status" role="status">
+            {connectionMessage}
+          </p>
+        ) : (
+          <ProgressStatus
+            message={connectionMessage ?? "Loading your Nemlig shopping list…"}
+          />
+        ))}
       {screen.kind === "error" && (
         <section className="status">
           <p role="alert">{screen.message}</p>
@@ -1384,6 +1401,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 </OutcomeSurface>
               )}
               {message &&
+                !busy &&
                 review.submission?.status !== "uncertain" &&
                 review.submission?.status !== "partial" && (
                   <p className="status" role="status">
