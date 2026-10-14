@@ -66,12 +66,6 @@ export function isKnownNoWriteFailure(detail: string): boolean {
   );
 }
 
-function isKnownSaveUpdateNoWriteFailure(detail: string): boolean {
-  return /Shopping-list recovery storage is full\. This Save or Update did not reach Nemlig|no products were changed in Nemlig|no Nemlig shopping list was created or changed/iu.test(
-    detail,
-  );
-}
-
 function isReviewItem(value: unknown): value is ReviewItem {
   return (
     isRecord(value) &&
@@ -106,9 +100,6 @@ function isReview(value: unknown): value is Review {
       !isDraftId(value.reviewContextId)) ||
     (value.shoppingListName !== undefined &&
       typeof value.shoppingListName !== "string") ||
-    (value.draftId !== undefined && typeof value.draftId !== "string") ||
-    (value.draftExpiresAt !== undefined &&
-      !isNonnegativeSafeInteger(value.draftExpiresAt)) ||
     (value.saveStatus !== undefined &&
       !["saving", "saved", "partial", "uncertain"].includes(
         String(value.saveStatus),
@@ -225,14 +216,11 @@ function isDraftId(value: unknown): value is string {
   );
 }
 function reviewTargetId(review: Review): string | undefined {
-  return review.shoppingListId !== undefined
-    ? String(review.shoppingListId)
-    : review.draftId;
+  return review.shoppingListId === undefined
+    ? undefined
+    : String(review.shoppingListId);
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
-  if (review.draftId !== undefined) {
-    return { draft_id: review.draftId };
-  }
   if (review.shoppingListId !== undefined) {
     return {
       shopping_list_id: review.shoppingListId,
@@ -370,7 +358,9 @@ function hasUnselectedReview(value: unknown) {
     isRecord(value) &&
     isReview(value) &&
     !isPositiveSafeInteger(value.shoppingListId) &&
-    !isDraftId(value.draftId)
+    value.items.length === 0 &&
+    value.actionNotice === undefined &&
+    value.saveStatus === undefined
   );
 }
 function requiresBasketPicker(envelope: Record<string, unknown>) {
@@ -415,7 +405,7 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (envelope.ended === true) {
     return {
       kind: "empty",
-      message: "Your unsaved draft was discarded. Nothing changed in Nemlig.",
+      message: "The shopping-list selection ended.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -442,7 +432,9 @@ export function ProductViewer() {
       typeof window === "undefined"
         ? undefined
         : readPayload(window.openai?.toolOutput);
-    return initial ?? { kind: "loading" };
+    return initial?.kind === "review"
+      ? { ...initial, active: false }
+      : (initial ?? { kind: "loading" });
   });
   const [baskets, setBaskets] = useState<BasketSummary[]>(() =>
     screen.kind === "picker" ? screen.baskets : [],
@@ -456,6 +448,7 @@ export function ProductViewer() {
           : undefined,
   );
   const selectedBasketIdRef = useRef(selectedBasketId);
+  const autoRefreshListId = useRef<string | undefined>(undefined);
   const selectionEpoch = useRef(0);
   const selectionContext = () => ({
     basketId: selectedBasketIdRef.current,
@@ -475,7 +468,6 @@ export function ProductViewer() {
   );
   const callLock = useRef(false);
   const activeToolController = useRef<AbortController | undefined>(undefined);
-  const activeDraftOperation = useRef<"save" | "update" | undefined>(undefined);
   const cancelledCallPending = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
@@ -490,7 +482,6 @@ export function ProductViewer() {
   >(() => new Map());
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
-  const [confirmEnd, setConfirmEnd] = useState(false);
   const [continueSubmitted, setContinueSubmitted] = useState(false);
   const [submitBlocked, setSubmitBlocked] = useState(
     screen.kind === "review" &&
@@ -498,9 +489,8 @@ export function ProductViewer() {
         screen.review.submission?.status === "uncertain"),
   );
   const [submitErrorOpen, setSubmitErrorOpen] = useState(false);
-  const [recoveryKnownNoWrite, setRecoveryKnownNoWrite] = useState(false);
   const [recoveryOperation, setRecoveryOperation] = useState<
-    "submit" | "save" | "update" | "draft" | undefined
+    "submit" | "update" | "list" | undefined
   >();
   const submitBlockedRef = useRef(
     screen.kind === "review" &&
@@ -523,32 +513,18 @@ export function ProductViewer() {
     }
     quantityTimer.current = undefined;
   }, []);
-  const showRecovery = (
-    operation: "draft" | "save" | "update",
-    message: string,
-  ) => {
+  const showRecovery = (operation: "update" | "list", message: string) => {
     stopQuantityTimer();
     ignorePassivePayloads.current = true;
-    if (operation !== "draft") {
-      setRecoveryKnownNoWrite(false);
-    }
     setMessage(message);
     setRecoveryOperation(operation);
     setSubmitErrorOpen(true);
   };
   const recoverInterruptedDraft = (message: string) => {
-    const operation = activeDraftOperation.current;
-    if (operation) {
-      showRecovery(
-        operation,
-        operation === "save"
-          ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
-          : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
-      );
-      return true;
-    }
-    if (activeReview.current?.active && activeReview.current.review.draftId) {
-      showRecovery("draft", message);
+    if (activeReview.current?.review.shoppingListId !== undefined) {
+      activeReview.current = { ...activeReview.current, active: false };
+      setScreen({ kind: "review", ...activeReview.current });
+      showRecovery("update", message);
       return true;
     }
     return false;
@@ -566,7 +542,6 @@ export function ProductViewer() {
       setPresentationDestination(undefined);
     }
     setReviewDisclosures(new Map());
-    setConfirmEnd(false);
     setContinueSubmitted(false);
     setSubmitBlocked(false);
     submitBlockedRef.current = false;
@@ -613,7 +588,6 @@ export function ProductViewer() {
   const deactivateReview = useCallback(() => {
     stopQuantityTimer();
     clearPendingQuantities();
-    setConfirmEnd(false);
     const current = activeReview.current;
     if (current) {
       const inactive = { ...current, active: false };
@@ -626,7 +600,7 @@ export function ProductViewer() {
       payload: unknown,
       current = false,
       adoptPresentationDestination = false,
-      actionKind?: string,
+      acknowledgePartialList = false,
     ) => {
       if (!current && callLock.current) {
         return true;
@@ -637,7 +611,7 @@ export function ProductViewer() {
       }
       const toolError = isRecord(payload) && payload.isError === true;
       if (toolError || !next) {
-        if (activeReview.current?.review.draftId) {
+        if (activeReview.current?.review.shoppingListId !== undefined) {
           return !current;
         }
         deactivateReview();
@@ -650,19 +624,8 @@ export function ProductViewer() {
         return false;
       }
       const previous = activeReview.current;
-      const activeDraft = Boolean(previous?.active && previous.review.draftId);
-      if (activeDraft && next.kind !== "review") {
-        if (!current) {
-          return true;
-        }
-        const expectedTransition =
-          (next.kind === "picker" &&
-            (actionKind === "list" || actionKind === "select")) ||
-          (next.kind === "empty" && actionKind === "end") ||
-          (next.kind === "unavailable" && actionKind === "show");
-        if (!expectedTransition) {
-          return false;
-        }
+      if (!current && next.kind === "review" && previous?.active === false) {
+        return true;
       }
       if (
         !current &&
@@ -692,16 +655,8 @@ export function ProductViewer() {
         ) {
           return true;
         }
-        const savedDraft = Boolean(
-          current &&
-          previous?.review.draftId &&
-          selectedBasketIdRef.current === previous.review.draftId &&
-          next.review.shoppingListId !== undefined &&
-          (next.review.draftId === previous.review.draftId ||
-            next.review.draftId === undefined),
-        );
         if (selectedBasketIdRef.current !== nextTargetId) {
-          changeBasket(nextTargetId, savedDraft);
+          changeBasket(nextTargetId);
         }
         if (
           next.review.submission?.status === "submitted" ||
@@ -710,19 +665,43 @@ export function ProductViewer() {
         ) {
           ignorePassivePayloads.current = true;
         }
+        const previousReview = previous?.review ?? lastConfirmedReview.current;
         const sameReview = Boolean(
-          previous &&
-          reviewTargetId(previous.review) === reviewTargetId(next.review),
+          previousReview &&
+          reviewTargetId(previousReview) === reviewTargetId(next.review),
         );
+        const review =
+          current &&
+          !acknowledgePartialList &&
+          sameReview &&
+          previousReview?.saveStatus === "partial" &&
+          next.review.saveStatus === "saved" &&
+          previousReview.shoppingListId === next.review.shoppingListId
+            ? {
+                ...next.review,
+                saveStatus: "partial" as const,
+                saveProgress: previousReview.saveProgress,
+                actionNotice:
+                  previousReview.actionNotice ??
+                  "Only part of the selected products was confirmed in this exact list. Review the current rows before continuing.",
+              }
+            : next.review;
         if (!sameReview) {
           setReviewDisclosures(new Map());
         }
         const state = {
-          review: next.review,
-          active: true,
+          review,
+          active: !(
+            review.shoppingListId === undefined &&
+            (review.saveStatus === "partial" ||
+              review.saveStatus === "uncertain")
+          ),
         };
+        if (current && nextTargetId) {
+          autoRefreshListId.current = nextTargetId;
+        }
         activeReview.current = state;
-        lastConfirmedReview.current = next.review;
+        lastConfirmedReview.current = review;
         const submissionChanged =
           !sameReview ||
           next.review.submission?.submission_id !==
@@ -754,7 +733,7 @@ export function ProductViewer() {
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
-          if ((!sameReview && !savedDraft) || adoptPresentationDestination) {
+          if (!sameReview || adoptPresentationDestination) {
             return next.review.destination;
           }
           if (visible === "alternatives" && !next.review.alternatives) {
@@ -763,14 +742,42 @@ export function ProductViewer() {
           return visible ?? next.review.destination;
         });
         setMessage("");
+        if (
+          current &&
+          ((review.shoppingListId !== undefined &&
+            (review.updateStatus === "partial" ||
+              review.updateStatus === "uncertain")) ||
+            (review.shoppingListId === undefined &&
+              (review.saveStatus === "partial" ||
+                review.saveStatus === "uncertain")) ||
+            (review.saveStatus === "partial" &&
+              review.shoppingListId !== undefined))
+        ) {
+          showRecovery(
+            review.shoppingListId === undefined ? "list" : "update",
+            review.actionNotice ??
+              "Nemlig did not confirm every shopping-list change. Refresh this exact list before continuing.",
+          );
+        }
       } else if (next.kind === "unavailable") {
         deactivateReview();
-        activeReview.current = undefined;
-        setPresentationDestination(undefined);
-        setScreen({
-          kind: "unavailable",
-          review: previous?.review ?? lastConfirmedReview.current,
-        });
+        const cachedReview = previous?.review ?? lastConfirmedReview.current;
+        if (cachedReview) {
+          const inactive = { review: cachedReview, active: false };
+          activeReview.current = inactive;
+          setPresentationDestination(cachedReview.destination);
+          setScreen({ kind: "review", ...inactive });
+          showRecovery(
+            cachedReview.shoppingListId === undefined ? "list" : "update",
+            cachedReview.shoppingListId === undefined
+              ? "The selected shopping-list creation could not be confirmed. Review its status before continuing."
+              : "Could not refresh this exact Nemlig shopping list. Its last confirmed rows remain visible; retry the same list or choose another explicitly.",
+          );
+        } else {
+          activeReview.current = undefined;
+          setPresentationDestination(undefined);
+          setScreen({ kind: "unavailable" });
+        }
       } else {
         if (next.kind !== "empty" && !current && previous?.active) {
           return true;
@@ -824,9 +831,7 @@ export function ProductViewer() {
         }
         if (
           callLock.current &&
-          (activeDraftOperation.current ||
-            (activeReview.current?.active &&
-              activeReview.current.review.draftId))
+          activeReview.current?.review.shoppingListId !== undefined
         ) {
           cancellationEpoch.current++;
           activeToolController.current?.abort();
@@ -904,6 +909,7 @@ export function ProductViewer() {
     background = false,
     expectedSelection?: { basketId?: string; epoch: number },
     preserveReviewOnFailure = false,
+    acknowledgePartialList = false,
   ): Promise<boolean> => {
     if (!connectedApp || !isConnected) {
       if (!background) {
@@ -911,11 +917,12 @@ export function ProductViewer() {
           ? "The shopping list could not connect. Your current products and quantities remain visible; review them before continuing."
           : "Connecting to the current shopping list…";
         if (
-          activeReview.current?.active &&
-          activeReview.current.review.draftId &&
+          activeReview.current?.review.shoppingListId !== undefined &&
           error
         ) {
-          showRecovery("draft", detail);
+          activeReview.current = { ...activeReview.current, active: false };
+          setScreen({ kind: "review", ...activeReview.current });
+          showRecovery("update", detail);
         } else {
           setMessage(detail);
         }
@@ -955,7 +962,7 @@ export function ProductViewer() {
         kind === "heartbeat"
       ) {
         setMessage(
-          "This older selection is unsupported. Open a current draft or choose a native shopping list explicitly.",
+          "This older selection is unsupported. Choose a native shopping list explicitly.",
         );
         return false;
       }
@@ -970,30 +977,29 @@ export function ProductViewer() {
                   ? { review_context_id: requestArgs.review_context_id }
                   : {}),
               }
-            : requestArgs.draft_id !== undefined
-              ? { draft_id: requestArgs.draft_id }
-              : {}
+            : {}
           : targetReview
             ? reviewTargetArgs(targetReview)
             : {};
         const targetId =
-          targetArgs.shopping_list_id !== undefined
-            ? String(targetArgs.shopping_list_id)
-            : targetArgs.draft_id;
+          targetArgs.shopping_list_id === undefined
+            ? undefined
+            : String(targetArgs.shopping_list_id);
         if (!isBasketId(targetId)) {
           setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
-        delete requestArgs.draft_id;
         delete requestArgs.shopping_list_id;
         delete requestArgs.review_context_id;
         Object.assign(requestArgs, targetArgs);
       }
     } else if (name === "submit_product_review") {
       const targetReview = activeReview.current?.review;
-      if (!targetReview || targetReview.draftId) {
-        setMessage("Save this draft as a Nemlig shopping list before review.");
+      if (!targetReview) {
+        setMessage(
+          "Choose a Nemlig shopping list before adding it to your basket.",
+        );
         return false;
       }
       const targetArgs = reviewTargetArgs(targetReview);
@@ -1015,15 +1021,6 @@ export function ProductViewer() {
       expectedSelection?.epoch ?? selectionEpoch.current;
     const requestController = new AbortController();
     activeToolController.current = requestController;
-    const actionKind = isRecord(requestArgs.action)
-      ? requestArgs.action.kind
-      : undefined;
-    activeDraftOperation.current =
-      name === "update_product_review" &&
-      (actionKind === "save" || actionKind === "update")
-        ? actionKind
-        : undefined;
-    let explicitToolError = false;
     if (!background) {
       setBusy(true);
       setMessage("Updating…");
@@ -1040,7 +1037,6 @@ export function ProductViewer() {
         return false;
       }
       if (result.isError) {
-        explicitToolError = true;
         const detail =
           (result.content ?? [])
             .filter((content) => content.type === "text")
@@ -1058,7 +1054,7 @@ export function ProductViewer() {
           result,
           true,
           adoptPresentationDestination,
-          actionKind === undefined ? undefined : String(actionKind),
+          acknowledgePartialList,
         )
       ) {
         throw new Error("Could not confirm the updated shopping list.");
@@ -1069,7 +1065,14 @@ export function ProductViewer() {
       ) {
         ignorePassivePayloads.current = true;
       }
-      if (!background) {
+      const response = readPayload(result);
+      const needsNativeRecovery =
+        response?.kind === "review" &&
+        (response.review.updateStatus === "partial" ||
+          response.review.updateStatus === "uncertain" ||
+          response.review.saveStatus === "partial" ||
+          response.review.saveStatus === "uncertain");
+      if (!background && !needsNativeRecovery) {
         setMessage("");
       }
       return true;
@@ -1083,46 +1086,18 @@ export function ProductViewer() {
       }
       if (
         name === "update_product_review" &&
-        (actionKind === "save" || actionKind === "update") &&
-        requestEpoch === cancellationEpoch.current &&
-        requestSelectionEpoch === selectionEpoch.current
-      ) {
-        ignorePassivePayloads.current = true;
-        const detail = cause instanceof Error ? cause.message : "Update failed";
-        const knownNoWrite =
-          explicitToolError && isKnownSaveUpdateNoWriteFailure(detail);
-        setRecoveryKnownNoWrite(knownNoWrite);
-        const recoveryGuidance =
-          actionKind === "save"
-            ? "Nemlig did not confirm saving this draft. Keep the draft and check your saved lists before trying again."
-            : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.";
-        setMessage(
-          knownNoWrite
-            ? detail
-            : detail === "Update failed"
-              ? recoveryGuidance
-              : `${detail} ${recoveryGuidance}`,
-        );
-        setRecoveryOperation(actionKind);
-        setSubmitErrorOpen(true);
-        return false;
-      }
-      if (
-        name === "update_product_review" &&
         activeReview.current?.active &&
-        activeReview.current.review.draftId &&
+        activeReview.current.review.shoppingListId !== undefined &&
         requestEpoch === cancellationEpoch.current &&
         requestSelectionEpoch === selectionEpoch.current
       ) {
         const detail = cause instanceof Error ? cause.message : "Update failed";
-        const recoveryMessage = /expired|unavailable|no longer exists/iu.test(
-          detail,
-        )
-          ? "Nemlig no longer confirms that this draft is available. Your current products and quantities remain visible; start a new draft in conversation before continuing."
-          : /changed/iu.test(detail)
-            ? "Nemlig reports that this draft changed. Your current products and quantities remain visible; refresh the draft before continuing."
-            : "The action could not be confirmed. Your current products and quantities remain visible; review them before continuing. No automatic retry was made.";
-        showRecovery("draft", recoveryMessage);
+        activeReview.current = { ...activeReview.current, active: false };
+        setScreen({ kind: "review", ...activeReview.current });
+        showRecovery(
+          "update",
+          `${detail} Refresh this exact shopping list before continuing. No automatic retry was made.`,
+        );
         return false;
       }
       if (
@@ -1132,8 +1107,11 @@ export function ProductViewer() {
       ) {
         if (preserveReviewOnFailure) {
           ignorePassivePayloads.current = true;
-          setMessage(
-            "Could not save the pending quantity. Keep this shopping list open and retry before switching.",
+          activeReview.current = { ...activeReview.current!, active: false };
+          setScreen({ kind: "review", ...activeReview.current });
+          showRecovery(
+            "update",
+            "Could not confirm this exact shopping-list update. Refresh the current list before continuing.",
           );
         } else {
           handleCallFailure(cause, recovery, uncertainOnFailure);
@@ -1143,7 +1121,6 @@ export function ProductViewer() {
     } finally {
       if (activeToolController.current === requestController) {
         activeToolController.current = undefined;
-        activeDraftOperation.current = undefined;
       }
       callLock.current = false;
       if (!background) {
@@ -1200,10 +1177,7 @@ export function ProductViewer() {
     const operation = (async () => {
       while (pendingQuantitiesRef.current.size) {
         await waitForCallIdle();
-        if (
-          expected.epoch !== selectionEpoch.current ||
-          expected.basketId !== selectedBasketIdRef.current
-        ) {
+        if (!isCurrentSelection(expected)) {
           return false;
         }
         const latest = activeReview.current;
@@ -1230,11 +1204,10 @@ export function ProductViewer() {
           expected,
           true,
         );
-        if (
-          !ok ||
-          expected.epoch !== selectionEpoch.current ||
-          expected.basketId !== selectedBasketIdRef.current
-        ) {
+        if (!ok || !isCurrentSelection(expected)) {
+          if (isCurrentSelection(expected)) {
+            removePendingQuantity(product_id, quantity);
+          }
           return false;
         }
         const confirmed = activeReview.current?.review.items.find(
@@ -1258,23 +1231,49 @@ export function ProductViewer() {
   const afterFlush = (action: Record<string, unknown>) => {
     const expected = selectionContext();
     void flushQuantities(expected).then(async (ok) => {
-      if (
-        ok &&
-        expected.epoch === selectionEpoch.current &&
-        expected.basketId === selectedBasketIdRef.current
-      ) {
+      if (ok && isCurrentSelection(expected)) {
         await update(action);
       }
     });
   };
-  const saveDraft = (name: string) => {
-    afterFlush({ kind: "save", name });
-  };
-  const updateShoppingList = () => {
-    afterFlush({ kind: "update" });
-  };
   const discardPendingUpdate = () => {
-    afterFlush({ kind: "discard_pending_update" });
+    stopQuantityTimer();
+    const expected = selectionContext();
+    void (async () => {
+      if (quantityFlush.current) {
+        await quantityFlush.current;
+      }
+      await waitForCallIdle();
+      if (
+        expected.epoch !== selectionEpoch.current ||
+        expected.basketId !== selectedBasketIdRef.current
+      ) {
+        return;
+      }
+      clearPendingQuantities();
+      await update({ kind: "discard_pending_update" });
+    })();
+  };
+  const useConfirmedProducts = () => {
+    const review = activeReview.current?.review ?? lastConfirmedReview.current;
+    if (busy || review?.shoppingListId === undefined) {
+      return;
+    }
+    setSubmitErrorOpen(false);
+    void call(
+      "update_product_review",
+      {
+        action: { kind: "show" },
+        shopping_list_id: review.shoppingListId,
+      },
+      true,
+      false,
+      false,
+      false,
+      selectionContext(),
+      true,
+      true,
+    );
   };
   const navigate = (next: PresentationDestination) => {
     if (next === "alternatives" && !review?.alternatives) {
@@ -1285,7 +1284,7 @@ export function ProductViewer() {
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
       setMessage(
-        "Continue in conversation to inspect a shopping list or start a draft.",
+        "Continue in conversation to inspect or create a Nemlig shopping list.",
       );
       return;
     }
@@ -1300,7 +1299,7 @@ export function ProductViewer() {
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage(
-        "Continue in conversation to inspect a shopping list or start a draft.",
+        "Continue in conversation to inspect or create a Nemlig shopping list.",
       );
     }
   };
@@ -1332,10 +1331,7 @@ export function ProductViewer() {
       expected,
     );
   };
-  const selectBasket = async (
-    basketId: string,
-    acceptSavedSubsetDraftId?: string,
-  ) => {
+  const selectBasket = async (basketId: string) => {
     if (busy || !isBasketId(basketId)) {
       return;
     }
@@ -1347,6 +1343,7 @@ export function ProductViewer() {
       return;
     }
     const targetArgs = { shopping_list_id: Number(basketId) };
+    autoRefreshListId.current = basketId;
     changeBasket(basketId);
     setScreen({ kind: "picker", baskets, selectedBasketId: basketId });
     await call(
@@ -1354,9 +1351,6 @@ export function ProductViewer() {
       {
         action: {
           kind: "select",
-          ...(nativeShoppingList && acceptSavedSubsetDraftId
-            ? { accept_saved_subset_draft_id: acceptSavedSubsetDraftId }
-            : {}),
         },
         ...targetArgs,
       },
@@ -1366,33 +1360,93 @@ export function ProductViewer() {
   };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
-      setMessage(
-        "Reconnect to read this conversation's current shopping list.",
-      );
+      setMessage("Reconnect to read this exact Nemlig shopping list.");
       return;
     }
-    if (activeReview.current?.review) {
-      const targetArgs = reviewTargetArgs(activeReview.current.review);
+    const knownReview =
+      activeReview.current?.review ?? lastConfirmedReview.current;
+    if (knownReview) {
+      stopQuantityTimer();
+      if (quantityFlush.current) {
+        await quantityFlush.current;
+      }
+      await waitForCallIdle();
+      clearPendingQuantities();
+      const listId = knownReview.shoppingListId;
+      if (listId === undefined) {
+        await call(
+          "update_product_review",
+          { action: { kind: "list" } },
+          true,
+          false,
+          false,
+          false,
+          selectionContext(),
+          true,
+        );
+        return;
+      }
       await call(
         "update_product_review",
         {
           action: { kind: "show" },
-          ...targetArgs,
+          shopping_list_id: listId,
         },
+        true,
+        false,
+        false,
+        false,
+        selectionContext(),
         true,
       );
     } else {
       setMessage(
-        "This older selection is no longer supported. Open the current draft or select a native shopping list explicitly.",
+        "This older selection is no longer supported. Select a native shopping list explicitly.",
       );
     }
   };
-  const endDraft = async () => {
-    setConfirmEnd(false);
-    if (await flushQuantities()) {
-      await update({ kind: "end" });
+  useEffect(() => {
+    if (
+      screen.kind !== "review" ||
+      screen.review.shoppingListId !== undefined ||
+      (screen.review.saveStatus !== "partial" &&
+        screen.review.saveStatus !== "uncertain")
+    ) {
+      return;
     }
-  };
+    const inactive = { review: screen.review, active: false };
+    activeReview.current = inactive;
+    lastConfirmedReview.current = screen.review;
+    showRecovery(
+      "list",
+      screen.review.actionNotice ??
+        "Nemlig did not confirm which shopping-list rows were saved. Keep these selected products for review; refresh or choose a list explicitly before continuing.",
+    );
+  }, [screen]);
+  useEffect(() => {
+    if (!connectedApp || !isConnected || screen.kind !== "review") {
+      return;
+    }
+    const listId = screen.review.shoppingListId;
+    if (listId === undefined) {
+      return;
+    }
+    const key = String(listId);
+    if (autoRefreshListId.current === key) {
+      return;
+    }
+    autoRefreshListId.current = key;
+    void call(
+      "update_product_review",
+      { action: { kind: "show" }, shopping_list_id: listId },
+      true,
+      false,
+      false,
+      false,
+      { basketId: key, epoch: selectionEpoch.current },
+      true,
+    );
+  }, [connectedApp, isConnected, screen]);
   // Submit the exact saved list in one action; provider checks remain server-side.
   // One user action flushes edits, binds the selected list, and fences duplicate calls.
   // fallow-ignore-next-line complexity
@@ -1422,7 +1476,7 @@ export function ProductViewer() {
       reviewTargetId(review) !== selectedBasketIdRef.current
     ) {
       setMessage(
-        "Update and review the saved shopping list before submitting.",
+        "Refresh and review the current Nemlig shopping list before adding it to the basket.",
       );
       return;
     }
@@ -1502,11 +1556,9 @@ export function ProductViewer() {
             : "Connecting to Nemlig…"
           : undefined,
         busy,
-        confirmEnd,
         continueSubmitted,
         submitBlocked,
         knownNoWrite: submissionNoWrite.current,
-        recoveryKnownNoWrite,
         submitErrorOpen,
         recoveryOperation,
         baskets,
@@ -1516,8 +1568,7 @@ export function ProductViewer() {
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
         onOpenPicker: () => void openPicker(),
-        onSelectBasket: (basketId, acceptSavedSubsetDraftId) =>
-          void selectBasket(basketId, acceptSavedSubsetDraftId),
+        onSelectBasket: (basketId) => void selectBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {
             const next = new Map(previous);
@@ -1544,9 +1595,8 @@ export function ProductViewer() {
           void update({ kind: "alternatives", product_id, query }),
         onReplace: (product_id, replacement_id) =>
           update({ kind: "replace", product_id, replacement_id }),
-        onSaveDraft: saveDraft,
-        onUpdateShoppingList: updateShoppingList,
         onDiscardPendingUpdate: discardPendingUpdate,
+        onUseConfirmedProducts: useConfirmedProducts,
         onSubmit: () => void submitCurrentBasket(),
         onConfirmSubmit: () => void submitCurrentBasket(),
         onContinueSubmitted: () => {
@@ -1562,9 +1612,6 @@ export function ProductViewer() {
           ),
         onDismissSubmitError: () => setSubmitErrorOpen(false),
         onSendFollowUp: (text) => void sendFollowUp(text),
-        onRequestEnd: () => setConfirmEnd(true),
-        onCancelEnd: () => setConfirmEnd(false),
-        onConfirmEnd: () => void endDraft(),
       }}
     />
   );

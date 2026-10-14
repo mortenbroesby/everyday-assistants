@@ -58,11 +58,9 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     thumbnails: thumbnail ? new Map([[product, thumbnail]]) : new Map(),
     message: "",
     busy: false,
-    confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
-    recoveryKnownNoWrite: false,
     submitErrorOpen: false,
     baskets: [],
     selectedBasketId: undefined,
@@ -78,18 +76,14 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
-    onSaveDraft: noop,
-    onUpdateShoppingList: noop,
     onDiscardPendingUpdate: noop,
+    onUseConfirmedProducts: noop,
     onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
     onDismissSubmitError: noop,
     onSendFollowUp: noop,
-    onRequestEnd: noop,
-    onCancelEnd: noop,
-    onConfirmEnd: noop,
   },
 });
 
@@ -121,11 +115,11 @@ test("shopping-list picker shows native names and product counts without delete"
   assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
 });
 
-test("an empty picker offers shopping-list draft starter actions", () => {
+test("an empty picker offers native shopping-list starter actions", () => {
   const pageProps = props();
   pageProps.model.screen = { kind: "picker", baskets: [] };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Start a shopping-list draft/u);
+  assert.match(markup, /Start a Nemlig shopping list/u);
   assert.match(markup, /Plan groceries for the week/u);
   assert.match(markup, /Find ingredients for dinner/u);
   assert.match(markup, /Find a product/u);
@@ -140,11 +134,11 @@ test("an empty picker offers shopping-list draft starter actions", () => {
   const expiredMarkup = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(expiredMarkup, /saved list is unavailable/u);
-  assert.match(expiredMarkup, /Start a shopping-list draft/u);
+  assert.match(expiredMarkup, /That Nemlig shopping list is unavailable/u);
+  assert.match(expiredMarkup, /Start a Nemlig shopping list/u);
 });
 
-test("only saved Nemlig shopping lists can be submitted to the basket", () => {
+test("only confirmed native shopping lists can be added to the basket", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
@@ -155,30 +149,46 @@ test("only saved Nemlig shopping lists can be submitted to the basket", () => {
     createElement(ViewerPage, pageProps),
   );
   const savedSubmit = savedMarkup.match(
-    /<button[^>]*>[\s\S]*?Submit to Nemlig basket[\s\S]*?<\/button>/u,
+    /<button[^>]*>[\s\S]*?Add to Nemlig basket[\s\S]*?<\/button>/u,
   )?.[0];
   assert.ok(savedSubmit);
   assert.doesNotMatch(savedSubmit, /\sdisabled(?:="")?/u);
 });
 
-test("partial save offers an explicit review of the provider-confirmed subset", () => {
+test("pending quantity edits are labeled until Nemlig confirms them", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review.shoppingListId = 44;
+  pageProps.model.screen.review.saveStatus = "saved";
+  pageProps.model.pendingQuantities = new Map([[7, 2]]);
+
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+
+  assert.match(
+    markup,
+    /Quantity change pending; waiting for Nemlig to confirm it/u,
+  );
+  assert.match(markup, /2 ×/u);
+  assert.match(markup, /Add to Nemlig basket/u);
+});
+
+test("partial native creation offers an exact-list review and blocks basket addition", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
   }
   Object.assign(pageProps.model.screen.review, {
-    draftId: "draft-1",
     shoppingListId: 44,
     saveStatus: "partial",
     saveProgress: { completed: 1, total: 2 },
   });
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Save progress: 1 of 2 products/u);
-  assert.match(markup, /Products that did not save will be left out/u);
-  assert.match(markup, />Review saved products only<\/button>/u);
-  assert.match(markup, />Resume saving<\/button>/u);
+  assert.match(markup, /Nemlig confirmed only the products shown below/u);
+  assert.match(markup, />Review products currently in the list<\/button>/u);
   const submit = markup.match(
-    /<button[^>]*>[\s\S]*?Save list before review<\/button>/u,
+    /<button[^>]*>[\s\S]*?Add to Nemlig basket<\/button>/u,
   )?.[0];
   assert.ok(submit);
   assert.match(submit, /\sdisabled(?:="")?/u);
@@ -213,7 +223,7 @@ test("interrupted updates show current rows separately from pending rows", () =>
   );
 });
 
-test("retired deleted-list updates show the next recovery action", () => {
+test("a deleted native list directs the user to select another exact list", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
@@ -222,11 +232,11 @@ test("retired deleted-list updates show the next recovery action", () => {
     destination: "ready",
     items: [],
     actionNotice:
-      "This shopping list was deleted in Nemlig. Its pending update was retired; choose another list or start a draft.",
+      "This shopping list was deleted in Nemlig. Choose another list or create a new list in conversation.",
   };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(markup, /deleted in Nemlig/u);
-  assert.match(markup, /choose another list or start a draft/u);
+  assert.match(markup, /Choose another list or create a new list/u);
 });
 
 test("a recovered submission fence explains the uncertainty without inventing an id", () => {
@@ -248,33 +258,34 @@ test("a recovered submission fence explains the uncertainty without inventing an
   assert.match(markup, /A previous addition needs checking/u);
   assert.match(markup, /may have reached Nemlig/u);
   assert.doesNotMatch(markup, /synthetic-submission|fixture-submission/u);
-  assert.doesNotMatch(markup, />Submit to Nemlig basket<\/button>/u);
+  assert.doesNotMatch(markup, />Add to Nemlig basket<\/button>/u);
 });
 
-test("draft action recovery keeps the latest products and quantities visible", () => {
+test("native-list recovery keeps the latest rows visible and blocks basket addition", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
   }
   pageProps.model.screen.review = {
     ...pageProps.model.screen.review,
-    draftId: "draft-1",
     items: pageProps.model.screen.review.items.map((item) => ({
       ...item,
       quantity: 3,
     })),
+    shoppingListId: 44,
+    saveStatus: "uncertain",
+    updateStatus: "uncertain",
+    actionNotice:
+      "Nemlig did not confirm the current list. Refresh this exact list before continuing.",
   };
   pageProps.model.presentationDestination = "ready";
-  pageProps.model.message =
-    "The action could not be confirmed. Your draft remains open; review its current products and quantities before continuing.";
-  pageProps.model.recoveryOperation = "draft";
-  pageProps.model.submitErrorOpen = true;
 
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
 
-  assert.match(markup, /Draft products/u);
+  assert.match(markup, /Refresh this exact list/u);
   assert.match(markup, /Fixture yoghurt/u);
   assert.match(markup, />3 ×</u);
+  assert.match(markup, /disabled=""[^>]*>.*Add to Nemlig basket/u);
   assert.doesNotMatch(markup, /Request cancelled/u);
 });
 
@@ -409,7 +420,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   };
   assert.doesNotMatch(
     renderToStaticMarkup(createElement(ViewerPage, pageProps)),
-    />Submit to Nemlig basket<\/button>/u,
+    />Add to Nemlig basket<\/button>/u,
   );
 
   const unavailable = {
@@ -426,7 +437,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
     const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
     assert.match(
       markup,
-      /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig basket<\/button>/u,
+      /<button[^>]*disabled=""[^>]*>.*Add to Nemlig basket<\/button>/u,
     );
     assert.match(markup, /Resolve products with missing details/u);
   }
@@ -448,7 +459,7 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   };
   assert.match(
     renderToStaticMarkup(createElement(ViewerPage, pageProps)),
-    />Submit to Nemlig basket<\/button>/u,
+    />Add to Nemlig basket<\/button>/u,
   );
   pageProps.model.screen = {
     kind: "review",
@@ -461,14 +472,14 @@ test("empty and incomplete Local baskets cannot start submission", () => {
   const missingMarkup = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(missingMarkup, />Submit to Nemlig basket<\/button>/u);
+  assert.match(missingMarkup, />Add to Nemlig basket<\/button>/u);
   assert.match(
     missingMarkup,
     /Products Nemlig confirms are unavailable will be skipped/u,
   );
 });
 
-test("dirty native shopping-list edits require Update before Submit", () => {
+test("native shopping-list edits do not expose a manual Update step", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
@@ -478,23 +489,27 @@ test("dirty native shopping-list edits require Update before Submit", () => {
     review: {
       ...pageProps.model.screen.review,
       shoppingListId: 44,
+      saveStatus: "saved",
       shoppingListDirty: true,
     },
   };
   const html = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(html, />Update shopping list<\/button>/u);
-  assert.match(html, /Update the saved shopping list before submitting it/u);
+  assert.doesNotMatch(html, />Update shopping list<\/button>/u);
+  assert.doesNotMatch(
+    html,
+    /Update the saved shopping list before submitting it/u,
+  );
   assert.doesNotMatch(
     html,
     /Basket submission is unavailable while we verify/u,
   );
   assert.match(
     html,
-    /<button[^>]*disabled=""[^>]*>.*Submit to Nemlig basket<\/button>/u,
+    /<button[^>]*disabled=""[^>]*>.*Add to Nemlig basket<\/button>/u,
   );
 });
 
-test("a clean or reviewed partial native-list update can resume, but an uncertain one cannot", () => {
+test("partial native-list updates expose discard recovery without a replay action", () => {
   const pageProps = props();
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
@@ -514,11 +529,8 @@ test("a clean or reviewed partial native-list update can resume, but an uncertai
   const recoverable = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(recoverable, />Resume update<\/button>/u);
-  assert.doesNotMatch(
-    recoverable,
-    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
-  );
+  assert.match(recoverable, /Discard pending changes and use current list/u);
+  assert.doesNotMatch(recoverable, /Resume update|Update shopping list/u);
 
   pageProps.model.screen = {
     ...pageProps.model.screen,
@@ -532,11 +544,7 @@ test("a clean or reviewed partial native-list update can resume, but an uncertai
   const cleanRecovery = renderToStaticMarkup(
     createElement(ViewerPage, pageProps),
   );
-  assert.match(cleanRecovery, />Resume update<\/button>/u);
-  assert.doesNotMatch(
-    cleanRecovery,
-    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
-  );
+  assert.doesNotMatch(cleanRecovery, /Resume update|Update shopping list/u);
 
   pageProps.model.screen = {
     ...pageProps.model.screen,
@@ -549,11 +557,11 @@ test("a clean or reviewed partial native-list update can resume, but an uncertai
   const uncertain = renderToStaticMarkup(createElement(ViewerPage, pageProps));
   assert.match(
     uncertain,
-    /<button[^>]*disabled=""[^>]*>Update shopping list<\/button>/u,
+    /<button[^>]*disabled=""[^>]*>.*Add to Nemlig basket<\/button>/u,
   );
 });
 
-test("a recovered native-list review exposes and runs its Resume update action", async () => {
+test("a recovered native-list review exposes and runs explicit discard recovery", async () => {
   const pageProps = props();
   const native = {
     id: 44,
@@ -632,25 +640,22 @@ test("a recovered native-list review exposes and runs its Resume update action",
     review: recovered,
   };
   let updateResult: ReturnType<typeof service.updateShoppingList> | undefined;
-  pageProps.actions.onUpdateShoppingList = () => {
+  pageProps.actions.onDiscardPendingUpdate = () => {
     updateResult = service.updateShoppingList(
       "owner",
       44,
-      { kind: "update" },
+      { kind: "discard_pending_update" },
       undefined,
       journal,
     );
   };
 
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, />Resume update<\/button>/u);
-  assert.doesNotMatch(
-    markup,
-    /<button[^>]*disabled=""[^>]*>Resume update<\/button>/u,
-  );
-  pageProps.actions.onUpdateShoppingList();
-  assert.equal((await updateResult)?.saveStatus, "saved");
-  assert.deepEqual(native.items, [{ productId: 7, quantity: 2 }]);
+  assert.match(markup, /Discard pending changes and use current list/u);
+  assert.doesNotMatch(markup, /Resume update|Update shopping list/u);
+  pageProps.actions.onDiscardPendingUpdate();
+  assert.equal((await updateResult)?.updateStatus, undefined);
+  assert.deepEqual(native.items, [{ productId: 7, quantity: 1 }]);
   assert.ok(operation.completedUntil);
 });
 

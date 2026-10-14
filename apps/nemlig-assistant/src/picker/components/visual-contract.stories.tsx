@@ -258,11 +258,9 @@ const baseProps = (
     ]),
     message: "",
     busy: false,
-    confirmEnd: false,
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
-    recoveryKnownNoWrite: false,
     submitErrorOpen: false,
     baskets: screen.kind === "picker" ? screen.baskets : [],
     selectedBasketId: undefined,
@@ -279,18 +277,14 @@ const baseProps = (
     onOpenAlternatives: noop,
     onSearchAlternatives: noop,
     onReplace: noop,
-    onSaveDraft: noop,
-    onUpdateShoppingList: noop,
     onDiscardPendingUpdate: noop,
+    onUseConfirmedProducts: noop,
     onSubmit: noop,
     onConfirmSubmit: noop,
     onContinueSubmitted: noop,
     onInspectBasket: noop,
     onDismissSubmitError: noop,
     onSendFollowUp: noop,
-    onRequestEnd: noop,
-    onCancelEnd: noop,
-    onConfirmEnd: noop,
     ...overrides.actions,
   },
 });
@@ -332,7 +326,7 @@ function FixturePage({
                   : String(activeScreen.review.shoppingListId)
                 : undefined,
           });
-          setHostMessage("Storybook opened the Local basket picker.");
+          setHostMessage("Storybook opened the Nemlig shopping-list picker.");
         }),
       onSelectBasket:
         overrides.actions?.onSelectBasket ??
@@ -341,7 +335,6 @@ function FixturePage({
             kind: "review",
             review: {
               ...review,
-              draftId: undefined,
               shoppingListId: Number(basketId),
               shoppingListName: localBaskets.find(
                 (list) => list.basketId === basketId,
@@ -359,7 +352,7 @@ function FixturePage({
         overrides.actions?.onRefresh ??
         (() =>
           setHostMessage(
-            "Storybook would ask ChatGPT to load the current Local basket.",
+            "Storybook would ask ChatGPT to load this exact Nemlig shopping list.",
           )),
       onInspectBasket:
         overrides.actions?.onInspectBasket ??
@@ -532,17 +525,12 @@ function alternativeActions(
   };
 }
 
-function walkthroughScreen(ended: boolean, review: Review): ViewerScreen {
-  return ended
-    ? {
-        kind: "empty",
-        message: "Your Local basket was discarded. Nothing changed in Nemlig.",
-      }
-    : {
-        kind: "review",
-        review,
-        active: true,
-      };
+function walkthroughScreen(review: Review): ViewerScreen {
+  return {
+    kind: "review",
+    review,
+    active: true,
+  };
 }
 
 function WalkthroughPage({
@@ -567,18 +555,10 @@ function WalkthroughPage({
 function submissionActions(
   currentReview: Review,
   setCurrentReview: SetState<Review>,
-  setConfirmEnd: SetState<boolean>,
-  setEnded: SetState<boolean>,
   setHostMessage: SetState<string>,
 ): Pick<
   ViewerPageActions,
-  | "onSubmit"
-  | "onConfirmSubmit"
-  | "onContinueSubmitted"
-  | "onRequestEnd"
-  | "onCancelEnd"
-  | "onConfirmEnd"
-  | "onSendFollowUp"
+  "onSubmit" | "onConfirmSubmit" | "onContinueSubmitted" | "onSendFollowUp"
 > {
   return {
     onSubmit: () => {
@@ -598,7 +578,7 @@ function submissionActions(
         setHostMessage("");
       } else {
         setHostMessage(
-          "Preparation stopped. Resolve every unavailable or incomplete Local basket row first.",
+          "Preparation stopped. Resolve every unavailable or incomplete shopping-list row first.",
         );
       }
     },
@@ -619,23 +599,18 @@ function submissionActions(
     },
     onContinueSubmitted: () =>
       setCurrentReview((previous) => ({ ...previous, submission: undefined })),
-    onRequestEnd: () => setConfirmEnd(true),
-    onCancelEnd: () => setConfirmEnd(false),
-    onConfirmEnd: () => setEnded(true),
     onSendFollowUp: (text) =>
       setHostMessage(`Storybook would send to ChatGPT: ${text}`),
   };
 }
 
 /** A deterministic visual walkthrough; it only projects local fixture state and never imitates MCP authority. */
-function LocalBasketWalkthroughStory({
+function ShoppingListWalkthroughStory({
   initialReview = walkthroughReview,
   initialDestination = initialReview.destination,
-  initiallyEnded = false,
 }: {
   initialReview?: Review;
   initialDestination?: Review["destination"];
-  initiallyEnded?: boolean;
 }) {
   const [currentReview, setCurrentReview] = useState(initialReview);
   const [destination, setDestination] =
@@ -643,8 +618,6 @@ function LocalBasketWalkthroughStory({
   const [reviewDisclosures, setReviewDisclosures] = useState<
     ViewerPageModel["reviewDisclosures"]
   >(new Map());
-  const [confirmEnd, setConfirmEnd] = useState(false);
-  const [ended, setEnded] = useState(initiallyEnded);
   const [hostMessage, setHostMessage] = useState("");
   const disclosures = disclosureActions(setReviewDisclosures);
   const reviews = reviewActions(setCurrentReview);
@@ -652,18 +625,15 @@ function LocalBasketWalkthroughStory({
   const submission = submissionActions(
     currentReview,
     setCurrentReview,
-    setConfirmEnd,
-    setEnded,
     setHostMessage,
   );
   return (
     <WalkthroughPage
-      screen={walkthroughScreen(ended, currentReview)}
+      screen={walkthroughScreen(currentReview)}
       model={{
         maxWidth: 375,
         presentationDestination: destination,
         reviewDisclosures,
-        confirmEnd,
       }}
       actions={{
         onNavigate: setDestination,
@@ -711,34 +681,34 @@ type Story = StoryObj<typeof meta>;
 
 export const AppTabWalkthrough: Story = {
   decorators: [appTab],
-  render: () => <LocalBasketWalkthroughStory />,
+  render: () => <ShoppingListWalkthroughStory />,
 };
-export const LocalBasketWalkthrough: Story = {
+export const ShoppingListWalkthrough: Story = {
   decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory />,
+  render: () => <ShoppingListWalkthroughStory />,
 };
-export const LocalBasketAt320: Story = {
+export const ShoppingListAt320: Story = {
   render: () => activeReview(review, "ready", 320),
 };
-export const LocalBasketAt375: Story = {
+export const ShoppingListAt375: Story = {
   render: () => activeReview(review, "ready", 375),
 };
-export const ScrollableLocalBasket: Story = {
+export const ScrollableShoppingList: Story = {
   decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory initialReview={longBasket} />,
+  render: () => <ShoppingListWalkthroughStory initialReview={longBasket} />,
 };
-export const LegacyMixedLocalBasket: Story = {
+export const LegacyMixedShoppingList: Story = {
   render: () => activeReview(legacyMixedReview, "ready", 375),
 };
 export const Alternatives: Story = {
   decorators: [embeddedConversation],
   render: () => (
-    <LocalBasketWalkthroughStory initialDestination="alternatives" />
+    <ShoppingListWalkthroughStory initialDestination="alternatives" />
   ),
 };
 export const FactualDetails: Story = {
   decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory />,
+  render: () => <ShoppingListWalkthroughStory />,
   play: ({ canvasElement }) => {
     canvasElement
       .querySelector<HTMLButtonElement>(
@@ -765,16 +735,18 @@ export const Unavailable: Story = {
       active: true,
     }),
 };
-export const UnavailableDraft: Story = {
+export const UnavailableShoppingList: Story = {
   render: () => page({ kind: "unavailable", review }),
 };
 export const PreparedConfirmation: Story = {
   decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory initialReview={preparedReview} />,
+  render: () => <ShoppingListWalkthroughStory initialReview={preparedReview} />,
 };
 export const VerifiedSuccess: Story = {
   decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory initialReview={submittedReview} />,
+  render: () => (
+    <ShoppingListWalkthroughStory initialReview={submittedReview} />
+  ),
 };
 export const UncertainOutcome: Story = {
   render: () => activeReview(uncertainReview, "ready"),
@@ -794,28 +766,30 @@ export const UncertainSubmissionRecovery: Story = {
       },
     ),
 };
-export const SaveRecovery: Story = {
+export const ShoppingListRecovery: Story = {
   render: () =>
     page(
       { kind: "review", review, active: true },
       {
         model: {
           submitErrorOpen: true,
-          recoveryOperation: "save",
+          recoveryOperation: "update",
           message:
-            "Nemlig did not confirm saving this draft. Keep the draft and recovery record.",
+            "Nemlig did not confirm every change. Refresh this exact list before continuing.",
         },
       },
     ),
 };
-export const DraftActionRecovery: Story = {
+export const PartialNativeListRecovery: Story = {
   render: () =>
     page(
       {
         kind: "review",
         review: {
           ...review,
-          draftId: "storybook-draft",
+          updateStatus: "partial",
+          actionNotice:
+            "Nemlig did not confirm every change. Refresh this exact list before continuing.",
           items: review.items.map((item) => ({ ...item, quantity: 2 })),
         },
         active: true,
@@ -823,33 +797,28 @@ export const DraftActionRecovery: Story = {
       {
         model: {
           submitErrorOpen: true,
-          recoveryOperation: "draft",
+          recoveryOperation: "update",
           message:
             "The action could not be confirmed. Your current products and quantities remain visible; review them before continuing. No automatic retry was made.",
         },
       },
     ),
 };
-export const SaveNotSentRecovery: Story = {
+export const NativeListReadRecovery: Story = {
   render: () =>
     page(
       { kind: "review", review, active: true },
       {
         model: {
           submitErrorOpen: true,
-          recoveryOperation: "save",
-          recoveryKnownNoWrite: true,
+          recoveryOperation: "list",
           message:
-            "Could not record this save safely. No Nemlig shopping list was created or changed.",
+            "Nemlig could not confirm the current contents of this exact list. Refresh it or choose another list.",
         },
       },
     ),
 };
-export const EmptyLocalBasket: Story = {
-  decorators: [embeddedConversation],
-  render: () => <LocalBasketWalkthroughStory initiallyEnded />,
-};
-export const LocalBasketInventory: Story = {
+export const NativeShoppingListInventory: Story = {
   render: () =>
     page(
       { kind: "picker", baskets: inventory },
@@ -909,7 +878,10 @@ export const Loading: Story = {
 };
 export const Error: Story = {
   render: () =>
-    page({ kind: "error", message: "Could not load the Local basket." }),
+    page({
+      kind: "error",
+      message: "Could not load the Nemlig shopping list.",
+    }),
 };
 export const Cancelled: Story = { render: () => page({ kind: "cancelled" }) };
 export const Inactive: Story = {

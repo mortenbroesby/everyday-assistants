@@ -43,7 +43,7 @@ export function OutcomeSurface({
 }
 
 /** Conversational entry points deliberately use the already-supported host-message bridge. */
-export function DraftListStarters({
+export function ShoppingListStarters({
   message,
   onChoose,
 }: {
@@ -51,10 +51,12 @@ export function DraftListStarters({
   onChoose: (prompt: string) => void;
 }) {
   return (
-    <OutcomeSurface title="Start a shopping-list draft">
+    <OutcomeSurface title="Start a Nemlig shopping list">
       <p>
-        Find products and collect your choices here. Nothing is added to Nemlig
-        until you explicitly save the draft as a Nemlig shopping list.
+        Search and compare products without changing Nemlig. When you choose
+        products, they are added to a named Nemlig shopping list and edits save
+        as you make them. Adding that list to the actual Nemlig basket is a
+        separate action.
       </p>
       {message && <p role="status">{message}</p>}
       <Actions>
@@ -62,7 +64,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me plan groceries for the week. Start an unsaved shopping-list draft; do not save or add anything to Nemlig.",
+              "Help me plan groceries for the week. Search and compare products first. When I choose products, create a named Nemlig shopping list and save my edits there automatically. Do not add anything to the actual basket.",
             )
           }
         >
@@ -72,7 +74,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find ingredients for dinner. Start an unsaved shopping-list draft; do not save or add anything to Nemlig.",
+              "Help me find ingredients for dinner. Search and compare products first. When I choose products, create a named Nemlig shopping list and save my edits there automatically. Do not add anything to the actual basket.",
             )
           }
         >
@@ -82,7 +84,7 @@ export function DraftListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find a product for an unsaved shopping-list draft. Do not save or add anything to Nemlig.",
+              "Help me find a product. Search and compare options first. When I choose a product, create a Nemlig shopping list and save edits there automatically. Do not add anything to the actual basket.",
             )
           }
         >

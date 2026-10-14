@@ -134,10 +134,7 @@ test("production acceptance omits removed saved-storage tools while retaining di
 
   const report = await verifyReadOnlyProductionFeatures(client);
   assert.deepEqual(calls, ["get_profile", "find_groceries", "show_my_basket"]);
-  for (const forbidden of [
-    ...productionToolInventory.localState,
-    ...productionToolInventory.externalState,
-  ]) {
+  for (const forbidden of [...productionToolInventory.externalState]) {
     assert.equal(
       calls.includes(forbidden),
       false,
