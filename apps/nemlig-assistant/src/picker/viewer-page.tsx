@@ -733,7 +733,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const confirmedSubmission = review?.submission?.status === "submitted";
   const uncertainSubmission =
     review?.submission?.status === "uncertain" ||
-    (submitBlocked && !partialSubmission && !confirmedSubmission);
+    (submitBlocked && !busy && !partialSubmission && !confirmedSubmission);
   const editsBlocked =
     busy ||
     review?.updateStatus === "partial" ||
@@ -818,7 +818,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           ? "Compare available options for this product."
           : review.draftId
             ? "This draft is not saved to Nemlig yet. Save it before reviewing basket additions."
-            : "Tap a product for details, or swipe from right to left for actions."
+            : "Tap a product for details, or press and hold for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : screen.kind === "picker"
@@ -1442,8 +1442,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   </p>
                   {submitBlocked ? (
                     <p>
-                      Inspect the actual Nemlig basket in conversation before
-                      preparing another change.
+                      {busy
+                        ? "Adding the reviewed products to your Nemlig basket…"
+                        : "Inspect the actual Nemlig basket in conversation before preparing another change."}
                     </p>
                   ) : (
                     <Button

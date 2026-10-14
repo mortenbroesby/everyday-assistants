@@ -1,0 +1,31 @@
+{
+  "name": "nemlig-shopping",
+  "version": "0.1.5",
+  "description": "Find Nemlig groceries, review a product draft, save a shopping list, and submit its reviewed products to the basket only when asked.",
+  "author": {
+    "name": "Morten & Josephine Broesby-Olsen"
+  },
+  "keywords": [
+    "groceries",
+    "grocery shopping",
+    "food",
+    "product search",
+    "price comparison",
+    "shopping list",
+    "Nemlig"
+  ],
+  "apps": "./.app.json",
+  "interface": {
+    "capabilities": ["Interactive"],
+    "category": "Productivity",
+    "composerIcon": "./assets/icon.png",
+    "defaultPrompt": "Help me shop on Nemlig. Offer to find products, plan groceries, or open a saved shopping list. Show new product choices in an unsaved interactive draft; do not open an unrelated saved list. Save or submit only when I ask.",
+    "developerName": "Morten & Josephine Broesby-Olsen",
+    "displayName": "Nemlig Assistant",
+    "logo": "./assets/icon.png",
+    "longDescription": "Search current Nemlig products and compare sizes and prices in an interactive product draft. Save your choices as a Nemlig shopping list when requested, then submit the reviewed list to your real basket only after authorization. No checkout or payment.",
+    "shortDescription": "Groceries, drafts and lists"
+  },
+  "skills": "./skills",
+  "mcpServers": "./.mcp.json"
+}

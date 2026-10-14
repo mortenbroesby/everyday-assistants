@@ -171,9 +171,10 @@ Search and review → explicitly Save or Update a Nemlig shopping list → verif
 - Product search and actual Nemlig basket inspection are read-only.
 - Saving a draft creates a native Nemlig shopping list. Updating a saved list
   writes only the staged changes to that selected list.
-- Draft saving writes up to two products at a time and checks Nemlig's list
-  afterward. If some products are missing, the draft can resume on the same
-  list, or you can review and submit only the products Nemlig actually saved.
+- Draft saving waits for list creation, writes one product at a time to avoid
+  overlapping list updates, and checks the complete Nemlig list afterward. If
+  some products are missing, the draft can resume on the same list, or you can
+  review and submit only the products Nemlig actually saved.
 - Save and Update do not authorize or perform a basket addition. Submit uses
   the selected saved list only after review and explicit basket authorization,
   then verifies the resulting Nemlig basket. It compares the reviewed list name
@@ -496,7 +497,7 @@ This README is the user-facing inventory of shipped feature sets:
 - temporary unsaved drafts with explicit Save
 - staged native-list edits with explicit Update and verified readback
 - owner-scoped durable recovery journal for interrupted Save and Update actions
-- shared product presentation with accessible details and alternatives
+- shared product presentation with tap-to-open details, press-and-hold actions, and alternatives
 - read-only actual Nemlig basket inspection
 - explicit saved-list-to-basket Submit with additive readback and durable no-replay
 - CLI, MCP, Auth0, and bounded Cloudflare hosting
