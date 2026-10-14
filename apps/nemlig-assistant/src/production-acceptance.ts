@@ -26,8 +26,11 @@ export const productionToolInventory = {
     "get_profile",
     "show_my_basket",
   ],
-  localState: ["start_product_review", "update_product_review_conversation"],
-  externalState: ["submit_product_review_conversation"],
+  externalState: [
+    "start_product_review",
+    "update_product_review_conversation",
+    "submit_product_review_conversation",
+  ],
   appActions: ["update_product_review", "submit_product_review"],
 } as const;
 

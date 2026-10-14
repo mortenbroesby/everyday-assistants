@@ -1,6 +1,6 @@
 export { ViewerButton } from "./button.js";
 export { ActionFooter, ViewerShell } from "./layout.js";
-export { DraftListStarters, OutcomeSurface } from "./outcome.js";
+export { ShoppingListStarters, OutcomeSurface } from "./outcome.js";
 export {
   isUsable,
   money,

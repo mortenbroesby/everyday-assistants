@@ -93,7 +93,7 @@ const withMcpClient = async <T>(
   }
 };
 
-test("MCP saves exact list rows and submits once with durable basket readback", async () => {
+test("MCP persists exact native list edits and submits once with durable basket readback", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
@@ -110,6 +110,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
   let providerWrites = 0;
   let listUpdates = 0;
   const providerEvents: string[] = [];
+  let shoppingListName = "";
   const shoppingLists = new Map<number, Map<number, number>>();
   const provider: ShoppingClient & ShoppingListClient = {
     providerIdentity: () => "account-1",
@@ -134,10 +135,11 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
     listShoppingLists: async () =>
       [...shoppingLists.keys()].map((id) => ({
         id,
-        name: "Nemlig Assistant Local basket",
+        name: shoppingListName,
         productCount: shoppingLists.get(id)?.size ?? 0,
       })),
-    createShoppingList: async () => {
+    createShoppingList: async (name) => {
+      shoppingListName = name;
       shoppingLists.set(1, new Map());
       return 1;
     },
@@ -151,7 +153,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
     },
     getShoppingList: async (listId) => ({
       id: listId,
-      name: "Nemlig Assistant Local basket",
+      name: shoppingListName,
       items: [...(shoppingLists.get(listId) ?? [])].map(
         ([productId, quantity]) => ({ productId, quantity }),
       ),
@@ -284,6 +286,7 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
               { product_id: 7, quantity: 3 },
               { product_id: 8, quantity: 2 },
             ],
+            creation_id: randomUUID(),
           },
         });
         assert.equal(started.isError, undefined);
@@ -301,71 +304,42 @@ test("MCP saves exact list rows and submits once with durable basket readback", 
             [8, 2, "ready"],
           ],
         );
-        assert.equal(
-          providerWrites,
-          0,
-          "starting a draft does not mutate the provider basket",
-        );
-
-        const saved = await mcp.callTool({
-          name: "update_product_review_conversation",
-          arguments: {
-            action: { kind: "save", name: "Nemlig Assistant Local basket" },
-            draft_id: review.draftId,
-          },
-        });
-        assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
-        const savedReview = (
-          saved.structuredContent as { review: ProductReviewSnapshot }
-        ).review;
-        assert.equal(savedReview.saveStatus, "saved");
-        assert.ok(savedReview.reviewContextId);
+        assert.equal(review.saveStatus, "saved");
+        assert.ok(review.shoppingListId);
+        assert.ok(review.reviewContextId);
         assert.deepEqual((await provider.getShoppingList(1)).items, [
           { productId: 7, quantity: 3 },
           { productId: 8, quantity: 2 },
         ]);
-        assert.equal(listUpdates, 2, "Save writes only the draft rows");
-        const staged = await mcp.callTool({
+        assert.equal(listUpdates, 2, "creation writes the selected rows");
+        assert.equal(
+          providerWrites,
+          0,
+          "list creation does not touch the basket",
+        );
+
+        const edited = await mcp.callTool({
           name: "update_product_review_conversation",
           arguments: {
             action: { kind: "quantity", product_id: 7, quantity: 4 },
             shopping_list_id: 1,
-            review_context_id: savedReview.reviewContextId,
+            review_context_id: review.reviewContextId,
           },
         });
-        assert.equal(staged.isError, undefined);
-        assert.deepEqual((await provider.getShoppingList(1)).items, [
-          { productId: 7, quantity: 3 },
-          { productId: 8, quantity: 2 },
-        ]);
-        assert.equal(listUpdates, 2, "staging does not write the native list");
-        const updated = await mcp.callTool({
-          name: "update_product_review_conversation",
-          arguments: {
-            action: { kind: "update" },
-            shopping_list_id: 1,
-            review_context_id: savedReview.reviewContextId,
-          },
-        });
-        assert.equal(
-          updated.isError,
-          undefined,
-          JSON.stringify(updated.content),
-        );
+        assert.equal(edited.isError, undefined, JSON.stringify(edited.content));
+        const editedReview = (
+          edited.structuredContent as { review: ProductReviewSnapshot }
+        ).review;
         assert.deepEqual((await provider.getShoppingList(1)).items, [
           { productId: 7, quantity: 4 },
           { productId: 8, quantity: 2 },
         ]);
-        assert.equal(
-          listUpdates,
-          3,
-          "Update writes the staged difference once",
-        );
+        assert.equal(listUpdates, 3, "quantity edits persist immediately");
         const submitted = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {
             shopping_list_id: 1,
-            review_context_id: savedReview.reviewContextId,
+            review_context_id: editedReview.reviewContextId,
             submission_id: randomUUID(),
           },
         });

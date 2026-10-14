@@ -1,3 +1,8 @@
+> Editing-flow update: [native-shopping-list-first](../native-shopping-list-first/proposal.md)
+> supersedes this change's unsaved drafts and manual Save/Update stages with
+> immediate native-list creation and automatically persisted edits. This document
+> retains the earlier decisions and separately scoped storage-retirement work.
+
 ## Why
 
 Nemlig already owns durable shopping lists with stable IDs. Keeping a separate

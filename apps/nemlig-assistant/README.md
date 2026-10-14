@@ -27,8 +27,8 @@
 ## Your grocery copilot, with you still in charge
 
 Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
-nemlig.com. It helps you find current products, collect them in an unsaved
-draft, and save or update shopping lists owned by Nemlig.
+nemlig.com. It helps you find current products and edit shopping lists owned by
+Nemlig, with changes saved automatically.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
@@ -44,15 +44,15 @@ with or endorsed by nemlig.com or OpenAI.
 Once connected, try prompts like:
 
 - “Find organic milk and show the current detailed results, compared by unit price.”
-- “Start a shopping-list draft with these products.”
+- “Create a shopping list with these products.”
 - “Show my Nemlig shopping lists.”
 - “Update my Family shopping list with these changes.”
 - “Show my Nemlig basket.”
 - “Which Nemlig Assistant version and codename are running?”
 
-Product search and Nemlig basket reads are read-only. Draft changes stay
-temporary until you explicitly save a shopping list. Saved-list edits stay
-staged until you explicitly update that list. Submit transfers one saved list,
+Product search and Nemlig basket reads are read-only. Choosing products for a
+shopping list creates it in Nemlig immediately; product edits save automatically.
+**Add to Nemlig basket** transfers the separately authorized list,
 verifies the additive basket readback, and removes the source if its final
 contents check still matches. An edit can race that last check; observed
 changes or uncertain cleanup keep the list and show a warning.
@@ -83,22 +83,16 @@ changes or uncertain cleanup keep the list and show a warning.
 - Inspect the current basket without changing it.
 - Discover native Nemlig shopping lists and reopen them in the shared product
   viewer.
-- Keep a new selection as an unsaved draft until you choose **Save shopping
-  list**. Saving writes the displayed products and quantities to Nemlig and
-  verifies the saved list.
-- If a save is partial, resume the remaining products or review only the
-  products confirmed in the saved list.
-- Stage changes to an existing list locally in the viewer. **Update shopping
-  list** writes those changes and checks the provider readback.
-- Failed draft edits or alternatives requests keep the current products and
-  quantities visible in a recoverable error dialog. Dismissing it does not
-  replay the action or restore an older host snapshot.
-- An explicitly refreshed draft that has expired shows an unavailable state,
-  rather than opening unrelated saved lists or reporting a generic edit failure.
-- Save/Update errors preserve the server's explanation in a recoverable dialog.
-  Confirmed no-write failures are distinguished from unconfirmed results;
-  returning to the draft or refreshing the exact list never replays the write.
-- Explicitly **Submit** a clean saved list to add it to the actual basket. The
+- Create a native shopping list from selected products and quantities. Add,
+  remove, replace, and change quantities directly, without separate Save/Update.
+- Reopen the exact list after a restart or card reload. The viewer reads its
+  current Nemlig contents before enabling edits.
+- Failed edits or alternatives requests keep visible products and quantities,
+  explain the error in a recoverable modal, and offer an exact-list refresh.
+  Dismissing an error does not replay a write or restore an older host snapshot.
+- Partial or uncertain operations distinguish confirmed provider contents from
+  unresolved changes. Missing lists never redirect to unrelated lists.
+- Choose **Add to Nemlig basket** for a confirmed list to add it to the actual basket. The
   app rechecks the exact list and basket baseline, transfers once, verifies
   additive basket readback, and keeps a durable no-replay fence. After the
   readback, the app checks the source again and deletes it only if its identity
@@ -142,25 +136,27 @@ or unavailable detail reads explicitly. Provider descriptions and declarations
 are converted from HTML to bounded plain text; scripts, styles, images, and link
 destinations are omitted.
 
-The shared product viewer supports unsaved drafts and selected native shopping
-lists. It reuses product details, alternatives, quantity, remove, and accessible
-touch and keyboard controls. New product choices stay in a process-local draft
-until explicit Save. Repeating a start for the same product-ID set reopens the
-current edited draft; a different set reports a conflict and preserves it.
-Saved-list changes stay staged until explicit Update. Without host conversation
-metadata, draft cards continue only through their principal-bound draft ID, and
-native-list actions use the explicit list ID. A show without a target does not
-guess a draft or list. Save and Update use a durable, owner-scoped journal so an
-interrupted provider write can be inspected without blindly replaying it.
-Recovery storage is bounded; if it fills, the action fails closed and existing
-recovery evidence is retained.
+The shared product viewer edits native shopping lists with product details,
+alternatives, quantities, removal, and accessible touch/keyboard controls.
+Choosing products creates one list; each edit persists to its exact native ID.
+Plain search and alternative browsing remain read-only. A card refresh reads
+current provider contents before enabling edits, so cached host output cannot
+restore old quantities or removed products.
 
-Retired Local Basket IDs and actions are rejected; they never open native-list
-discovery or target a saved list. Start a current draft or explicitly choose a
-native shopping list. This change does not delete the old storage namespace. A
-shopping-list transfer uses one native request, additive basket readback, a
-durable no-replay receipt, and a final source-list check before cleanup. The
-provider has no conditional delete, so an edit can race that check.
+Creation and edits use the existing owner-scoped operation journal to inspect
+interrupted writes without blindly replaying them. Creation IDs identify an
+intentional new list, not its product set; a deliberate later identical list
+gets a new ID. Recovery storage is bounded and preserves unresolved evidence.
+Local stdio without the hosted journal does not promise restart idempotence.
+Editing is serialized within a card's context; separate cards or direct Nemlig
+changes can still race provider operations.
+
+Retired draft/Local Basket IDs and manual Save/Update actions are rejected; they
+never select an unrelated list. Existing native lists remain available by exact
+ID. The old storage namespace is unchanged. Basket transfer retains one native
+request, additive readback, a durable no-replay receipt, and a final source-list
+check before cleanup. The provider has no conditional delete, so an edit can
+race that check.
 
 Run `pnpm nemlig:smoke:review-ui` and `pnpm nemlig:build:storybook` from the
 repository root for synthetic viewer coverage. These checks use fixtures and do
@@ -170,24 +166,21 @@ production acceptance.
 ## 🛡️ How basket changes work
 
 ```text
-Search and review → explicitly Save or Update a Nemlig shopping list → verify its readback
+Search → choose products → automatically saved Nemlig shopping list → explicit basket addition
 ```
 
 - Product search and actual Nemlig basket inspection are read-only.
-- Saving a draft creates a native Nemlig shopping list. Updating a saved list
-  writes only the staged changes to that selected list.
-- Draft saving waits for list creation, writes one product at a time to avoid
-  overlapping list updates, and checks the complete Nemlig list afterward. If
-  some products are missing, the draft can resume on the same list, or you can
-  review and submit only the products Nemlig actually saved.
-- Save and Update do not authorize or perform a basket addition. Submit uses
-  the selected saved list only after review and explicit basket authorization,
-  then verifies the resulting Nemlig basket. It compares the reviewed list name
-  and product quantities with a fresh Nemlig readback, so submission does not
-  depend on the same card or server-side review remaining active.
-- An interrupted or uncertain Save or Update is inspected through its durable
-  recovery record. The assistant does not blindly replay it. If recovery storage
-  is full, it fails closed and keeps existing records.
+- Selected products create a native list; subsequent edits persist to that list.
+  Initial population writes one product at a time and verifies complete list
+  readback. An incomplete result reports what was confirmed, not success for
+  the entire selection.
+- Creating/editing a list does not authorize a basket addition. Submission uses
+  the reviewed list only after explicit authorization, then verifies the actual
+  basket. It compares the reviewed name and quantities with fresh provider
+  contents; submission does not require the original card/context to survive.
+- Interrupted or uncertain writes are inspected through their recovery records.
+  Refresh does not repeat them. If recovery storage is full, operations fail
+  closed and retain existing evidence.
 - Old Local Basket identifiers do not identify native lists. Historical cards
   using retired fields or actions are rejected; they do not open discovery or
   target a saved list. The legacy Local Basket data and namespace have not been
@@ -245,27 +238,19 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Show or build an unsaved draft: `start_product_review`; edit, add, remove, or
-  find alternatives with `update_product_review_conversation`. Repeating a start
-  with the same product IDs preserves current quantities and edits; a different
-  product set returns a conflict without replacing the draft. Use the explicit
-  add action or end the draft before starting a replacement. Omit `items` only
-  when intentionally opening the native shopping-list picker.
-- For a visual product request, search exact products and start the draft with
-  those exact returned IDs and quantities. Without host conversation metadata,
-  continue a draft using its exact `draft_id`; saved-list cards carry the
-  transient `review_context_id` with `shopping_list_id` to keep staged edits
-  isolated between chats. Exact reviewed-list submission remains available
-  after that transient context expires. Each principal-scoped service holds at
-  most eight transient reviews; the hosted cache keeps up to sixteen principal
-  contexts. Inactive drafts and clean saved-list editor state can expire after
-  two hours; clean saved-list views can be reclaimed earlier under capacity
-  pressure. Unexpired drafts and dirty or unresolved work are protected from
-  eviction. The provider list and durable operation receipts remain; reopen the
-  exact list to rebuild its view. A show without a target does not choose
-  another draft or enumerate saved lists. Use action `list` to open the picker. Use
-  `show_my_basket` when the user means products already in Nemlig. Tool success
-  alone does not prove that a client rendered the product viewer.
+- Create or open a shopping list: `start_product_review`. Exact `items` plus a
+  caller-generated `creation_id` UUID create one native list; use a user-supplied
+  `shopping_list_name` when available. Repeat that creation ID only to inspect
+  its outcome, never automatically generate another after an uncertain result.
+  Omit items to discover lists, or pass `shopping_list_id` to open that exact list.
+- Edit, add, remove, or find alternatives with
+  `update_product_review_conversation`. Mutating actions save immediately;
+  alternatives search stays read-only. Carry `shopping_list_id` and the returned
+  `review_context_id`. Use `show`/`select` with the exact native ID to rebuild an
+  expired context. An untargeted show never guesses another conversation's list;
+  use `list` for discovery. Native lists survive editor expiry; hosted operation
+  records preserve unresolved writes. Tool success alone does not prove the
+  client rendered the viewer.
 - Submit the exact saved native shopping list only after the user's explicit
   Submit action: `submit_product_review_conversation`. The tool re-reads and
   compares the reviewed list before one additive transfer, verifies basket
@@ -282,19 +267,14 @@ The MCP surface is organized around household actions:
   mounting a widget for every tool call. `start_product_review` is the explicit
   render action: it opens the current products immediately. Use it once while a
   current card is usable; repeat it to reopen the current list when asked.
-  Draft cards continue through their exact process-local draft ID. Saved-list
-  cards carry the exact shopping_list_id and a transient review_context_id for
-  isolated staged edits. Retired Local Basket IDs and actions fail validation;
-  old cards must be replaced with a current draft or native-list selection.
+  Cards carry the exact shopping_list_id and a transient review_context_id.
+  Retired draft fields/actions fail validation; select a native list instead.
   Model-side text actions use the `_conversation` tool names. The MCP server
-  serves one stable viewer URI; retired resource addresses are inert and cannot
-  change shopping state.
-  The viewer initializes the MCP Apps bridge and reports connection failures.
-  It stages draft and native-list edits and calls the protected Submit action
-  only for the exact reviewed native list; it never calls Nemlig directly.
-  Use `update_product_review_conversation` with action `show` and the exact
-  `draft_id` or `shopping_list_id` to recover that selection headlessly; include
-  the saved-list card’s `review_context_id` when available.
+  serves one stable viewer URI; retired resources remain inert.
+  The viewer uses the MCP Apps bridge, saves intentional edits through the
+  server, and refreshes native contents on remount. It never calls Nemlig
+  directly. Use `update_product_review_conversation` action `show` with the exact
+  `shopping_list_id` for headless recovery.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -366,15 +346,15 @@ of the repository.
 
 1. Search for a product phrase that needs Danish normalization and inspect the
    returned detailed results.
-2. Start an unsaved draft, change quantities, and verify that drafting does not
-   create or edit a Nemlig shopping list.
-3. Save the draft explicitly, inspect the native list readback, reopen that list,
-   stage a change, and choose Update shopping list.
-4. Inspect the actual Nemlig basket and confirm that list saving and updating did
-   not change it. Submit only with explicit authorization; verify the basket
-   readback and source-list cleanup outcome.
-5. Use fixtures for interrupted and uncertain write scenarios. Live transfer
-   testing requires separate authorization for the exact basket addition.
+2. With approval for a bounded native-list test, create a list from selected
+   products. Verify its provider contents and change quantities/replacements.
+3. Reopen the exact list after reloading the card; confirm persisted edits and
+   that no separate Save/Update is required.
+4. Confirm these edits did not change the actual basket. Add to the basket only
+   with exact authorization; verify readback and source cleanup separately.
+5. Use fixtures for interrupted/uncertain writes. Follow the
+   [native ChatGPT smoke runbook](../../docs/nemlig-chatgpt-smoke-test.md) for live
+   acceptance; repository checks do not authorize provider changes.
 
 <a id="development"></a>
 
@@ -499,9 +479,10 @@ This README is the user-facing inventory of shipped feature sets:
 - account access
 - product and department discovery
 - native Nemlig shopping-list discovery
-- temporary unsaved drafts with explicit Save
-- staged native-list edits with explicit Update and verified readback
-- owner-scoped durable recovery journal for interrupted Save and Update actions
+- native shopping-list creation from selected products
+- automatic persistence of list edits with verified readback
+- exact-list refresh on card remount and recoverable error modals
+- owner-scoped durable recovery journal for interrupted list operations
 - shared product presentation with tap-to-open details, press-and-hold actions, and alternatives
 - read-only actual Nemlig basket inspection
 - explicit saved-list-to-basket Submit with additive readback and durable no-replay
@@ -529,7 +510,7 @@ src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
 src/product-discovery.ts      Request-scoped detailed product hydration
 src/product-presentation.ts  Shared factual product projection
-src/product-review.ts        Private temporary voice/touch review drafts
+src/product-review.ts        Native list editing, recovery, and basket review
 src/product-viewer.ts         Packaged product viewer and headless fallback
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy

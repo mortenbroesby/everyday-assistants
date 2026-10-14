@@ -24,9 +24,10 @@ app, also apply this file. Then select the matching app-local skill:
   set a strictly greater positive resulting quantity; fail closed on incomplete
   or stale state. Never send zero or any quantity at/below the observed value.
   This rule applies to MCP, CLI, provider clients, proposal services, tests, and
-  production acceptance. Local selection removal/clear is separate and remains
-  allowed. Actual additions must follow the exact prepare/review/authorization/
-  apply/readback contract in `nemlig-basket`; checkout, payment, ordering, and
+  production acceptance. Product removal from the selected shopping list is
+  separate and remains allowed. Actual basket additions must follow the exact
+  prepare/review/authorization/apply/readback contract in `nemlig-basket`;
+  checkout, payment, ordering, and
   delivery-slot actions are never allowed.
 - Production/provider work must follow `nemlig-production` and
   `docs/cloudflare-operations.md`. Preserve authentication-before-wake,

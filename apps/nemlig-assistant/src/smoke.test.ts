@@ -4,13 +4,14 @@ import {
 } from "@modelcontextprotocol/client";
 import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
-import { createServer } from "node:http";
-import type { AddressInfo } from "node:net";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { promisify } from "node:util";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import test from "node:test";
+import { promisify } from "node:util";
 import {
   NemligError,
   type Basket,
@@ -170,7 +171,7 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   }
 });
 
-test("discovery saves the exact list and requires explicit basket submission", async () => {
+test("discovery persists a native list without reading or writing the basket", async () => {
   const product = (
     id: number,
     name: string,
@@ -208,6 +209,7 @@ test("discovery saves the exact list and requires explicit basket submission", a
   ]);
   let reads = 0;
   let writes = 0;
+  let shoppingListName = "";
   const shoppingLists = new Map<number, Map<number, number>>();
   let basket: Basket = {
     items: [],
@@ -244,7 +246,8 @@ test("discovery saves the exact list and requires explicit basket submission", a
       throw new Error("Direct basket writes must not be used.");
     },
     listShoppingLists: async () => [],
-    createShoppingList: async () => {
+    createShoppingList: async (name) => {
+      shoppingListName = name;
       shoppingLists.set(1, new Map());
       return 1;
     },
@@ -253,7 +256,7 @@ test("discovery saves the exact list and requires explicit basket submission", a
     },
     getShoppingList: async (listId) => ({
       id: listId,
-      name: "Nemlig Assistant Local basket",
+      name: shoppingListName,
       items: [...(shoppingLists.get(listId) ?? [])].map(
         ([productId, quantity]) => ({ productId, quantity }),
       ),
@@ -318,32 +321,17 @@ test("discovery saves the exact list and requires explicit basket submission", a
           { product_id: 201, quantity: 1 },
           { product_id: 301, quantity: 2 },
         ],
+        creation_id: randomUUID(),
       },
     });
     assert.notEqual(started.isError, true);
-    await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "accept", product_ids: [101, 201, 301] },
-      },
-    });
-    const saved = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "save", name: "Nemlig Assistant Local basket" },
-      },
-    });
-    assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
-    const prepared = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "prepare_submission" },
-      },
-    });
-    assert.equal(prepared.isError, true);
-    assert.match(
-      JSON.stringify(prepared.content),
-      /Submit the confirmed saved shopping list directly/u,
+    assert.deepEqual(
+      [...shoppingLists.get(1)!],
+      [
+        [101, 3],
+        [201, 1],
+        [301, 2],
+      ],
     );
     assert.equal(reads, 0);
     assert.equal(writes, 0);
@@ -352,7 +340,7 @@ test("discovery saves the exact list and requires explicit basket submission", a
   }
 });
 
-test("a saved list with unsupported transfer is blocked before any basket write", async () => {
+test("a native list with unsupported transfer is blocked before any basket write", async () => {
   const item: Product = {
     id: 401,
     name: "Tomatketchup",
@@ -383,6 +371,7 @@ test("a saved list with unsupported transfer is blocked before any basket write"
     deliveryTime: undefined,
   };
   let writes = 0;
+  let shoppingListName = "";
   const shoppingLists = new Map<number, Map<number, number>>();
   const unavailable = async (): Promise<never> => {
     throw new Error("unexpected provider operation");
@@ -400,7 +389,8 @@ test("a saved list with unsupported transfer is blocked before any basket write"
     getCart: async () => empty,
     addToCart: unavailable,
     listShoppingLists: async () => [],
-    createShoppingList: async () => {
+    createShoppingList: async (name) => {
+      shoppingListName = name;
       shoppingLists.set(1, new Map());
       return 1;
     },
@@ -409,7 +399,7 @@ test("a saved list with unsupported transfer is blocked before any basket write"
     },
     getShoppingList: async (listId) => ({
       id: listId,
-      name: "Nemlig Assistant Local basket",
+      name: shoppingListName,
       items: [...(shoppingLists.get(listId) ?? [])].map(
         ([productId, quantity]) => ({ productId, quantity }),
       ),
@@ -429,33 +419,13 @@ test("a saved list with unsupported transfer is blocked before any basket write"
   try {
     const started = await mcp.callTool({
       name: "start_product_review",
-      arguments: { items: [{ product_id: 401, quantity: 1 }] },
+      arguments: {
+        items: [{ product_id: 401, quantity: 1 }],
+        creation_id: randomUUID(),
+      },
     });
     assert.notEqual(started.isError, true);
-    await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "accept", product_ids: [401] },
-      },
-    });
-    const saved = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "save", name: "Nemlig Assistant Local basket" },
-      },
-    });
-    assert.equal(saved.isError, undefined, JSON.stringify(saved.content));
-    const prepared = await mcp.callTool({
-      name: "update_product_review_conversation",
-      arguments: {
-        action: { kind: "prepare_submission" },
-      },
-    });
-    assert.equal(prepared.isError, true);
-    assert.match(
-      JSON.stringify(prepared.content),
-      /Submit the confirmed saved shopping list directly/u,
-    );
+    assert.deepEqual([...shoppingLists.get(1)!], [[401, 1]]);
     assert.equal(writes, 0);
   } finally {
     await close();

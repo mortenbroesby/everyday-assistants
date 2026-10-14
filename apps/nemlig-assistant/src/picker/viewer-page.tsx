@@ -8,17 +8,11 @@ import {
 import * as Dialog from "@radix-ui/react-dialog";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useDrag } from "@use-gesture/react";
-import {
-  ArrowLeft,
-  ChevronRight,
-  Layers3,
-  ShoppingBasket,
-  Trash2,
-} from "lucide-react";
+import { ArrowLeft, ChevronRight, Layers3, ShoppingBasket } from "lucide-react";
 import type { ProductView } from "../product-presentation.js";
 import {
   ActionFooter,
-  DraftListStarters,
+  ShoppingListStarters,
   isUsable,
   money,
   OutcomeSurface,
@@ -41,8 +35,6 @@ export type Review = {
   shoppingListId?: number;
   reviewContextId?: string;
   shoppingListName?: string;
-  draftId?: string;
-  draftExpiresAt?: number;
   saveStatus?: "saving" | "saved" | "partial" | "uncertain";
   shoppingListDirty?: boolean;
   updateStatus?: "saving" | "partial" | "uncertain";
@@ -120,13 +112,11 @@ export type ViewerPageModel = {
   message: string;
   connectionMessage?: string;
   busy: boolean;
-  confirmEnd: boolean;
   continueSubmitted: boolean;
   submitBlocked: boolean;
   knownNoWrite: boolean;
-  recoveryKnownNoWrite: boolean;
   submitErrorOpen: boolean;
-  recoveryOperation?: "submit" | "save" | "update" | "draft";
+  recoveryOperation?: "submit" | "update" | "list";
   baskets: BasketSummary[];
   selectedBasketId?: string;
 };
@@ -140,7 +130,7 @@ export type ViewerPageActions = {
   ) => void;
   onRefresh: () => void;
   onOpenPicker: () => void;
-  onSelectBasket: (basketId: string, acceptSavedSubsetDraftId?: string) => void;
+  onSelectBasket: (basketId: string) => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
   onOpenAlternatives: (item: ReviewItem, query: string) => void;
@@ -149,18 +139,14 @@ export type ViewerPageActions = {
     productId: number,
     replacementId: number,
   ) => void | Promise<boolean | void>;
-  onSaveDraft: (name: string) => void;
-  onUpdateShoppingList: () => void;
   onDiscardPendingUpdate: () => void;
+  onUseConfirmedProducts: () => void;
   onSubmit: () => void;
   onConfirmSubmit: () => void;
   onContinueSubmitted: () => void;
   onInspectBasket: () => void;
   onDismissSubmitError: () => void;
   onSendFollowUp: (text: string) => void;
-  onRequestEnd: () => void;
-  onCancelEnd: () => void;
-  onConfirmEnd: () => void;
 };
 
 export type ViewerPageProps = {
@@ -625,11 +611,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     message,
     connectionMessage,
     busy,
-    confirmEnd,
     continueSubmitted,
     submitBlocked,
     knownNoWrite,
-    recoveryKnownNoWrite,
     submitErrorOpen,
     recoveryOperation,
     baskets,
@@ -666,8 +650,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const safeTitle =
     destination === "alternatives"
       ? "Find an alternative"
-      : (review?.shoppingListName ??
-        (review?.draftId ? "Draft products" : "Shopping list"));
+      : (review?.shoppingListName ?? "Shopping list");
   const visibleProductCount = review?.items.length ?? 0;
   const preparedProductCount =
     review?.submission?.review.lines?.reduce(
@@ -684,7 +667,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       ? view.missing === true
       : view.product.available === false,
   );
-  const canSubmitSavedList = Boolean(
+  const canSubmitList = Boolean(
     review?.shoppingListId !== undefined &&
     review.saveStatus === "saved" &&
     !review.shoppingListDirty &&
@@ -736,6 +719,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     (submitBlocked && !busy && !partialSubmission && !confirmedSubmission);
   const editsBlocked =
     busy ||
+    !active ||
+    review?.shoppingListId === undefined ||
+    review?.saveStatus === "partial" ||
+    review?.saveStatus === "uncertain" ||
     review?.updateStatus === "partial" ||
     review?.updateStatus === "uncertain" ||
     submitBlocked ||
@@ -746,9 +733,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     uncertainSubmission ||
     partialSubmission ||
     (confirmedSubmission && !continueSubmitted);
-  const resumableNativeUpdate =
-    review?.updateStatus === "partial" &&
-    (review.conflictItems !== undefined || review.actionNotice === undefined);
   const basketMenu = review && (
     <div className="basket-menu">
       <button
@@ -782,9 +766,6 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       )}
     </div>
   );
-  const hasActiveProducts = Boolean(
-    review && active && review.items.length > 0,
-  );
   const pickerIsEmpty = screen.kind === "picker" && baskets.length === 0;
   const title =
     review && active && terminalSubmission
@@ -808,7 +789,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               : screen.kind === "review"
                 ? review?.shoppingListId !== undefined
                   ? "Your shopping list"
-                  : "Your shopping list draft"
+                  : "Shopping list unavailable"
                 : "Products";
   const intro = !terminalSubmission
     ? review && active
@@ -816,9 +797,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a shopping list in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : review.draftId
-            ? "This draft is not saved to Nemlig yet. Save it before reviewing basket additions."
-            : "Tap a product for details, or press and hold for actions."
+          : "Changes save to this Nemlig shopping list automatically. Tap a product for details, or press and hold for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : screen.kind === "picker"
@@ -867,10 +846,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     >
       {screen.kind === "picker" &&
         (pickerIsEmpty ? (
-          <DraftListStarters
+          <ShoppingListStarters
             message={
               screen.selectedBasketId
-                ? "That saved list is unavailable. Choose another shopping list or start a new draft in conversation."
+                ? "That Nemlig shopping list is unavailable. Choose another list or create a new list in conversation."
                 : undefined
             }
             onChoose={actions.onSendFollowUp}
@@ -943,10 +922,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "review" && review && !active && !terminalSubmission && (
         <section className="status">
           <p>
-            This old list card is inactive.{" "}
-            {review.items.length
-              ? "The current shopping list is shown read-only."
-              : "No current shopping list is available."}
+            This shopping list is read only until Nemlig confirms its current
+            contents.
           </p>
           {review.items.length > 0 && (
             <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
@@ -974,17 +951,24 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "unavailable" && (
         <section className="status">
           <p>
-            This unsaved shopping-list draft is no longer available. Ask in chat
-            before starting a new draft. Previous choices or submission approval
-            are not restored.
+            Nemlig could not find this exact shopping list. Choose another list
+            or create a new list in conversation. Previous choices and basket
+            approval are not restored.
           </p>
           <Button color="secondary" disabled={busy} onClick={actions.onRefresh}>
             Refresh shopping list
           </Button>
+          <Button
+            color="secondary"
+            disabled={busy}
+            onClick={actions.onOpenPicker}
+          >
+            Choose another shopping list
+          </Button>
         </section>
       )}
       {review &&
-        active &&
+        (active || (submitErrorOpen && recoveryOperation === "update")) &&
         !terminalSubmission &&
         visibleProductCount === 0 &&
         review.actionNotice && (
@@ -1261,6 +1245,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         visibleProductCount > 0 &&
         destination !== "alternatives" && (
           <>
+            {pendingQuantities.size > 0 && (
+              <p className="status" role="status" aria-live="polite">
+                Quantity change pending; waiting for Nemlig to confirm it.
+              </p>
+            )}
             {review.actionNotice && (
               <p className="status" role="status">
                 {review.actionNotice}
@@ -1287,9 +1276,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 )}
               </OutcomeSurface>
             )}
-            {review.saveProgress && (
+            {review.saveProgress && review.saveStatus === "saving" && (
               <p className="status" role="status">
-                Save progress: {review.saveProgress.completed} of{" "}
+                Creating list: {review.saveProgress.completed} of{" "}
                 {review.saveProgress.total} products.
               </p>
             )}
@@ -1299,78 +1288,20 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               review.saveProgress.completed > 0 && (
                 <>
                   <p className="status">
-                    You can review the products currently in Nemlig and submit
-                    only those. Products that did not save will be left out.
+                    Nemlig confirmed only the products shown below. Other
+                    selected products are not in this list.
                   </p>
                   <Button
                     color="secondary"
                     block
                     disabled={busy}
                     onClick={() =>
-                      actions.onSelectBasket(
-                        String(review.shoppingListId),
-                        review.draftId,
-                      )
+                      actions.onSelectBasket(String(review.shoppingListId))
                     }
                   >
-                    Review saved products only
+                    Review products currently in the list
                   </Button>
                 </>
-              )}
-            {review.draftId && (
-              <form
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  const name = String(
-                    new FormData(event.currentTarget).get("name") ?? "",
-                  ).trim();
-                  if (name) {
-                    actions.onSaveDraft(name.slice(0, 30));
-                  }
-                }}
-              >
-                <label htmlFor="shopping-list-name">
-                  Nemlig shopping list name
-                </label>
-                <input
-                  id="shopping-list-name"
-                  name="name"
-                  type="text"
-                  maxLength={30}
-                  required
-                  defaultValue={review.shoppingListName ?? ""}
-                  disabled={editsBlocked}
-                />
-                <Button
-                  color="secondary"
-                  block
-                  type="submit"
-                  disabled={editsBlocked}
-                >
-                  {review.saveStatus === "partial"
-                    ? "Resume saving"
-                    : "Save shopping list"}
-                </Button>
-              </form>
-            )}
-            {review.shoppingListId !== undefined &&
-              review.shoppingListDirty && (
-                <Button
-                  color="secondary"
-                  block
-                  disabled={
-                    busy ||
-                    (review.updateStatus !== undefined &&
-                      !resumableNativeUpdate)
-                  }
-                  onClick={actions.onUpdateShoppingList}
-                >
-                  {review.updateStatus === "saving"
-                    ? "Updating shopping list…"
-                    : resumableNativeUpdate
-                      ? "Resume update"
-                      : "Update shopping list"}
-                </Button>
               )}
             <ActionFooter>
               {review.submission?.status !== "prepared" && (
@@ -1378,8 +1309,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   color="primary"
                   block
                   disabled={
-                    Boolean(review.draftId) ||
-                    !canSubmitSavedList ||
+                    !canSubmitList ||
                     review.shoppingListDirty === true ||
                     review.updateStatus !== undefined ||
                     editsBlocked ||
@@ -1388,19 +1318,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   onClick={actions.onSubmit}
                 >
                   <ShoppingBasket aria-hidden="true" size={18} />
-                  {review.draftId
-                    ? "Save list before review"
-                    : "Submit to Nemlig basket"}
+                  Add to Nemlig basket
                 </Button>
               )}
-              {review.shoppingListDirty && (
+              {review.shoppingListId === undefined && (
                 <p className="status" role="status">
-                  Update the saved shopping list before submitting it.
-                </p>
-              )}
-              {review.shoppingListId === undefined && !review.draftId && (
-                <p className="status" role="status">
-                  Open or save a Nemlig shopping list before submitting it.
+                  Choose products in conversation to create a Nemlig shopping
+                  list.
                 </p>
               )}
               {hasUnreadyItem && review.submission?.status !== "prepared" && (
@@ -1470,49 +1394,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           </>
         )}
       {review && active && !terminalSubmission && review.items.length === 0 && (
-        <DraftListStarters onChoose={actions.onSendFollowUp} />
+        <ShoppingListStarters onChoose={actions.onSendFollowUp} />
       )}
-      {review &&
-        active &&
-        !terminalSubmission &&
-        hasActiveProducts &&
-        destination !== "alternatives" && (
-          <>
-            <Button
-              color="secondary"
-              block
-              className="clear-local-basket"
-              disabled={editsBlocked || busy}
-              onClick={actions.onRequestEnd}
-            >
-              <Trash2 aria-hidden="true" size={18} />
-              Clear
-            </Button>
-            {confirmEnd && (
-              <section className="submission">
-                <p>
-                  Discard this unsaved draft? The Nemlig basket will not change.
-                </p>
-                <Button
-                  color="secondary"
-                  disabled={busy}
-                  onClick={actions.onCancelEnd}
-                >
-                  Keep draft
-                </Button>
-                <Button
-                  color="secondary"
-                  disabled={busy}
-                  onClick={actions.onConfirmEnd}
-                >
-                  Confirm discard draft
-                </Button>
-              </section>
-            )}
-          </>
-        )}
       {screen.kind === "empty" && (
-        <DraftListStarters
+        <ShoppingListStarters
           message={screen.message}
           onChoose={actions.onSendFollowUp}
         />
@@ -1558,48 +1443,72 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             }}
           >
             <Dialog.Title>
-              {recoveryOperation === "draft"
-                ? "Draft action needs review"
-                : recoveryOperation === "save"
-                  ? recoveryKnownNoWrite
-                    ? "Save was not sent to Nemlig"
-                    : "Save was not confirmed"
-                  : recoveryOperation === "update"
-                    ? recoveryKnownNoWrite
-                      ? "Update was not sent to Nemlig"
-                      : "Update was not confirmed"
-                    : knownNoWrite
-                      ? "Submission was not sent"
-                      : "Check your Nemlig basket"}
+              {recoveryOperation === "update" || recoveryOperation === "list"
+                ? "Shopping list change needs review"
+                : knownNoWrite
+                  ? "Submission was not sent"
+                  : "Check your Nemlig basket"}
             </Dialog.Title>
             <Dialog.Description id="submission-recovery-description">
               {message ||
-                (recoveryOperation === "draft"
-                  ? "The action could not be confirmed. Your draft remains open; review its current products and quantities before continuing."
-                  : recoveryOperation === "save"
-                    ? "The draft is still shown. Keep its products and quantities, then refresh it before trying again."
-                    : recoveryOperation === "update"
-                      ? "Refresh this exact list before continuing. Do not replay an update whose result is uncertain."
-                      : knownNoWrite
-                        ? "No basket write was sent. Review the current list before submitting again."
-                        : "Nemlig did not confirm the basket addition. Do not submit this list again until you inspect the actual basket.")}
+                (recoveryOperation === "update"
+                  ? "Refresh this exact list before continuing. Do not replay an update whose result is uncertain."
+                  : recoveryOperation === "list"
+                    ? "Nemlig did not confirm which selected products were saved. Keep this selection for review; refresh or choose a list explicitly before continuing."
+                    : knownNoWrite
+                      ? "No basket write was sent. Review the current list before submitting again."
+                      : "Nemlig did not confirm the basket addition. Do not submit this list again until you inspect the actual basket.")}
             </Dialog.Description>
             <div className="submission-recovery-actions">
-              {recoveryOperation === "draft" || recoveryOperation === "save" ? (
-                <Dialog.Close asChild>
-                  <Button color="primary">Return to draft</Button>
-                </Dialog.Close>
-              ) : recoveryOperation === "update" ? (
-                <Button
-                  color="primary"
-                  disabled={busy}
-                  onClick={() => {
-                    actions.onDismissSubmitError();
-                    actions.onRefresh();
-                  }}
-                >
-                  Refresh shopping list
-                </Button>
+              {recoveryOperation === "update" ||
+              recoveryOperation === "list" ? (
+                <>
+                  <Button
+                    color="primary"
+                    disabled={busy}
+                    onClick={() => {
+                      actions.onDismissSubmitError();
+                      actions.onRefresh();
+                    }}
+                  >
+                    Refresh shopping list
+                  </Button>
+                  <Button
+                    color="secondary"
+                    disabled={busy}
+                    onClick={() => {
+                      actions.onDismissSubmitError();
+                      actions.onOpenPicker();
+                    }}
+                  >
+                    Choose another shopping list
+                  </Button>
+                  {recoveryOperation === "update" &&
+                    (review?.updateStatus === "partial" ||
+                      review?.updateStatus === "uncertain") && (
+                      <Button
+                        color="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          actions.onDismissSubmitError();
+                          actions.onDiscardPendingUpdate();
+                        }}
+                      >
+                        Discard pending changes and use current list
+                      </Button>
+                    )}
+                  {recoveryOperation === "update" &&
+                    review?.saveStatus === "partial" &&
+                    review.updateStatus === undefined && (
+                      <Button
+                        color="secondary"
+                        disabled={busy}
+                        onClick={actions.onUseConfirmedProducts}
+                      >
+                        Use confirmed products
+                      </Button>
+                    )}
+                </>
               ) : knownNoWrite ? (
                 <Button
                   color="primary"

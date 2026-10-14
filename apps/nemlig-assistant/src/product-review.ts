@@ -60,6 +60,10 @@ const sameShoppingListItems = (
       (item) => item.quantity,
     ),
   );
+const isUuid = (value: string): boolean =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(
+    value,
+  );
 const isSavedSubsetOfOperation = (
   list: ShoppingList,
   operation: ReviewOperation,
@@ -172,9 +176,21 @@ interface StoredReview {
   createAttempted?: boolean;
   operationGeneration?: string;
   completedDraftId?: string;
+  completedListId?: number;
+  creationIntent?: ShoppingListCreationIntent;
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
 }
+type ShoppingListCreationIntent = {
+  id: string;
+  accountIdentity: string;
+  name: string;
+  items: Array<{ productId: number; quantity: number }>;
+};
+type ShoppingListCreationIntentPayload = Pick<
+  ShoppingListCreationIntent,
+  "accountIdentity" | "name" | "items"
+>;
 type ReviewProposals = Pick<
   BasketProposalService,
   "prepareAdditions" | "apply"
@@ -501,19 +517,6 @@ export class ProductReviewService {
     return structuredClone(stored.snapshot);
   }
 
-  ownerForDraft(ownerPrefix: string, draftId: string): string | undefined {
-    for (const [owner, stored] of this.drafts) {
-      if (
-        owner.startsWith(ownerPrefix) &&
-        (stored.snapshot.draftId === draftId ||
-          stored.completedDraftId === draftId)
-      ) {
-        return owner;
-      }
-    }
-    return undefined;
-  }
-
   reviewContextOwner(reviewContextId: string):
     | {
         owner: string;
@@ -569,9 +572,13 @@ export class ProductReviewService {
     }
     let active = this.drafts.get(owner);
     if (active) {
+      if (active.busy) {
+        throw new NemligError(
+          "A shopping-list operation is in progress. Refresh it after the current request finishes.",
+        );
+      }
       if (
         active.snapshot.draftId &&
-        !active.busy &&
         !this.isProtected(active) &&
         this.now() - (active.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
       ) {
@@ -590,16 +597,11 @@ export class ProductReviewService {
             activeIds.some((id, index) => id !== requestedIds[index])
           ) {
             throw new NemligError(
-              "An unsaved draft is already open. Add products or edit it, or explicitly end it before starting a different product set.",
+              "A shopping-list creation is already in progress for this selection. Resolve it before starting another list.",
             );
           }
           this.touch(owner, active);
           return structuredClone(active.snapshot);
-        }
-        if (active.busy) {
-          throw new NemligError(
-            "The saved shopping list is being updated. Refresh it before starting a draft.",
-          );
         }
         if (
           active.snapshot.shoppingListDirty ||
@@ -644,6 +646,243 @@ export class ProductReviewService {
     } finally {
       this.startingOwners.delete(owner);
     }
+  }
+
+  // Account, busy, and replay checks surround asynchronous reads. Keep that order
+  // visible so a stale intent cannot replace an in-flight native-list operation.
+  // fallow-ignore-next-line complexity
+  async startShoppingList(
+    owner: string,
+    items: Array<{ product_id: number; quantity: number }>,
+    creationId: string,
+    requestedName?: string,
+    signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
+  ): Promise<ProductReviewSnapshot> {
+    if (!isUuid(creationId)) {
+      throw new NemligError("A valid shopping-list creation ID is required.");
+    }
+    if (
+      !this.client.providerIdentity ||
+      !this.client.createShoppingList ||
+      this.startingOwners.has(owner)
+    ) {
+      throw new NemligError(
+        "Native shopping-list creation is unavailable or already in progress.",
+      );
+    }
+    const accountIdentity = this.client.providerIdentity();
+    const requestedItems = items.map(({ product_id, quantity }) => ({
+      productId: product_id,
+      quantity,
+    }));
+    const matchesCreationIntent = (
+      intent: ShoppingListCreationIntentPayload | undefined,
+    ) =>
+      intent !== undefined &&
+      intent.accountIdentity === accountIdentity &&
+      sameShoppingListItems(intent.items, requestedItems) &&
+      (requestedName === undefined || requestedName.trim() === intent.name);
+    const active = this.drafts.get(owner);
+    if (
+      active?.completedDraftId === creationId &&
+      active.snapshot.saveStatus === "saved" &&
+      active.completedListId !== undefined &&
+      active.creationIntent?.id === creationId &&
+      matchesCreationIntent(active.creationIntent)
+    ) {
+      return this.openShoppingList(
+        owner,
+        active.completedListId,
+        signal,
+        journal,
+      );
+    }
+    if (active?.busy) {
+      throw new NemligError(
+        "A shopping-list operation is in progress. Refresh it after the current request finishes.",
+      );
+    }
+    const existingOperation = await journal?.read(creationId);
+    const latestActive = this.drafts.get(owner);
+    if (this.startingOwners.has(owner) || latestActive?.busy) {
+      throw new NemligError(
+        "A shopping-list operation is in progress. Refresh it after the current request finishes.",
+      );
+    }
+    if (
+      existingOperation &&
+      (existingOperation.kind !== "save" ||
+        !matchesCreationIntent(existingOperation))
+    ) {
+      throw new NemligError(
+        "A different shopping-list creation is unresolved for this selection. Refresh your shopping lists and explicitly select the exact list before continuing.",
+      );
+    }
+    if (latestActive?.completedDraftId === creationId) {
+      throw new NemligError(
+        "This creation ID already belongs to a different account or selection.",
+      );
+    }
+    if (existingOperation && existingOperation.listId === undefined) {
+      if (existingOperation.createAttempted) {
+        throw new NemligError(
+          "Shopping-list creation is uncertain. Refresh the list inventory and explicitly select the exact list if it exists; this operation will not create another list.",
+        );
+      }
+      if (existingOperation.completedUntil !== undefined) {
+        throw new NemligError(
+          "The completed shopping-list creation has no recorded list ID. Refresh the list inventory and explicitly select the exact list before continuing.",
+        );
+      }
+    }
+    if (existingOperation && existingOperation.completedUntil === undefined) {
+      if (existingOperation.listId !== undefined) {
+        const current = await this.openShoppingList(
+          owner,
+          existingOperation.listId,
+          signal,
+          journal,
+        );
+        const stored = this.get(owner);
+        const intendedItems = await this.readItems(items, signal);
+        const intent: ShoppingListCreationIntent = {
+          id: creationId,
+          accountIdentity,
+          name: existingOperation.name,
+          items: requestedItems,
+        };
+        const recovered = this.partialCreationReview(
+          current,
+          intent,
+          intendedItems,
+        );
+        stored.snapshot = recovered;
+        stored.creationIntent = intent;
+        this.touch(owner, stored);
+        return structuredClone(recovered);
+      }
+    }
+    if (
+      existingOperation?.completedUntil !== undefined &&
+      existingOperation.listId !== undefined
+    ) {
+      return this.openShoppingList(
+        owner,
+        existingOperation.listId,
+        signal,
+        journal,
+      );
+    }
+    if (latestActive?.creationIntent?.id === creationId) {
+      const intent = latestActive.creationIntent;
+      if (!matchesCreationIntent(intent)) {
+        throw new NemligError(
+          "This creation ID already belongs to a different account, selection, or shopping-list name.",
+        );
+      }
+      if (
+        latestActive.snapshot.saveStatus === "partial" ||
+        latestActive.snapshot.saveStatus === "uncertain"
+      ) {
+        const listId = latestActive.snapshot.shoppingListId;
+        if (listId === undefined) {
+          throw new NemligError(
+            "Shopping-list creation is uncertain. Refresh the list inventory and explicitly select the exact list if it exists; this operation will not create another list.",
+          );
+        }
+        const current = await this.openShoppingList(
+          owner,
+          listId,
+          signal,
+          journal,
+        );
+        const stored = this.get(owner);
+        const intended = latestActive.snapshot.items;
+        const recovered = this.partialCreationReview(current, intent, intended);
+        stored.snapshot = recovered;
+        stored.creationIntent = intent;
+        this.touch(owner, stored);
+        return structuredClone(recovered);
+      }
+    }
+    const name = (
+      existingOperation?.name ??
+      requestedName ??
+      this.defaultShoppingListName(creationId)
+    ).trim();
+    if (!name || name.length > 30) {
+      throw new NemligError("Shopping list name must contain 1–30 characters.");
+    }
+    if (
+      latestActive?.snapshot.draftId &&
+      latestActive.creationIntent?.id !== creationId
+    ) {
+      if (this.isProtected(latestActive) || latestActive.createAttempted) {
+        throw new NemligError(
+          "A previous shopping-list creation is unresolved. Refresh and explicitly select its exact list before starting another.",
+        );
+      }
+      this.drafts.delete(owner);
+    }
+    await this.start(owner, items, signal);
+    const stored = this.get(owner);
+    if (!stored.snapshot.draftId) {
+      throw new NemligError(
+        "The active shopping-list selection changed. Refresh before continuing.",
+      );
+    }
+    if (this.client.providerIdentity() !== accountIdentity) {
+      this.drafts.delete(owner);
+      throw new NemligError(
+        "Nemlig account changed while preparing the shopping list. No list was created.",
+      );
+    }
+    stored.snapshot.draftId = creationId;
+    stored.accountIdentity = accountIdentity;
+    stored.creationIntent = {
+      id: creationId,
+      accountIdentity,
+      name,
+      items: requestedItems,
+    };
+    return this.save(owner, name, creationId, signal, journal);
+  }
+
+  private defaultShoppingListName(operationId: string): string {
+    const iso = new Date(this.now()).toISOString();
+    const timestamp = `${iso.slice(0, 10)} ${iso.slice(11, 16).replace(":", "")}`;
+    return `Indkøb ${timestamp} ${operationId.slice(0, 6)}`;
+  }
+
+  private partialCreationReview(
+    current: ProductReviewSnapshot,
+    intent: ShoppingListCreationIntent,
+    intendedItems: ReviewItem[],
+  ): ProductReviewSnapshot {
+    return {
+      ...current,
+      saveStatus: "partial",
+      saveProgress: {
+        completed: current.items.reduce(
+          (sum, item) =>
+            sum +
+            (intent.items.some(
+              (expected) =>
+                expected.productId === item.product_id &&
+                expected.quantity === item.quantity,
+            )
+              ? 1
+              : 0),
+          0,
+        ),
+        total: intent.items.length,
+      },
+      actionNotice:
+        "Shopping-list creation was interrupted. The exact list was read without retrying its writes. Review its current products before continuing.",
+      conflictItems: current.items,
+      items: intendedItems,
+    };
   }
 
   async getShoppingLists(
@@ -724,6 +963,8 @@ export class ProductReviewService {
     return structuredClone(snapshot);
   }
 
+  // Preserve receipt identity and review context atomically for the same account.
+  // fallow-ignore-next-line complexity
   private storeNativeListReview(
     owner: string,
     accountIdentity: string,
@@ -732,6 +973,21 @@ export class ProductReviewService {
     operationGeneration?: string,
   ): void {
     const previous = this.drafts.get(owner);
+    const sameAccount = previous?.accountIdentity === accountIdentity;
+    const preservedReview =
+      sameAccount && previous
+        ? {
+            ...(previous.completedDraftId && previous.completedListId
+              ? {
+                  completedDraftId: previous.completedDraftId,
+                  completedListId: previous.completedListId,
+                }
+              : {}),
+            ...(previous.creationIntent
+              ? { creationIntent: previous.creationIntent }
+              : {}),
+          }
+        : {};
     snapshot.reviewContextId =
       previous?.snapshot.shoppingListId === list.id
         ? (previous.snapshot.reviewContextId ?? randomUUID())
@@ -742,6 +998,7 @@ export class ProductReviewService {
       accountIdentity,
       nativeFingerprint: shoppingListFingerprint(list),
       nativeItems: list.items.map((item) => ({ ...item })),
+      ...preservedReview,
       ...(operationGeneration ? { operationGeneration } : {}),
       snapshot,
     });
@@ -805,17 +1062,6 @@ export class ProductReviewService {
     };
     const lists = await this.getShoppingLists(signal);
     if (!lists.some((list) => list.id === listId)) {
-      const submission = await journal?.read(submitOperationId(listId));
-      if (
-        submission?.kind === "submit" &&
-        submission.completed &&
-        submission.listId === listId &&
-        submission.accountIdentity === accountIdentity &&
-        (submission.cleanupStatus === "pending" ||
-          submission.cleanupStatus === "uncertain")
-      ) {
-        await this.cleanupNativeSubmissionSource(submission, journal!, signal);
-      }
       throw new NemligError(
         "Shopping list is unavailable or was deleted.",
         404,
@@ -890,6 +1136,23 @@ export class ProductReviewService {
           (baseline.get(id) ?? 0) !== (desired.get(id) ?? 0) &&
           (present.get(id) ?? 0) === (desired.get(id) ?? 0),
       ).length;
+      if (!conflict && completed === diffCount) {
+        await completeReviewOperation(
+          journal!,
+          operation,
+          "Could not confirm the completed update record. Refresh before continuing.",
+        );
+        assertCurrentEntry();
+        const snapshot: ProductReviewSnapshot = {
+          shoppingListId: list.id,
+          shoppingListName: list.name,
+          saveStatus: "saved",
+          destination: "ready",
+          items: rows,
+        };
+        this.storeNativeListReview(owner, accountIdentity, list, snapshot);
+        return structuredClone(snapshot);
+      }
       const recovered: ProductReviewSnapshot = {
         shoppingListId: list.id,
         shoppingListName: list.name,
@@ -900,12 +1163,9 @@ export class ProductReviewService {
         destination: "ready",
         items: intendedItems,
         conflictItems: rows,
-        ...(conflict
-          ? {
-              actionNotice:
-                "Nemlig changed this list during an interrupted update. Your pending change is preserved; review the current list before continuing.",
-            }
-          : {}),
+        actionNotice: conflict
+          ? "Nemlig changed this list during an interrupted update. Review the current list before resolving the pending change."
+          : "This update was interrupted before every change was confirmed. Review the current list and resolve the pending update before editing again.",
       };
       this.storeNativeListReview(
         owner,
@@ -998,39 +1258,19 @@ export class ProductReviewService {
       submission.listId === listId &&
       submission.accountIdentity === accountIdentity
     ) {
-      let cleanup: NativeSourceCleanupResult | undefined;
-      if (
-        submission.cleanupStatus === "pending" ||
-        submission.cleanupStatus === "uncertain"
-      ) {
-        cleanup = await this.cleanupNativeSubmissionSource(
-          submission,
-          journal!,
-          signal,
-        );
-        if (cleanup.status === "deleted") {
-          throw new NemligError(
-            "Shopping list is unavailable or was deleted.",
-            404,
-          );
-        }
-      }
       snapshot.submission = {
         submission_id: submission.generation,
         status: "submitted",
-        ...((cleanup?.warning ?? submission.cleanupWarning)
-          ? {
-              cleanup_warning: cleanup?.warning ?? submission.cleanupWarning,
-            }
+        ...(submission.cleanupWarning
+          ? { cleanup_warning: submission.cleanupWarning }
           : {}),
         expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
         review: {},
       };
       snapshot.submissionAttempted = true;
       snapshot.actionNotice =
-        cleanup?.warning ??
         submission.cleanupWarning ??
-        "This exact shopping-list snapshot was already transferred. Update it before submitting another addition.";
+        "This exact shopping-list snapshot was already transferred. Inspect the actual basket before continuing.";
     }
     if (
       current?.accountIdentity === accountIdentity &&
@@ -1053,11 +1293,14 @@ export class ProductReviewService {
         baseline,
         reviewQuantities(current.snapshot.items),
       );
-      if (drifted) {
+      if (drifted || current.snapshot.shoppingListDirty) {
         current.snapshot.updateStatus = "partial";
-        current.snapshot.actionNotice =
-          "Nemlig changed this list while edits were pending. Review the current rows alongside your staged edits, then choose Update shopping list to apply them.";
+        current.snapshot.saveStatus = "partial";
+        current.snapshot.actionNotice = drifted
+          ? "Nemlig changed this list while edits were pending. Review the current rows, then discard pending changes to continue from Nemlig’s version."
+          : "A previous list change remains unconfirmed. Review the current rows, then discard pending changes to continue from Nemlig’s version.";
       } else {
+        delete current.snapshot.updateStatus;
         delete current.snapshot.actionNotice;
       }
       this.touch(owner, current);
@@ -1310,6 +1553,7 @@ export class ProductReviewService {
     target.product_id = action.replacement_id;
     target.view = replacement;
     delete next.alternatives;
+    next.destination = "ready";
   }
 
   // Keep the native-list action, ownership, lock, and refresh gates together.
@@ -1353,13 +1597,16 @@ export class ProductReviewService {
           "Inspect the actual Nemlig basket before changing or submitting this list again.",
         );
       }
+      if (action.kind === "update") {
+        throw new NemligError(
+          "Shopping-list changes are saved automatically. Refresh or resolve the exact list before continuing.",
+        );
+      }
       const accountIdentity = this.client.providerIdentity();
       const explicitConflictUpdate =
-        (action.kind === "update" ||
-          action.kind === "discard_pending_update") &&
+        action.kind === "discard_pending_update" &&
         stored.snapshot.updateStatus === "partial" &&
-        (stored.snapshot.conflictItems !== undefined ||
-          action.kind === "discard_pending_update");
+        stored.snapshot.conflictItems !== undefined;
       if (
         stored.accountIdentity !== accountIdentity ||
         !stored.nativeFingerprint ||
@@ -1389,23 +1636,19 @@ export class ProductReviewService {
       if (!current) {
         return structuredClone(stored.snapshot);
       }
-      if (
-        stored.snapshot.updateStatus === "partial" &&
-        action.kind !== "update" &&
-        stored.snapshot.actionNotice
-      ) {
+      if (stored.snapshot.updateStatus !== undefined) {
         throw new NemligError(
-          "Resume the pending update or discard it after reviewing the current Nemlig list before changing the staged items.",
+          "A shopping-list update is unresolved. Refresh and review the exact list before making another change.",
         );
       }
-      if (action.kind !== "update") {
-        const staged = await this.stageNativeListEdit(
-          stored,
-          action,
-          accountIdentity,
-          signal,
-        );
-        this.touch(owner, stored);
+      const staged = await this.stageNativeListEdit(
+        stored,
+        action,
+        accountIdentity,
+        signal,
+      );
+      this.touch(owner, stored);
+      if (!stored.snapshot.shoppingListDirty) {
         return staged;
       }
       return await this.persistNativeListUpdate(
@@ -1434,9 +1677,7 @@ export class ProductReviewService {
     journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (!stored.snapshot.shoppingListDirty) {
-      throw new NemligError(
-        "There are no staged shopping-list changes to save.",
-      );
+      return structuredClone(stored.snapshot);
     }
     stored.snapshot.updateStatus = "saving";
     const next = structuredClone(stored.snapshot);
@@ -1448,55 +1689,63 @@ export class ProductReviewService {
     const desired = reviewQuantities(next.items);
     if (journal) {
       const operationId = updateOperationId(listId);
+      let pendingUpdate = false;
       try {
         const pending = await journal.read(operationId);
+        pendingUpdate = Boolean(
+          pending && pending.completedUntil === undefined,
+        );
         const items = [...desired].map(([productId, quantity]) => ({
           productId,
           quantity,
         }));
-        const samePending =
-          pending?.completedUntil === undefined &&
-          pending?.kind === "update" &&
-          pending.accountIdentity === accountIdentity &&
-          pending.listId === listId &&
-          pending.name === current.name &&
-          JSON.stringify(pending.items) === JSON.stringify(items);
-        if (pending && pending.completedUntil === undefined && !samePending) {
+        if (pending && pending.completedUntil === undefined) {
           if (
             pending.kind !== "update" ||
             pending.accountIdentity !== accountIdentity ||
-            pending.listId !== listId
+            pending.listId !== listId ||
+            pending.name !== current.name ||
+            !sameShoppingListItems(pending.items, items)
           ) {
             throw new Error("A different shopping-list update is unresolved.");
           }
-          const retired = await journal.complete(
-            operationId,
-            pending.generation,
-          );
-          if (retired === false) {
-            throw new Error("The pending update changed during recovery.");
+          if (!sameQuantities(baseline, desired)) {
+            throw new Error(
+              "The interrupted update is not confirmed. Refresh and explicitly resolve it before continuing.",
+            );
           }
-        }
-        const generation = samePending ? pending.generation : randomUUID();
-        if (!samePending) {
-          await journal.write({
-            operationId,
-            generation,
-            accountIdentity,
-            kind: "update",
-            name: current.name,
+          stored.operationGeneration = pending.generation;
+          return this.confirmNativeListUpdate(
+            owner,
+            stored,
             listId,
-            baseline: [...baseline].map(([productId, quantity]) => ({
-              productId,
-              quantity,
-            })),
-            items,
-          });
+            current,
+            accountIdentity,
+            next,
+            desired,
+            false,
+            journal,
+          );
         }
+        const generation = randomUUID();
+        await journal.write({
+          operationId,
+          generation,
+          accountIdentity,
+          kind: "update",
+          name: current.name,
+          listId,
+          baseline: [...baseline].map(([productId, quantity]) => ({
+            productId,
+            quantity,
+          })),
+          items,
+        });
         stored.operationGeneration = generation;
       } catch (error) {
-        const message =
-          error instanceof NemligError && error.status === 429
+        const message = pendingUpdate
+          ? "A previous shopping-list update remains unresolved. No update was retried; refresh and resolve the exact list before continuing."
+          : error instanceof NemligError && error.status === 429
             ? error.message
             : "The update could not be recorded safely. No products were changed in Nemlig; refresh this list before continuing.";
         stored.snapshot.updateStatus = "partial";
@@ -1540,19 +1789,15 @@ export class ProductReviewService {
     signal: AbortSignal | undefined,
     journal: ReviewOperationJournal | undefined,
   ): Promise<ProductReviewSnapshot> {
-    if (!journal) {
-      throw new NemligError(
-        "Pending update recovery is unavailable. Refresh the list before continuing.",
-      );
-    }
     const operationId = updateOperationId(listId);
-    const operation = await journal.read(operationId);
+    const operation = await journal?.read(operationId);
     if (
-      !operation ||
-      operation.kind !== "update" ||
-      operation.completedUntil !== undefined ||
-      operation.accountIdentity !== accountIdentity ||
-      operation.listId !== listId
+      journal &&
+      (!operation ||
+        operation.kind !== "update" ||
+        operation.completedUntil !== undefined ||
+        operation.accountIdentity !== accountIdentity ||
+        operation.listId !== listId)
     ) {
       throw new NemligError(
         "The pending update does not match this account and shopping list. No recovery record was changed.",
@@ -1565,16 +1810,18 @@ export class ProductReviewService {
       );
     }
     if (!inventory.some(({ id }) => id === listId)) {
-      await completeReviewOperation(
-        journal,
-        operation,
-        "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
-      );
+      if (journal && operation) {
+        await completeReviewOperation(
+          journal,
+          operation,
+          "Could not confirm the deleted list's pending update was retired. Refresh before continuing.",
+        );
+      }
       stored.snapshot = {
         destination: "ready",
         items: [],
         actionNotice:
-          "This shopping list was deleted in Nemlig. Its pending update was retired; choose another list or start a draft.",
+          "This shopping list was deleted in Nemlig. Its pending update was retired; choose another list.",
       };
       stored.nativeFingerprint = undefined;
       stored.nativeItems = [];
@@ -1597,11 +1844,13 @@ export class ProductReviewService {
         "Nemlig account changed while reading the list. The pending update was kept.",
       );
     }
-    await completeReviewOperation(
-      journal,
-      operation,
-      "Could not confirm the pending update was retired. Refresh the list before continuing.",
-    );
+    if (journal && operation) {
+      await completeReviewOperation(
+        journal,
+        operation,
+        "Could not confirm the pending update was retired. Refresh the list before continuing.",
+      );
+    }
     stored.snapshot = {
       shoppingListId: listId,
       shoppingListName: current.name,
@@ -2011,6 +2260,7 @@ export class ProductReviewService {
     stored.nativeFingerprint = shoppingListFingerprint(saved);
     stored.nativeItems = saved.items.map((item) => ({ ...item }));
     stored.completedDraftId = stored.snapshot.draftId;
+    stored.completedListId = stored.snapshot.shoppingListId;
     if (journal && stored.snapshot.draftId) {
       await journal
         .complete(stored.snapshot.draftId, stored.snapshot.draftId)

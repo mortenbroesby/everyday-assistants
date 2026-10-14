@@ -160,6 +160,547 @@ test("unsaved drafts cannot prepare or submit a basket addition", async () => {
   assert.deepEqual([prepares, applies, listCreates], [0, 0, 0]);
 });
 
+test("choosing products creates and reads back one exact native shopping list", async () => {
+  const owner = "owner";
+  const { journal } = createDurableReviewJournal(owner);
+  const lists = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      items: Array<{ productId: number; quantity: number }>;
+    }
+  >();
+  const writes: Array<[number, number, number]> = [];
+  let nextId = 41;
+  let basketWrites = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () =>
+      [...lists.values()].map(({ id, name, items }) => ({
+        id,
+        name,
+        productCount: items.length,
+      })),
+    createShoppingList: async (name) => {
+      const id = nextId++;
+      lists.set(id, { id, name, items: [] });
+      return id;
+    },
+    getShoppingList: async (id) => structuredClone(lists.get(id)!),
+    updateShoppingListProduct: async (id, productId, quantity) => {
+      writes.push([id, productId, quantity]);
+      const list = lists.get(id)!;
+      list.items = list.items.filter((item) => item.productId !== productId);
+      if (quantity > 0) {
+        list.items.push({ productId, quantity });
+      }
+    },
+    addShoppingListToCart: async () => {
+      basketWrites += 1;
+    },
+  });
+
+  const review = await service.startShoppingList(
+    owner,
+    [
+      { product_id: 1, quantity: 2 },
+      { product_id: 2, quantity: 1 },
+    ],
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "Groceries",
+    undefined,
+    journal,
+  );
+
+  assert.equal(review.shoppingListId, 41);
+  assert.equal(review.shoppingListName, "Groceries");
+  assert.equal(review.saveStatus, "saved");
+  assert.equal(review.draftId, undefined);
+  assert.deepEqual(writes, [
+    [41, 1, 2],
+    [41, 2, 1],
+  ]);
+  assert.deepEqual(lists.get(41)?.items, [
+    { productId: 1, quantity: 2 },
+    { productId: 2, quantity: 1 },
+  ]);
+  assert.equal(basketWrites, 0);
+
+  const replay = await service.startShoppingList(
+    owner,
+    [
+      { product_id: 1, quantity: 2 },
+      { product_id: 2, quantity: 1 },
+    ],
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "Groceries",
+    undefined,
+    journal,
+  );
+  assert.equal(replay.shoppingListId, 41);
+  assert.deepEqual(writes, [
+    [41, 1, 2],
+    [41, 2, 1],
+  ]);
+  lists.set(42, { id: 42, name: "Other", items: [] });
+  await service.openShoppingList(owner, 42, undefined, journal);
+  const replayAfterOpeningAnotherList = await service.startShoppingList(
+    owner,
+    [
+      { product_id: 1, quantity: 2 },
+      { product_id: 2, quantity: 1 },
+    ],
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "Groceries",
+    undefined,
+    journal,
+  );
+  assert.equal(replayAfterOpeningAnotherList.shoppingListId, 41);
+  await assert.rejects(
+    service.startShoppingList(
+      owner,
+      [
+        { product_id: 1, quantity: 4 },
+        { product_id: 2, quantity: 1 },
+      ],
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "Groceries",
+      undefined,
+      journal,
+    ),
+    /different shopping-list creation/u,
+  );
+  await assert.rejects(
+    service.startShoppingList(
+      owner,
+      [
+        { product_id: 1, quantity: 2 },
+        { product_id: 2, quantity: 1 },
+      ],
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "Other name",
+      undefined,
+      journal,
+    ),
+    /different shopping-list creation/u,
+  );
+});
+
+test("creation IDs fence uncertain retries while new IDs allow identical lists", async () => {
+  const owner = "owner";
+  const { journal } = createDurableReviewJournal(owner);
+  let createCalls = 0;
+  let nextId = 50;
+  let failCreate = true;
+  const lists = new Map<
+    number,
+    {
+      id: number;
+      name: string;
+      items: Array<{ productId: number; quantity: number }>;
+    }
+  >();
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () =>
+      [...lists.values()].map(({ id, name, items }) => ({
+        id,
+        name,
+        productCount: items.length,
+      })),
+    createShoppingList: async (name: string) => {
+      createCalls += 1;
+      if (failCreate) {
+        failCreate = false;
+        throw new Error("creation outcome is unknown");
+      }
+      const id = nextId++;
+      lists.set(id, { id, name, items: [] });
+      return id;
+    },
+    getShoppingList: async (id: number) => structuredClone(lists.get(id)!),
+    updateShoppingListProduct: async (
+      id: number,
+      productId: number,
+      quantity: number,
+    ) => {
+      const list = lists.get(id)!;
+      list.items = list.items.filter((item) => item.productId !== productId);
+      if (quantity > 0) {
+        list.items.push({ productId, quantity });
+      }
+    },
+  };
+  const items = [{ product_id: 7, quantity: 1 }];
+  const creationId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const first = new ProductReviewService(provider);
+  const uncertain = await first.startShoppingList(
+    owner,
+    items,
+    creationId,
+    "Groceries",
+    undefined,
+    journal,
+  );
+  assert.equal(uncertain.saveStatus, "uncertain");
+  assert.equal(createCalls, 1);
+
+  const restarted = new ProductReviewService(provider);
+  await assert.rejects(
+    restarted.startShoppingList(
+      owner,
+      items,
+      creationId,
+      "Groceries",
+      undefined,
+      journal,
+    ),
+    /this operation will not create another list/u,
+  );
+  assert.equal(createCalls, 1);
+
+  const deliberateNewList = await restarted.startShoppingList(
+    owner,
+    items,
+    "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+    "Groceries",
+    undefined,
+    journal,
+  );
+  assert.equal(deliberateNewList.shoppingListId, 50);
+  assert.equal(createCalls, 2);
+});
+
+test("no-journal partial creation reopens its exact list without retrying writes", async () => {
+  const native = {
+    id: 55,
+    name: "Family",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  let createCalls = 0;
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: native.id, name: native.name, productCount: native.items.length },
+    ],
+    createShoppingList: async () => {
+      createCalls += 1;
+      return native.id;
+    },
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (
+      _listId: number,
+      productId: number,
+      quantity: number,
+    ) => {
+      writes += 1;
+      if (productId === 2) {
+        throw new Error("provider timed out");
+      }
+      native.items = [{ productId, quantity }];
+    },
+  });
+  const items = [
+    { product_id: 1, quantity: 2 },
+    { product_id: 2, quantity: 1 },
+  ];
+  const creationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+
+  const partial = await service.startShoppingList(
+    "owner",
+    items,
+    creationId,
+    "Family",
+  );
+  assert.equal(partial.saveStatus, "partial");
+  assert.equal(partial.shoppingListId, 55);
+  assert.equal(writes, 2);
+
+  const recovered = await service.startShoppingList(
+    "owner",
+    items,
+    creationId,
+    "Family",
+  );
+  assert.equal(recovered.saveStatus, "partial");
+  assert.equal(recovered.shoppingListId, 55);
+  assert.equal(recovered.conflictItems?.length, 1);
+  assert.equal(writes, 2);
+  assert.equal(createCalls, 1);
+  await assert.rejects(
+    service.startShoppingList(
+      "owner",
+      [{ product_id: 1, quantity: 9 }],
+      creationId,
+      "Family",
+    ),
+    /different account, selection, or shopping-list name/u,
+  );
+  await assert.rejects(
+    service.startShoppingList(
+      "owner",
+      items,
+      "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      "Family",
+    ),
+    /pending or unconfirmed changes/u,
+  );
+});
+
+test("a delayed creation journal read cannot overwrite a busy native-list selection", async () => {
+  let resolveFirstRead!: () => void;
+  let resolveSecondRead!: () => void;
+  let firstReadStarted!: () => void;
+  let secondReadStarted!: () => void;
+  let hydrationStarted!: () => void;
+  let finishHydration!: () => void;
+  const firstReadGate = new Promise<void>((resolve) => {
+    resolveFirstRead = resolve;
+  });
+  const secondReadGate = new Promise<void>((resolve) => {
+    resolveSecondRead = resolve;
+  });
+  const firstStarted = new Promise<void>((resolve) => {
+    firstReadStarted = resolve;
+  });
+  const secondStarted = new Promise<void>((resolve) => {
+    secondReadStarted = resolve;
+  });
+  const hydrationGate = new Promise<void>((resolve) => {
+    finishHydration = resolve;
+  });
+  const hydration = new Promise<void>((resolve) => {
+    hydrationStarted = resolve;
+  });
+  let reads = 0;
+  const operations = new Map<string, ReviewOperation>();
+  const journal: ReviewOperationJournal = {
+    read: async (operationId) => {
+      reads += 1;
+      if (reads === 1) {
+        firstReadStarted();
+        await firstReadGate;
+      } else {
+        secondReadStarted();
+        await secondReadGate;
+      }
+      return structuredClone(operations.get(operationId));
+    },
+    claim: async (operationId) => {
+      const operation = operations.get(operationId);
+      if (!operation || operation.createAttempted) {
+        return false;
+      }
+      operations.set(operationId, { ...operation, createAttempted: true });
+      return true;
+    },
+    write: async (operation) => {
+      operations.set(operation.operationId, structuredClone(operation));
+    },
+    complete: async () => true,
+  };
+  let createCalls = 0;
+  const native = {
+    id: 81,
+    name: "Groceries",
+    items: [] as Array<{ productId: number; quantity: number }>,
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    getProduct: async (id) => {
+      hydrationStarted();
+      await hydrationGate;
+      return product(id);
+    },
+    listShoppingLists: async () => [
+      { id: native.id, name: native.name, productCount: native.items.length },
+    ],
+    createShoppingList: async () => {
+      createCalls += 1;
+      return native.id;
+    },
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (_id, productId, quantity) => {
+      native.items = [{ productId, quantity }];
+    },
+  });
+  const first = service.startShoppingList(
+    "owner",
+    [{ product_id: 1, quantity: 1 }],
+    "11111111-1111-4111-8111-111111111111",
+    "Groceries",
+    undefined,
+    journal,
+  );
+  await firstStarted;
+  const second = service.startShoppingList(
+    "owner",
+    [{ product_id: 2, quantity: 1 }],
+    "22222222-2222-4222-8222-222222222222",
+    "Groceries",
+    undefined,
+    journal,
+  );
+  await secondStarted;
+  resolveFirstRead();
+  await hydration;
+  resolveSecondRead();
+  await assert.rejects(second, /operation is in progress/u);
+  finishHydration();
+  const result = await first;
+  assert.equal(result.shoppingListId, native.id);
+  assert.equal(createCalls, 1);
+  assert.deepEqual(native.items, [{ productId: 1, quantity: 1 }]);
+});
+
+test("account changes during product hydration abort native-list creation", async () => {
+  let account = "account-1";
+  let hydrated!: () => void;
+  let releaseHydration!: () => void;
+  const hydrationStarted = new Promise<void>((resolve) => {
+    hydrated = resolve;
+  });
+  const hydrationGate = new Promise<void>((resolve) => {
+    releaseHydration = resolve;
+  });
+  let creates = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => account,
+    getProduct: async (id) => {
+      hydrated();
+      await hydrationGate;
+      return product(id);
+    },
+    createShoppingList: async () => {
+      creates += 1;
+      return 90;
+    },
+  });
+  const starting = service.startShoppingList(
+    "owner",
+    [{ product_id: 1, quantity: 1 }],
+    "33333333-3333-4333-8333-333333333333",
+    "Groceries",
+  );
+  await hydrationStarted;
+  account = "account-2";
+  releaseHydration();
+  await assert.rejects(starting, /account changed while preparing/u);
+  assert.equal(creates, 0);
+});
+
+test("native-list quantity edits persist without an Update action", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const writes: Array<[number, number, number]> = [];
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [
+      { id: 44, name: "Family", productCount: 1 },
+    ],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (listId, productId, quantity) => {
+      writes.push([listId, productId, quantity]);
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  });
+  await service.openShoppingList("owner", 44);
+
+  const updated = await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 3,
+  });
+
+  assert.deepEqual(writes, [[44, 1, 3]]);
+  assert.equal(updated.shoppingListDirty, false);
+  assert.equal(updated.items[0]?.quantity, 3);
+  assert.deepEqual(native.items, [{ productId: 1, quantity: 3 }]);
+});
+
+test("a no-journal uncertain edit stays blocked after refresh until explicit discard", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [
+      { productId: 1, quantity: 1 },
+      { productId: 2, quantity: 1 },
+    ],
+  };
+  let failNextWrite = true;
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async (_listId, productId, quantity) => {
+      writes += 1;
+      if (failNextWrite) {
+        failNextWrite = false;
+        throw new Error("provider timed out");
+      }
+      native.items = native.items.filter(
+        (item) => item.productId !== productId,
+      );
+      if (quantity > 0) {
+        native.items.push({ productId, quantity });
+      }
+    },
+  });
+  await service.openShoppingList("owner", 44);
+  const partial = await service.updateShoppingList("owner", 44, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
+  });
+  assert.equal(partial.updateStatus, "partial");
+  assert.equal(writes, 1);
+
+  const refreshed = await service.openShoppingList("owner", 44);
+  assert.equal(refreshed.updateStatus, "partial");
+  assert.match(refreshed.actionNotice ?? "", /discard pending changes/u);
+  await assert.rejects(
+    service.updateShoppingList("owner", 44, {
+      kind: "quantity",
+      product_id: 2,
+      quantity: 3,
+    }),
+    /Refresh this shopping list/u,
+  );
+  assert.equal(writes, 1);
+
+  const discarded = await service.updateShoppingList("owner", 44, {
+    kind: "discard_pending_update",
+  });
+  assert.equal(discarded.updateStatus, undefined);
+  assert.equal(discarded.shoppingListDirty, false);
+  assert.deepEqual(
+    discarded.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [
+      [1, 1],
+      [2, 1],
+    ],
+  );
+  assert.equal(writes, 1);
+});
+
 test("Local baskets accept 500 exact products and reject 501 before provider reads", async () => {
   const items = Array.from({ length: MAX_DRAFT_PRODUCTS }, (_, index) => ({
     product_id: index + 1,
@@ -299,7 +840,7 @@ test("draft edits make no provider writes until Save verifies the exact rows", a
   ]);
 });
 
-test("saved drafts compare staged changes with the native list baseline", async () => {
+test("native-list quantity edits persist and can be reversed", async () => {
   const saved = {
     id: 44,
     name: "Weekend",
@@ -320,28 +861,29 @@ test("saved drafts compare staged changes with the native list baseline", async 
     },
     getShoppingList: async () => structuredClone(saved),
   });
-  const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
-  const list = await service.update(
+  const list = await service.startShoppingList(
     "owner",
-    { kind: "save", name: "Weekend" },
-    undefined,
-    draft.draftId,
+    [{ product_id: 1, quantity: 1 }],
+    "44444444-4444-4444-8444-444444444444",
+    "Weekend",
   );
   assert.equal(list.shoppingListId, 44);
-  assert.equal(list.shoppingListDirty, undefined);
+  assert.equal(Boolean(list.shoppingListDirty), false);
 
-  const staged = await service.updateShoppingList("owner", 44, {
+  const increased = await service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 2,
   });
-  assert.equal(staged.shoppingListDirty, true);
+  assert.equal(Boolean(increased.shoppingListDirty), false);
+  assert.equal(saved.items[0]?.quantity, 2);
   const reverted = await service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 1,
   });
-  assert.equal(reverted.shoppingListDirty, false);
+  assert.equal(Boolean(reverted.shoppingListDirty), false);
+  assert.equal(saved.items[0]?.quantity, 1);
 });
 
 test("an existing native shopping list reopens as the shared review without a local mirror write", async () => {
@@ -604,7 +1146,7 @@ test("a concurrent native-list open is rejected before a second provider read", 
   assert.equal(service.active("owner")?.shoppingListId, 44);
 });
 
-test("reopening a changed native list preserves staged edits and shows current rows", async () => {
+test("reopening a changed native list uses the current provider rows", async () => {
   const native = {
     id: 44,
     name: "Family",
@@ -630,7 +1172,7 @@ test("reopening a changed native list preserves staged edits and shows current r
   });
 
   await service.openShoppingList("owner", 44);
-  const staged = await service.updateShoppingList("owner", 44, {
+  await service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 2,
@@ -638,17 +1180,19 @@ test("reopening a changed native list preserves staged edits and shows current r
   native.items = [{ productId: 1, quantity: 3 }];
 
   const reopened = await service.openShoppingList("owner", 44);
-  assert.deepEqual(reopened.items, staged.items);
-  assert.equal(reopened.shoppingListDirty, true);
-  assert.equal(reopened.updateStatus, "partial");
-  assert.equal(reopened.conflictItems?.[0]?.quantity, 3);
-  assert.match(reopened.actionNotice ?? "", /Review the current rows/u);
+  assert.equal(reopened.items[0]?.quantity, 3);
+  assert.equal(Boolean(reopened.shoppingListDirty), false);
+  assert.equal(reopened.updateStatus, undefined);
+  assert.equal(reopened.conflictItems, undefined);
+  assert.equal(writes, 1, "opening the exact list only reads provider state");
   const updated = await service.updateShoppingList("owner", 44, {
-    kind: "update",
+    kind: "quantity",
+    product_id: 1,
+    quantity: 2,
   });
   assert.equal(updated.saveStatus, "saved");
   assert.equal(native.items[0]?.quantity, 2);
-  assert.equal(writes, 1);
+  assert.equal(writes, 2);
 });
 
 test("saved native list verifies transfer before durable source cleanup and replay fence", async () => {
@@ -980,7 +1524,7 @@ test("restarted submission preserves an attempted transfer as uncertain", async 
   assert.equal(receipt?.completed, undefined);
 });
 
-test("reopening a completed receipt resumes pending source cleanup without transfer", async () => {
+test("opening a completed receipt does not retry source cleanup or transfer", async () => {
   const native = {
     id: 44,
     name: "Family",
@@ -1021,15 +1565,18 @@ test("reopening a completed receipt resumes pending source cleanup without trans
   await journal.complete(operation.operationId, operation.generation);
 
   const service = new ProductReviewService(provider);
-  await assert.rejects(
-    service.openShoppingList("owner", 44, undefined, journal),
-    /unavailable or was deleted/u,
+  const opened = await service.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
   );
-  assert.equal(sourcePresent, false);
+  assert.equal(opened.shoppingListId, 44);
+  assert.equal(sourcePresent, true);
   assert.equal(
     ((await read(operation.operationId)) as ReviewOperation | undefined)
       ?.cleanupStatus,
-    "deleted",
+    "pending",
   );
   assert.equal(transfers, 0);
 });
@@ -1076,19 +1623,17 @@ test("reopening retains a source changed after verified transfer", async () => {
     journal,
   );
   assert.equal(review.submission?.status, "submitted");
-  assert.match(
-    review.submission?.cleanup_warning ?? "",
-    /source list changed/u,
-  );
+  assert.equal(review.items[0]?.quantity, 2);
+  assert.equal(review.submission?.cleanup_warning, undefined);
   assert.equal(
     ((await read(operation.operationId)) as ReviewOperation | undefined)
       ?.cleanupStatus,
-    "retained",
+    "pending",
   );
   assert.equal(deletes, 0);
 });
 
-test("dirty and in-flight native-list updates cannot prepare submission", async () => {
+test("in-flight native-list updates cannot prepare or submit", async () => {
   const native = {
     id: 44,
     name: "Family",
@@ -1130,23 +1675,12 @@ test("dirty and in-flight native-list updates cannot prepare submission", async 
     },
   );
   await service.openShoppingList("owner", 44);
-  const staged = await service.updateShoppingList("owner", 44, {
+  updating = true;
+  const update = service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 2,
   });
-  assert.equal(staged.shoppingListDirty, true);
-  await assert.rejects(
-    service.prepare("owner"),
-    /Update the saved Nemlig shopping list/u,
-  );
-  await assert.rejects(
-    service.submit("owner", "attempt", 44),
-    /Update the saved Nemlig shopping list/u,
-  );
-
-  updating = true;
-  const update = service.updateShoppingList("owner", 44, { kind: "update" });
   await new Promise((resolve) => setImmediate(resolve));
   await assert.rejects(
     service.prepare("owner"),
@@ -1159,10 +1693,7 @@ test("dirty and in-flight native-list updates cannot prepare submission", async 
   releaseUpdate();
   const saved = await update;
   assert.equal(saved.shoppingListDirty, false);
-  await assert.rejects(
-    service.prepare("owner"),
-    /Submit the confirmed saved shopping list directly/u,
-  );
+  assert.equal(saved.items[0]?.quantity, 2);
 });
 
 test("an unconfirmed native-list update stays dirty and blocks submission", async () => {
@@ -1195,13 +1726,10 @@ test("an unconfirmed native-list update stays dirty and blocks submission", asyn
     },
   );
   await service.openShoppingList("owner", 44);
-  await service.updateShoppingList("owner", 44, {
+  const result = await service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 2,
-  });
-  const result = await service.updateShoppingList("owner", 44, {
-    kind: "update",
   });
   assert.equal(result.shoppingListDirty, true);
   assert.equal(result.updateStatus, "partial");
@@ -1215,7 +1743,7 @@ test("an unconfirmed native-list update stays dirty and blocks submission", asyn
   );
 });
 
-test("native shopping-list edits stage locally until Update writes and reads back the same list", async () => {
+test("native shopping-list removal writes and reads back the same list immediately", async () => {
   const native = {
     id: 44,
     name: "Family",
@@ -1253,21 +1781,10 @@ test("native shopping-list edits stage locally until Update writes and reads bac
     product_ids: [1],
   });
 
-  assert.deepEqual(writes, []);
-  assert.equal(staged.shoppingListDirty, true);
-  assert.deepEqual(native.items, [
-    { productId: 1, quantity: 2 },
-    { productId: 2, quantity: 1 },
-  ]);
-
-  const updated = await service.updateShoppingList("owner", 44, {
-    kind: "update",
-  });
-
   assert.deepEqual(writes, [[44, 1, 0]]);
-  assert.equal(updated.shoppingListDirty, false);
+  assert.equal(staged.shoppingListDirty, false);
   assert.deepEqual(
-    updated.items.map(({ product_id }) => product_id),
+    staged.items.map(({ product_id }) => product_id),
     [2],
   );
   assert.deepEqual(native.items, [{ productId: 2, quantity: 1 }]);
@@ -1302,16 +1819,11 @@ test("journal write failures leave drafts recoverable and make no provider write
     },
   });
   await service.openShoppingList("owner", 44);
-  await service.updateShoppingList("owner", 44, {
-    kind: "quantity",
-    product_id: 1,
-    quantity: 2,
-  });
   await assert.rejects(
     service.updateShoppingList(
       "owner",
       44,
-      { kind: "update" },
+      { kind: "quantity", product_id: 1, quantity: 2 },
       undefined,
       journal,
     ),
@@ -1370,37 +1882,28 @@ test("completed native-list updates can be followed by edits using the durable j
       }
     },
   });
-  const stage = (quantity: number) =>
-    service.updateShoppingList(owner, 44, {
-      kind: "quantity",
-      product_id: 1,
-      quantity,
-    });
-  const update = () =>
+  const update = (quantity: number) =>
     service.updateShoppingList(
       owner,
       44,
-      { kind: "update" },
+      { kind: "quantity", product_id: 1, quantity },
       undefined,
       journal,
     );
   const operationId = "native-list-update:44";
 
   await service.openShoppingList(owner, 44, undefined, journal);
-  await stage(2);
-  assert.equal((await update()).saveStatus, "saved");
+  assert.equal((await update(2)).saveStatus, "saved");
   const firstGeneration = ((await read(operationId)) as ReviewOperation)
     .generation;
 
-  await stage(3);
-  assert.equal((await update()).saveStatus, "saved");
+  assert.equal((await update(3)).saveStatus, "saved");
   const secondGeneration = ((await read(operationId)) as ReviewOperation)
     .generation;
   assert.notEqual(secondGeneration, firstGeneration);
 
   await service.openShoppingList(owner, 44, undefined, journal);
-  await stage(4);
-  assert.equal((await update()).saveStatus, "saved");
+  assert.equal((await update(4)).saveStatus, "saved");
   const thirdGeneration = ((await read(operationId)) as ReviewOperation)
     .generation;
   assert.notEqual(thirdGeneration, secondGeneration);
@@ -1466,15 +1969,14 @@ test("interrupted native-list updates resume the intended diff after restart", a
     product_id: 1,
     quantity: 2,
   });
-  await service.updateShoppingList("owner", 44, {
-    kind: "quantity",
-    product_id: 2,
-    quantity: 2,
-  });
   const partial = await service.updateShoppingList(
     "owner",
     44,
-    { kind: "update" },
+    {
+      kind: "quantity",
+      product_id: 2,
+      quantity: 2,
+    },
     undefined,
     journal,
   );
@@ -1502,7 +2004,10 @@ test("interrupted native-list updates resume the intended diff after restart", a
       [2, 2],
     ],
   );
-  assert.equal(recovered.actionNotice, undefined);
+  assert.match(
+    recovered.actionNotice ?? "",
+    /interrupted before every change was confirmed/u,
+  );
   assert.deepEqual(
     new Map(
       recovered.conflictItems?.map(({ product_id, quantity }) => [
@@ -1515,24 +2020,61 @@ test("interrupted native-list updates resume the intended diff after restart", a
       [2, 1],
     ]),
   );
-  const saved = await restarted.updateShoppingList(
+  let retryWrites = 0;
+  const guarded = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async () => {
+      retryWrites += 1;
+    },
+  });
+  const guardedRecovery = await guarded.openShoppingList(
     "owner",
     44,
-    { kind: "update" },
     undefined,
     journal,
   );
-  assert.equal(saved.saveStatus, "saved");
-  assert.equal(saved.shoppingListDirty, false);
-  assert.deepEqual(native.items, [
-    { productId: 1, quantity: 2 },
-    { productId: 2, quantity: 2 },
-  ]);
+  assert.equal(guardedRecovery.updateStatus, "partial");
+  await assert.rejects(
+    guarded.updateShoppingList(
+      "owner",
+      44,
+      {
+        kind: "quantity",
+        product_id: 1,
+        quantity: 4,
+      },
+      undefined,
+      journal,
+    ),
+    /Refresh this shopping list/u,
+  );
+  const discarded = await guarded.updateShoppingList(
+    "owner",
+    44,
+    { kind: "discard_pending_update" },
+    undefined,
+    journal,
+  );
+  assert.equal(discarded.updateStatus, undefined);
+  assert.equal(discarded.shoppingListDirty, false);
+  assert.deepEqual(
+    new Map(
+      native.items.map(({ productId, quantity }) => [productId, quantity]),
+    ),
+    new Map([
+      [1, 2],
+      [2, 1],
+    ]),
+  );
+  assert.equal(retryWrites, 0);
   assert.equal(operations.size, 1);
   assert.ok(operations.get("native-list-update:44")?.completedUntil);
 });
 
-test("external edits during an interrupted update preserve intent until explicit Update", async () => {
+test("external edits during an interrupted update require explicit discard", async () => {
   let operation: ReviewOperation | undefined = {
     operationId: "native-list-update:44",
     generation: "update-attempt-1",
@@ -1583,19 +2125,73 @@ test("external edits during an interrupted update preserve intent until explicit
   );
   assert.equal(recovered.items[0]?.quantity, 2);
   assert.equal(recovered.conflictItems?.[0]?.quantity, 3);
-  assert.match(recovered.actionNotice ?? "", /pending change is preserved/u);
+  assert.match(recovered.actionNotice ?? "", /interrupted update/u);
   assert.equal(writes, 0);
-  const updated = await service.updateShoppingList(
+  await assert.rejects(
+    service.updateShoppingList(
+      "owner",
+      44,
+      { kind: "quantity", product_id: 1, quantity: 4 },
+      undefined,
+      journal,
+    ),
+    /Refresh this shopping list/u,
+  );
+  const discarded = await service.updateShoppingList(
     "owner",
     44,
-    { kind: "update" },
+    { kind: "discard_pending_update" },
     undefined,
     journal,
   );
-  assert.equal(updated.saveStatus, "saved");
-  assert.equal(native[0]?.quantity, 2);
+  assert.equal(discarded.saveStatus, "saved");
+  assert.equal(native[0]?.quantity, 3);
   assert.ok(operation?.completedUntil);
-  assert.equal(writes, 1);
+  assert.equal(writes, 0);
+});
+
+test("opening an exact list completes a fully confirmed update without writes", async () => {
+  const { journal, read } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-update:44",
+    generation: "update-exact",
+    accountIdentity: "account-1",
+    kind: "update",
+    name: "Family",
+    listId: 44,
+    baseline: [{ productId: 1, quantity: 1 }],
+    items: [{ productId: 1, quantity: 2 }],
+  });
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Family",
+      items: [{ productId: 1, quantity: 2 }],
+    }),
+    updateShoppingListProduct: async () => {
+      writes += 1;
+    },
+  });
+
+  const reopened = await service.openShoppingList(
+    "owner",
+    44,
+    undefined,
+    journal,
+  );
+
+  assert.equal(reopened.saveStatus, "saved");
+  assert.equal(reopened.updateStatus, undefined);
+  assert.equal(reopened.items[0]?.quantity, 2);
+  assert.equal(writes, 0);
+  assert.ok(
+    ((await read("native-list-update:44")) as ReviewOperation | undefined)
+      ?.completedUntil,
+  );
 });
 
 test("discarding an interrupted update holds its lock through renamed-list readback", async () => {
@@ -1669,7 +2265,7 @@ test("discarding an interrupted update holds its lock through renamed-list readb
   );
 });
 
-test("a changed intent recovers an interrupted update through the durable journal", async () => {
+test("a changed intent must explicitly discard an interrupted update before editing", async () => {
   const { journal, read } = createDurableReviewJournal("owner");
   await journal.write({
     operationId: "native-list-update:44",
@@ -1700,15 +2296,26 @@ test("a changed intent recovers an interrupted update through the durable journa
   await service.openShoppingList("owner", 44, undefined, journal);
   const previousGeneration = (await journal.read("native-list-update:44"))
     ?.generation;
-  await service.updateShoppingList("owner", 44, {
-    kind: "quantity",
-    product_id: 1,
-    quantity: 3,
-  });
+  await assert.rejects(
+    service.updateShoppingList("owner", 44, {
+      kind: "quantity",
+      product_id: 1,
+      quantity: 3,
+    }),
+    /Refresh this shopping list/u,
+  );
+  const discarded = await service.updateShoppingList(
+    "owner",
+    44,
+    { kind: "discard_pending_update" },
+    undefined,
+    journal,
+  );
+  assert.equal(discarded.updateStatus, undefined);
   const saved = await service.updateShoppingList(
     "owner",
     44,
-    { kind: "update" },
+    { kind: "quantity", product_id: 1, quantity: 3 },
     undefined,
     journal,
   );
@@ -1814,7 +2421,7 @@ test("native list update never adopts readback from another account or list", as
     ],
     getShoppingList: async () => {
       readCount++;
-      if (readCount === 4) {
+      if (readCount === 3) {
         return {
           id: 45,
           name: "Different account list",
@@ -1832,22 +2439,15 @@ test("native list update never adopts readback from another account or list", as
     },
   });
 
-  const opened = await service.openShoppingList("owner", 44);
-  await service.updateShoppingList("owner", 44, {
+  await service.openShoppingList("owner", 44);
+  const result = await service.updateShoppingList("owner", 44, {
     kind: "quantity",
     product_id: 1,
     quantity: 2,
   });
-  const result = await service.updateShoppingList("owner", 44, {
-    kind: "update",
-  });
 
   assert.equal(result.saveStatus, "uncertain");
   assert.equal(result.items[0]?.quantity, 2);
-  assert.deepEqual(
-    result.items,
-    opened.items.map((item) => ({ ...item, quantity: 2 })),
-  );
   assert.equal(result.actionNotice?.includes("Refresh the same list"), true);
   assert.equal(writes, 1);
 });
@@ -2534,32 +3134,6 @@ test("draft cards share one review and retain alternatives", async () => {
   );
   removed.items.length = 0;
   assert.equal(service.active("owner")?.items.length, 1);
-});
-
-test("sequential actions from supported cards apply to the current owner list", async () => {
-  const service = new ProductReviewService(client);
-  const firstCard = await service.start("owner", [
-    { product_id: 1, quantity: 1 },
-    { product_id: 2, quantity: 1 },
-  ]);
-  await assert.rejects(
-    service.start("owner", [{ product_id: 3, quantity: 1 }]),
-    /different product set/u,
-  );
-  assert.deepEqual(service.active("owner"), firstCard);
-  const current = await service.update("owner", {
-    kind: "quantity",
-    product_id: 1,
-    quantity: 2,
-  });
-  const earlierCardAction = await service.update("owner", {
-    kind: "quantity",
-    product_id: 2,
-    quantity: 4,
-  });
-  assert.equal(current.items[0]?.state, "ready");
-  assert.equal(earlierCardAction.items[1]?.quantity, 4);
-  assert.equal(earlierCardAction.items[0]?.state, "ready");
 });
 
 test("alternatives omit products already present in the local review", async () => {

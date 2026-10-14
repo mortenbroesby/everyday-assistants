@@ -24,9 +24,16 @@ declare global {
           replacement_id?: number;
           quantity?: number;
           query?: string;
+          product_ids?: number[];
         };
         shopping_list_id?: number;
+        review_context_id?: string;
+        creation_id?: string;
         submission_id?: string;
+        reviewed_list?: {
+          name: string;
+          items: Array<{ product_id: number; quantity: number }>;
+        };
       };
     }>;
     messages: string[];
@@ -35,12 +42,18 @@ declare global {
     failNext: boolean;
     failNoWriteNext: boolean;
     failGenericNext: boolean;
-    nextReviewResponse?: "tool" | "malformed" | "unavailable" | "products";
+    nextReviewResponse?:
+      | "tool"
+      | "malformed"
+      | "unavailable"
+      | "products"
+      | "partial"
+      | "uncertain";
     failMessageNext?: string;
     deferGenericNext: boolean;
     deferSubmitNext: boolean;
     resolveDeferredSubmit: () => void;
-    saveOutcome?: "partial" | "saved";
+    resolveDeferredShow: () => void;
     submissionAttempts: number;
     markNativeListDirty: boolean;
     getBasketState: () => { selected?: string; ids: string[] };
@@ -103,37 +116,40 @@ const fixtureView = (id: number, name: string) => ({
   review: { kind: "review", quantity: 1, approved: false },
 });
 const initialReview = {
-  draftId: "12345678-1234-4234-8234-123456789abc",
+  shoppingListId: 44,
+  shoppingListName: "Synthetic saved list",
+  reviewContextId: "12345678-1234-4234-8234-123456789def",
+  saveStatus: "saved",
   submissionAttempted: false,
   destination: "ready",
-  items: [1, 2].map((id) => ({
+  items: [1, 2, 3, 4, 5].map((id) => ({
     product_id: id,
-    quantity: id,
+    quantity: 1,
     state: "ready",
     view: fixtureView(id, id === 1 ? "Synthetic milk" : longOatsName),
   })),
 };
 const fixtureJson = JSON.stringify(initialReview);
-const nativeFixtureJson = JSON.stringify({
-  ...initialReview,
-  draftId: undefined,
-  shoppingListId: 44,
-  shoppingListName: "Synthetic saved list",
-  reviewContextId: "12345678-1234-4234-8234-123456789def",
-  saveStatus: "saved",
-});
-const draftFixtureJson = JSON.stringify({
-  ...initialReview,
-  revision: undefined,
-  draftId: "12345678-1234-4234-8234-123456789def",
-});
+const nativeFixtureJson = fixtureJson;
 const partialFixtureJson = JSON.stringify({
   ...initialReview,
-  draftId: "12345678-1234-4234-8234-123456789def",
-  shoppingListId: 44,
-  shoppingListName: "Synthetic partial list",
+  shoppingListId: 46,
+  shoppingListName: "Synthetic partial creation",
+  items: initialReview.items.slice(0, 2),
   saveStatus: "partial",
-  saveProgress: { completed: 1, total: 2 },
+  actionNotice:
+    "Only 2 of 3 selected products were confirmed in this Nemlig list. Review the confirmed rows before continuing.",
+  saveProgress: { completed: 2, total: 3 },
+});
+const unknownCreationFixtureJson = JSON.stringify({
+  ...initialReview,
+  shoppingListId: undefined,
+  reviewContextId: undefined,
+  shoppingListName: undefined,
+  saveStatus: "uncertain",
+  items: initialReview.items.slice(0, 3),
+  actionNotice:
+    "Nemlig may have created this selection, but no list ID was confirmed. Keep these rows and inspect your lists before starting again.",
 });
 const longFixtureJson = JSON.stringify({
   ...initialReview,
@@ -150,45 +166,53 @@ const longFixtureJson = JSON.stringify({
 const basketIds = ["44", "45"];
 const parentDocument = (
   reviewJson: string,
-  mode: "normal" | "picker" | "idless" | "restored" | "unavailable" = "normal",
+  mode:
+    | "normal"
+    | "picker"
+    | "idless"
+    | "restored"
+    | "unavailable"
+    | "delayed"
+    | "partial-create" = "normal",
 ) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
 window.calls=[]; window.messages=[]; window.providerWrites=0; window.hostErrors=[]; window.submissionAttempts=0; window.failNext=false; window.failNoWriteNext=false; window.failGenericNext=false; window.failMessageNext=undefined; window.deferGenericNext=false;
-const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId;
-let review=JSON.parse(${JSON.stringify(reviewJson)}); if(mode==='restored') review={...review,draftId:undefined,shoppingListId:Number(basketIds[0]),shoppingListName:'Synthetic saved list',reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved'}; if(mode==='idless'){delete review.draftId;delete review.revision;delete review.submissionAttempted}
-const inventory=basketIds.map((id,index)=>({id:Number(id),name:'Synthetic saved list '+(index+1),productCount:index+2}));
-const alternativeView=${JSON.stringify(fixtureView(3, "Synthetic alternative"))};
+const mode=${JSON.stringify(mode)}; const basketIds=${JSON.stringify(basketIds)}; let selectedBasketId; let delayedShowPending=mode==='delayed'; let unavailableShowPending=mode==='unavailable';
+const hostSnapshot=JSON.parse(${JSON.stringify(reviewJson)}); let review=JSON.parse(JSON.stringify(hostSnapshot)); if(mode==='restored') review={...review,shoppingListId:Number(basketIds[0]),shoppingListName:'Synthetic saved list',reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved'}; if(mode==='partial-create') review={...review,saveStatus:'saved',actionNotice:undefined,saveProgress:undefined}; if(mode==='idless'){delete review.shoppingListId;delete review.reviewContextId;delete review.revision;delete review.submissionAttempted}
+const inventoryIds=mode==='partial-create'?[...basketIds,'46']:basketIds; const inventory=inventoryIds.map((id,index)=>({id:Number(id),name:'Synthetic saved list '+(index+1),productCount:index+2}));
+const alternativeView=${JSON.stringify(fixtureView(6, "Synthetic alternative"))};
 const frame=document.querySelector('iframe');
 const post=(event,message)=>event.source.postMessage(message,location.origin);
 const result=(review)=>({structuredContent:{review,...(mode==='normal'?{}:{shoppingLists:inventory,selectedShoppingListId:selectedBasketId?Number(selectedBasketId):null})}});
 const payload=(data)=>({structuredContent:data});
 const apply=(action,args)=>{
  if(action.kind==='list') return payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true});
- if(action.kind==='select'){selectedBasketId=String(args.shopping_list_id);review={...review,draftId:undefined,shoppingListId:Number(selectedBasketId),shoppingListName:inventory.find(list=>String(list.id)===selectedBasketId)?.name,reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved',saveProgress:undefined,items:args.action.accept_saved_subset_draft_id?review.items.slice(0,1):review.items};return result(review)}
- if(action.kind==='show') return result(review);
- if(action.kind==='save'&&window.saveOutcome){review={...review,shoppingListId:44,shoppingListName:action.name,saveStatus:window.saveOutcome,saveProgress:{completed:window.saveOutcome==='partial'?1:review.items.length,total:review.items.length}};if(window.saveOutcome==='saved')delete review.draftId;return result(review)}
+ if(action.kind==='select'){selectedBasketId=String(args.shopping_list_id);if(Number(selectedBasketId)!==Number(review.shoppingListId))review={...review,items:[{product_id:8,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(8, "Foreign list product"))}}]};review={...review,shoppingListId:Number(selectedBasketId),shoppingListName:inventory.find(list=>String(list.id)===selectedBasketId)?.name,reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved',saveProgress:undefined};return result(review)}
+ if(action.kind==='show'){if(args.shopping_list_id!==review.shoppingListId)throw new Error('Synthetic exact-list mismatch');return result(review)}
  if(action.kind==='navigate') review.destination=action.destination;
- if(action.kind==='quantity'){review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;if(review.shoppingListId&&window.markNativeListDirty)review.shoppingListDirty=true}
- if(action.kind==='remove') review.items=review.items.filter(item=>!action.product_ids.includes(item.product_id));
+ if(action.kind==='quantity'){review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;window.providerWrites++}
+ if(action.kind==='remove'){review.items=review.items.filter(item=>!action.product_ids.includes(item.product_id));window.providerWrites++}
  if(action.kind==='alternatives'){ review.destination='alternatives'; review.alternatives={product_id:action.product_id,query:action.query,views:[alternativeView]}; }
- if(action.kind==='replace'){ const target=review.items.find(item=>item.product_id===action.product_id); target.view=alternativeView; target.product_id=action.replacement_id; target.state='ready'; review.destination='ready'; review.alternatives=undefined; }
+ if(action.kind==='replace'){ const target=review.items.find(item=>item.product_id===action.product_id); target.view={...alternativeView,product:{...alternativeView.product,id:action.replacement_id,name:'Synthetic replacement'}}; target.product_id=action.replacement_id; target.state='ready'; review.destination='ready'; review.alternatives=undefined; window.providerWrites++ }
  if(action.kind!=='navigate' && action.kind!=='alternatives') delete review.submission;
  return result(review);
 };
 window.getReview=()=>JSON.parse(JSON.stringify(review)); window.getBasketState=()=>({selected:selectedBasketId,ids:inventory.map(list=>String(list.id))});
-window.sendPassive=()=>{const older=JSON.parse(JSON.stringify(review));older.items=[{product_id:99,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(99, "Foreign product"))}}];frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(older)},location.origin)};
+window.sendPassive=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result(hostSnapshot)},location.origin);
 window.sendPassivePicker=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true})},location.origin);
-let deferredSubmit; window.resolveDeferredSubmit=()=>{const complete=deferredSubmit;deferredSubmit=undefined;complete?.()};
+let deferredSubmit; window.resolveDeferredSubmit=()=>{const complete=deferredSubmit;deferredSubmit=undefined;complete?.()}; let deferredShow; window.resolveDeferredShow=()=>{const complete=deferredShow;deferredShow=undefined;complete?.()};
 let deferredGeneric; window.cancelPendingTool=()=>frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-cancelled',params:{reason:'synthetic cancellation'}},location.origin); window.rejectDeferredGeneric=()=>{if(deferredGeneric){const {event,message}=deferredGeneric;deferredGeneric=undefined;post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Temporary synthetic failure'}})}};
 window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
- if(message.method==='ui/notifications/initialized'){const initial=mode==='unavailable'?payload({unavailable:true,selectionRequired:true,shoppingLists:inventory}):mode==='picker'?payload({shoppingLists:inventory,selectionRequired:true}):mode==='idless'?payload({review,shoppingLists:inventory,selectionRequired:true}):result(review);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
+ if(message.method==='ui/notifications/initialized'){const initial=mode==='picker'?payload({shoppingLists:inventory,selectionRequired:true}):mode==='idless'?payload({review:hostSnapshot,shoppingLists:inventory,selectionRequired:true}):result(hostSnapshot);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
  if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
+  if(name==='update_product_review' && args.action?.kind==='show' && delayedShowPending){delayedShowPending=false;deferredShow=()=>post(event,{jsonrpc:'2.0',id:message.id,result:result(review)});return}
+  if(name==='update_product_review' && args.action?.kind==='show' && unavailableShowPending){unavailableShowPending=false;return post(event,{jsonrpc:'2.0',id:message.id,result:payload({unavailable:true})})}
   if(name==='submit_product_review'){
    window.submissionAttempts++;
    if(window.deferSubmitNext){window.deferSubmitNext=false;deferredSubmit=()=>post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});return}
@@ -204,6 +228,8 @@ window.addEventListener('message',event=>{
       unavailable:payload({unavailable:true}),
       malformed:payload({unexpected:true}),
       tool:{isError:true,content:[{type:'text',text:window.failMessageNext??'Temporary synthetic failure'}]},
+      partial:result({...review,updateStatus:'partial',actionNotice:'Nemlig did not confirm this shopping-list change. Refresh the exact list before editing again.'}),
+      uncertain:result({...review,updateStatus:'uncertain',actionNotice:'Nemlig may have applied this shopping-list change. Refresh the exact list before editing again.'}),
     };
     if(kind==='tool') window.failMessageNext=undefined;
     return post(event,{jsonrpc:'2.0',id:message.id,result:responses[kind]});
@@ -218,8 +244,8 @@ window.addEventListener('message',event=>{
 const hostDocuments = new Map([
   ["/host", parentDocument(fixtureJson)],
   ["/host-native", parentDocument(nativeFixtureJson)],
-  ["/host-draft", parentDocument(draftFixtureJson)],
-  ["/host-unavailable", parentDocument(draftFixtureJson, "unavailable")],
+  ["/host-native-cached", parentDocument(fixtureJson)],
+  ["/host-unavailable", parentDocument(fixtureJson, "unavailable")],
   [
     "/host-partial-dirty",
     parentDocument(
@@ -230,6 +256,12 @@ const hostDocuments = new Map([
     ),
   ],
   ["/host-partial", parentDocument(partialFixtureJson)],
+  [
+    "/host-partial-create",
+    parentDocument(partialFixtureJson, "partial-create"),
+  ],
+  ["/host-unknown-creation", parentDocument(unknownCreationFixtureJson)],
+  ["/host-delayed", parentDocument(fixtureJson, "delayed")],
   ["/host-long", parentDocument(longFixtureJson)],
   ["/host-picker", parentDocument(fixtureJson, "picker")],
   ["/host-idless", parentDocument(fixtureJson, "idless")],
@@ -329,21 +361,6 @@ try {
     viewerOverrides,
   );
   const page = await context.newPage();
-  let manifestRequests = 0;
-  page.on("request", (request) => {
-    if (new URL(request.url()).pathname === VIEWER_MANIFEST_PATH) {
-      manifestRequests += 1;
-    }
-  });
-  const capture = async (name: string) => {
-    if (!screenshotDirectory) {
-      return;
-    }
-    await mkdir(screenshotDirectory, { recursive: true });
-    const path = resolve(screenshotDirectory, `${name}.png`);
-    await page.screenshot({ path });
-    console.log(`Synthetic viewer mockup: ${path}`);
-  };
   page.setDefaultTimeout(10_000);
   page.setDefaultNavigationTimeout(10_000);
   const errors: string[] = [];
@@ -353,1932 +370,716 @@ try {
       errors.push(message.text());
     }
   });
-  await page.goto(`http://127.0.0.1:${address.port}/host`, {
-    waitUntil: "domcontentloaded",
-  });
-  console.log("Synthetic viewer smoke: host page loaded");
+  const base = `http://127.0.0.1:${address.port}`;
   const frame = page.frameLocator('iframe[title="viewer"]');
-  await frame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor({ timeout: 10_000 })
-    .catch(async (error: unknown) => {
-      const debug = await Promise.race([
-        frame
-          .locator("body")
-          .innerText()
-          .catch(() => "<no viewer body>"),
-        page.waitForTimeout(1_000).then(() => "<viewer read timed out>"),
-      ]);
-      throw new Error(
-        `Initial viewer did not load: ${debug}; frames=${JSON.stringify(page.frames().map((item) => item.url()))}`,
-        {
-          cause: error,
-        },
-      );
-    });
-  assert.equal(
-    await page.evaluate(() => window.calls.length),
-    0,
-    "mount revalidated the viewer",
-  );
-  assert.equal(
-    await frame.locator("input[type=checkbox]").count(),
-    0,
-    "unified list rendered checkboxes",
-  );
-  assert.equal(
-    await frame.getByRole("button", { name: /To decide|Ready \(/ }).count(),
-    0,
-    "unified list rendered destination tabs",
-  );
-  assert.equal(
-    await frame.locator(".product-list article").count(),
-    2,
-    "not every fixture item was shown",
-  );
-  assert.equal(
-    await frame
-      .getByRole("button", { name: "Save list before review" })
-      .isDisabled(),
-    true,
-    "unsaved draft allowed submission before saving a native list",
-  );
-  assert.equal(
-    await frame.getByRole("button", { name: "Clear", exact: true }).isVisible(),
-    true,
-    "Clear control is hidden",
-  );
-  const actionWidths = await frame
-    .locator(".clear-local-basket")
-    .evaluate((clear) => {
-      const submit = document.querySelector<HTMLButtonElement>(
-        '[data-viewer-component="action-footer"] button',
-      );
-      return {
-        clear: clear.clientWidth,
-        submit: submit?.clientWidth ?? 0,
-        clearAfterFooter: Boolean(
-          submit &&
-          submit.compareDocumentPosition(clear) &
-            Node.DOCUMENT_POSITION_FOLLOWING,
-        ),
-      };
-    });
-  assert.ok(
-    actionWidths.submit > 250 && actionWidths.clear === actionWidths.submit,
-    "Submit and Clear are not full-width controls",
-  );
-  assert.equal(
-    actionWidths.clearAfterFooter,
-    true,
-    "Clear is not below the submit control",
-  );
-  await capture("local-basket");
-
-  // Explicit unavailability outranks picker hints and a stale review refresh.
-  const unavailablePage = await context.newPage();
-  await unavailablePage.goto(
-    `http://127.0.0.1:${address.port}/host-unavailable`,
-  );
-  const unavailableFrame = unavailablePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await unavailableFrame
-    .getByRole("heading", { name: "Shopping list unavailable", exact: true })
-    .waitFor({ timeout: 5000 });
-  assert.equal(
-    await unavailableFrame
-      .getByRole("button", { name: /Open shopping list/u })
-      .count(),
-    0,
-  );
-  assert.deepEqual(await unavailablePage.evaluate(() => window.calls), []);
-  await unavailablePage.close();
-
-  const expiredPage = await context.newPage();
-  await expiredPage.goto(`http://127.0.0.1:${address.port}/host-partial-dirty`);
-  const expiredFrame = expiredPage.frameLocator('iframe[title="viewer"]');
-  await expiredFrame
-    .getByRole("button", { name: "Update shopping list", exact: true })
-    .waitFor();
-  await expiredPage.evaluate(() => {
-    window.failGenericNext = true;
-  });
-  await expiredFrame
-    .getByRole("button", { name: "Update shopping list", exact: true })
-    .click();
-  const updateRecovery = expiredFrame.getByRole("dialog", {
-    name: "Update was not confirmed",
-  });
-  await updateRecovery.waitFor();
-  await expiredPage.evaluate(() => {
-    window.nextReviewResponse = "unavailable";
-  });
-  await updateRecovery
-    .getByRole("button", { name: "Refresh shopping list", exact: true })
-    .click();
-  await expiredFrame
-    .getByRole("heading", { name: "Shopping list unavailable", exact: true })
-    .waitFor({ timeout: 5000 });
-  assert.match(
-    await expiredFrame.locator("body").innerText(),
-    /draft is no longer available/u,
-  );
-  assert.equal(await expiredFrame.getByRole("dialog").count(), 0);
-  assert.equal(
-    await expiredFrame
-      .getByRole("button", { name: "Save shopping list", exact: true })
-      .count(),
-    0,
-  );
-  assert.deepEqual(
-    await expiredPage.evaluate(() =>
-      window.calls.map(({ args }) => args.action?.kind),
-    ),
-    ["update", "show"],
-  );
-  assert.equal(await expiredPage.evaluate(() => window.providerWrites), 0);
-  await expiredPage.close();
-
-  // A failed alternatives request must not erase an already-edited draft.
-  for (const failure of [
-    "transport",
-    "tool",
-    "malformed",
-    "unavailable",
-    "products",
-  ] as const) {
-    const draftPage = await context.newPage();
-    await draftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
-    const draftFrame = draftPage.frameLocator('iframe[title="viewer"]');
-    await draftFrame
-      .getByRole("heading", { name: "Draft products", exact: true })
-      .waitFor();
-    const summary = draftFrame.getByRole("button", {
-      name: "Show details for Synthetic milk",
-    });
-    await summary.press("Shift+F10");
-    await draftFrame
-      .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-      .click();
-    await draftPage.waitForFunction(
-      () => window.getReview().items[0]?.quantity === 2,
-    );
-    await draftFrame
-      .getByRole("button", { name: "Find alternatives" })
-      .waitFor({ state: "visible" });
-    await draftPage.evaluate((kind) => {
-      window.failGenericNext = kind === "transport";
-      window.nextReviewResponse = kind === "transport" ? undefined : kind;
-    }, failure);
-    await draftFrame.getByRole("button", { name: "Find alternatives" }).click();
-    const recovery = draftFrame.getByRole("dialog", {
-      name: "Draft action needs review",
-    });
-    await recovery.waitFor({ timeout: 5000 });
-    await draftPage.evaluate(() => window.sendPassive());
-    await recovery.getByRole("button", { name: "Return to draft" }).click();
-    await recovery.waitFor({ state: "detached" });
-    await draftFrame
-      .getByRole("heading", { name: "Draft products", exact: true })
-      .waitFor();
-    assert.equal(
-      await draftFrame.getByText("Foreign product", { exact: true }).count(),
-      0,
-      "passive result replaced the edited draft after failure",
-    );
-    await summary.press("Shift+F10");
-    assert.equal(
-      await draftFrame
-        .locator(".product-action-quantity-value")
-        .first()
-        .textContent(),
-      "2",
-      "alternatives failure rolled back an accepted quantity",
-    );
-    await draftFrame.getByRole("button", { name: "Find alternatives" }).click();
-    await draftFrame
-      .getByRole("heading", { name: "Find an alternative", level: 1 })
-      .waitFor();
-    assert.equal(
-      await draftPage.evaluate(
-        () =>
-          window.calls.filter(
-            ({ args }) => args.action?.kind === "alternatives",
-          ).length,
-      ),
-      2,
-      "recovery automatically replayed the failed alternatives action",
-    );
-    await draftPage.evaluate(() => {
-      window.nextReviewResponse = "tool";
-    });
-    const replace = draftFrame.getByRole("button", {
-      name: "Use Synthetic alternative as the alternative",
-    });
-    await replace.click();
-    await recovery.waitFor();
-    await recovery.getByRole("button", { name: "Return to draft" }).click();
-    await recovery.waitFor({ state: "detached" });
-    await draftFrame
-      .getByRole("heading", { name: "Find an alternative", level: 1 })
-      .waitFor();
-    assert.equal(
-      await draftPage.evaluate(() => window.getReview().items[0]?.product_id),
-      1,
-      "failed replacement removed original product",
-    );
-    await replace.click();
-    await draftFrame
-      .getByRole("heading", { name: "Draft products", exact: true })
-      .waitFor();
-    assert.deepEqual(
-      await draftPage.evaluate(() =>
-        window
-          .getReview()
-          .items.map(({ product_id, quantity }) => [product_id, quantity]),
-      ),
-      [
-        [3, 2],
-        [2, 2],
-      ],
-      "explicit replacement after recovery lost rows or quantity",
-    );
-    assert.equal(
-      await draftPage.evaluate(() => window.submissionAttempts),
-      0,
-      "draft error recovery submitted a real basket",
-    );
-    await draftPage.close();
-  }
-
-  const cancelledDraftPage = await context.newPage();
-  await cancelledDraftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
-  const cancelledDraftFrame = cancelledDraftPage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await cancelledDraftFrame
-    .getByRole("button", { name: "Show details for Synthetic milk" })
-    .press("Shift+F10");
-  await cancelledDraftPage.evaluate(() => {
-    window.failGenericNext = true;
-    window.deferGenericNext = true;
-  });
-  await cancelledDraftFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await cancelledDraftPage.waitForFunction(() =>
-    window.calls.some(({ args }) => args.action?.kind === "quantity"),
-  );
-  await cancelledDraftPage.evaluate(() => window.cancelPendingTool());
-  const cancelledDraftDialog = cancelledDraftFrame.getByRole("dialog", {
-    name: "Draft action needs review",
-  });
-  await cancelledDraftDialog.waitFor();
-  await cancelledDraftPage.evaluate(() => {
-    window.rejectDeferredGeneric();
-    window.sendPassive();
-  });
-  await cancelledDraftDialog
-    .getByRole("button", { name: "Return to draft" })
-    .click();
-  await cancelledDraftDialog.waitFor({ state: "detached" });
-  await cancelledDraftFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  assert.equal(
-    await cancelledDraftFrame
-      .locator(".product-action-quantity-value")
-      .first()
-      .textContent(),
-    "2",
-    "cancelled draft action dropped pending quantity",
-  );
-  assert.equal(
-    await cancelledDraftFrame
-      .getByText("Foreign product", { exact: true })
-      .count(),
-    0,
-    "late result replaced cancelled draft",
-  );
-  assert.equal(
-    await cancelledDraftPage.evaluate(
-      () =>
-        window.calls.filter(({ args }) => args.action?.kind === "quantity")
-          .length,
-    ),
-    1,
-    "cancellation automatically replayed quantity change",
-  );
-  await cancelledDraftPage.close();
-
-  const queuedDraftPage = await context.newPage();
-  await queuedDraftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
-  const queuedDraftFrame = queuedDraftPage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await queuedDraftFrame
-    .getByRole("button", { name: "Show details for Synthetic milk" })
-    .press("Shift+F10");
-  await queuedDraftFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await queuedDraftPage.evaluate(() => window.cancelPendingTool());
-  await queuedDraftFrame
-    .getByRole("dialog", { name: "Draft action needs review" })
-    .waitFor();
-  // Wait past the existing debounce to prove cancellation stops queued dispatch.
-  await queuedDraftPage.waitForTimeout(2700);
-  assert.equal(
-    await queuedDraftPage.evaluate(
-      () =>
-        window.calls.filter(({ args }) => args.action?.kind === "quantity")
-          .length,
-    ),
-    0,
-    "a quantity timer dispatched after host cancellation",
-  );
-  await queuedDraftPage.close();
-
-  const cancelledSavePage = await context.newPage();
-  await cancelledSavePage.goto(`http://127.0.0.1:${address.port}/host-draft`);
-  const cancelledSaveFrame = cancelledSavePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await cancelledSaveFrame
-    .getByLabel("Nemlig shopping list name")
-    .fill("Cancelled fixture save");
-  await cancelledSavePage.evaluate(() => {
-    window.failGenericNext = true;
-    window.deferGenericNext = true;
-  });
-  await cancelledSaveFrame
-    .getByRole("button", { name: "Save shopping list" })
-    .click();
-  await cancelledSavePage.waitForFunction(() =>
-    window.calls.some(({ args }) => args.action?.kind === "save"),
-  );
-  await cancelledSavePage.evaluate(() => window.cancelPendingTool());
-  const cancelledSaveDialog = cancelledSaveFrame.getByRole("dialog", {
-    name: "Save was not confirmed",
-  });
-  await cancelledSaveDialog.waitFor();
-  await cancelledSaveDialog
-    .getByText(/check your saved lists before trying again/u)
-    .waitFor();
-  await cancelledSavePage.evaluate(() => window.rejectDeferredGeneric());
-  await cancelledSaveDialog
-    .getByRole("button", { name: "Return to draft" })
-    .click();
-  await cancelledSaveDialog.waitFor({ state: "detached" });
-  await cancelledSaveFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  assert.equal(
-    await cancelledSavePage.evaluate(
-      () =>
-        window.calls.filter(({ args }) => args.action?.kind === "save").length,
-    ),
-    1,
-    "cancelled Save automatically retried",
-  );
-  await cancelledSavePage.close();
-
-  const basketPage = await context.newPage();
-  await basketPage.goto(`http://127.0.0.1:${address.port}/host-picker`);
-  const basketFrame = basketPage.frameLocator('iframe[title="viewer"]');
-  await basketFrame.locator("#title").waitFor();
-  assert.equal(
-    await basketPage.evaluate(() => window.calls.length),
-    0,
-    "picker mount selected a basket",
-  );
-  await openBasket(
-    basketPage,
-    basketFrame,
-    basketIds[0],
-    "Synthetic saved list 1",
-    "selection did not carry the explicit native shopping-list ID",
-  );
-
-  await basketFrame
-    .locator(".product-action-row")
-    .first()
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await basketFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await basketPage.waitForFunction(() =>
-    window.calls.some(
-      ({ args }) => args.action?.kind === "quantity" && args.shopping_list_id,
-    ),
-  );
-  assert.equal(
-    await basketPage.evaluate(
-      () =>
-        window.calls.find(({ args }) => args.action?.kind === "quantity")?.args
-          .shopping_list_id,
-    ),
-    Number(basketIds[0]),
-    "quantity update was not bound to the selected native list",
-  );
-
-  assert.equal(
-    await basketFrame
-      .getByRole("button", { name: "Submit to Nemlig basket" })
-      .isDisabled(),
-    false,
-    "selected native shopping list was not ready for submission",
-  );
-  assert.equal(
-    await basketPage.evaluate(() => window.submissionAttempts),
-    0,
-    "selection unexpectedly submitted without user action",
-  );
-  await basketPage.close();
-
-  const legacyPage = await context.newPage();
-  await legacyPage.goto(`http://127.0.0.1:${address.port}/host-idless`);
-  const legacyFrame = legacyPage.frameLocator('iframe[title="viewer"]');
-  await legacyFrame.locator("#title").waitFor();
-  assert.equal(
-    await legacyPage.evaluate(() => window.calls.length),
-    0,
-    "idless card guessed a basket",
-  );
-  await legacyPage.close();
-
-  const restoredPage = await context.newPage();
-  await restoredPage.goto(`http://127.0.0.1:${address.port}/host-restored`);
-  const restoredFrame = restoredPage.frameLocator('iframe[title="viewer"]');
-  await restoredFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await restoredFrame.locator(".viewer").evaluate(() => {
-    window.dispatchEvent(new Event("focus"));
-  });
-  assert.equal(
-    await restoredPage.evaluate(() => window.calls.length),
-    0,
-    "passive restore sent an obsolete basket heartbeat",
-  );
-  await restoredPage.close();
-
-  const passivePickerPage = await context.newPage();
-  await passivePickerPage.goto(
-    `http://127.0.0.1:${address.port}/host-restored`,
-  );
-  const passivePickerFrame = passivePickerPage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await passivePickerFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await passivePickerFrame
-    .locator(".product-action-row")
-    .first()
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await passivePickerFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  assert.equal(
-    await passivePickerPage.evaluate(() => window.calls.length),
-    0,
-    "restored quantity should still be debounced",
-  );
-  await passivePickerPage.evaluate(() => window.sendPassivePicker());
-  await passivePickerFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  assert.equal(
-    await passivePickerFrame
-      .getByRole("heading", { name: "Shopping lists" })
-      .count(),
-    0,
-    "a passive picker replaced the restored bound basket",
-  );
-  await passivePickerPage.waitForFunction(
-    () =>
-      window.calls.filter(({ args }) => args.action?.kind === "quantity")
-        .length === 1,
-    undefined,
-    { timeout: 5_000 },
-  );
-  const passiveQuantity = await passivePickerPage.evaluate(
-    () =>
-      window.calls.find(({ args }) => args.action?.kind === "quantity")?.args,
-  );
-  assert.equal(
-    passiveQuantity?.shopping_list_id,
-    Number(basketIds[0]),
-    "passive picker retargeted the pending quantity to another list",
-  );
-  assert.equal(
-    passiveQuantity?.action?.quantity,
-    2,
-    "passive picker discarded the debounced quantity",
-  );
-  await passivePickerPage.close();
-
-  const pickerFlushPage = await context.newPage();
-  await pickerFlushPage.goto(`http://127.0.0.1:${address.port}/host-restored`);
-  const pickerFlushFrame = pickerFlushPage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await pickerFlushFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await pickerFlushFrame
-    .locator(".product-action-row")
-    .first()
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await pickerFlushFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await pickerFlushFrame.locator(".basket-menu > button").click();
-  await pickerFlushFrame
-    .getByRole("menuitem", { name: "Choose another shopping list" })
-    .click();
-  await pickerFlushFrame
-    .getByRole("heading", { name: "Shopping lists", exact: true })
-    .waitFor();
-  const pickerFlushCalls = await pickerFlushPage.evaluate(() =>
-    window.calls.map(({ args }) => args),
-  );
-  const flushedQuantityIndex = pickerFlushCalls.findIndex(
-    (args) => args.action?.kind === "quantity",
-  );
-  const pickerListIndex = pickerFlushCalls.findIndex(
-    (args) => args.action?.kind === "list",
-  );
-  assert.ok(
-    flushedQuantityIndex >= 0,
-    `picker switch dropped the pending quantity: ${JSON.stringify({
-      calls: pickerFlushCalls,
-      text: await pickerFlushFrame.locator(".viewer").innerText(),
-    })}`,
-  );
-  assert.ok(
-    pickerListIndex > flushedQuantityIndex,
-    "picker list was requested before the pending quantity was saved",
-  );
-  assert.equal(
-    pickerFlushCalls[flushedQuantityIndex]?.shopping_list_id,
-    Number(basketIds[0]),
-    "picker flush was not bound to the original native list",
-  );
-  assert.equal(
-    pickerFlushCalls[flushedQuantityIndex]?.action?.quantity,
-    2,
-    "picker flush did not persist the incremented quantity",
-  );
-  await pickerFlushPage.close();
-
-  const pickerFlushFailurePage = await context.newPage();
-  await pickerFlushFailurePage.goto(
-    `http://127.0.0.1:${address.port}/host-restored`,
-  );
-  const pickerFlushFailureFrame = pickerFlushFailurePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await pickerFlushFailureFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await pickerFlushFailureFrame
-    .locator(".product-action-row")
-    .first()
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await pickerFlushFailurePage.evaluate(() => {
-    window.failGenericNext = true;
-  });
-  await pickerFlushFailureFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await pickerFlushFailureFrame.locator(".basket-menu > button").click();
-  await pickerFlushFailureFrame
-    .getByRole("menuitem", { name: "Choose another shopping list" })
-    .click();
-  await pickerFlushFailureFrame
-    .getByText(/Could not save the pending quantity/u)
-    .waitFor();
-  assert.equal(
-    await pickerFlushFailureFrame
-      .getByRole("heading", { name: "Synthetic saved list", exact: true })
-      .count(),
-    1,
-    "failed quantity flush left the original basket",
-  );
-  assert.equal(
-    await pickerFlushFailureFrame
-      .getByRole("heading", { name: "Shopping lists", exact: true })
-      .count(),
-    0,
-    "failed quantity flush navigated to the picker",
-  );
-  assert.equal(
-    await pickerFlushFailureFrame
-      .locator(".product-action-quantity-value")
-      .first()
-      .textContent(),
-    "2",
-    "failed quantity flush discarded the pending quantity",
-  );
-  assert.equal(
-    await pickerFlushFailurePage.evaluate(() =>
-      window.calls.some(({ args }) => args.action?.kind === "list"),
-    ),
-    false,
-    "failed quantity flush still requested the picker list",
-  );
-  await pickerFlushFailurePage.close();
-
-  const staleFailurePage = await context.newPage();
-  await staleFailurePage.goto(`http://127.0.0.1:${address.port}/host-restored`);
-  const staleFailureFrame = staleFailurePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await staleFailureFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await staleFailureFrame
-    .locator(".product-action-row")
-    .first()
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await staleFailurePage.evaluate(() => {
-    window.failGenericNext = true;
-    window.deferGenericNext = true;
-  });
-  await staleFailureFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await staleFailurePage.waitForFunction(() =>
-    window.calls.some(({ args }) => args.action?.kind === "quantity"),
-  );
-  await staleFailurePage.evaluate(() => window.cancelPendingTool());
-  const cancellationStatus = staleFailureFrame.getByRole("status");
-  await cancellationStatus
-    .getByText(
-      "Request cancelled. Continue in conversation when you are ready.",
-      {
-        exact: true,
-      },
-    )
-    .waitFor();
-  await staleFailurePage.evaluate(() => window.rejectDeferredGeneric());
-  await staleFailurePage.waitForTimeout(100);
-  assert.equal(
-    await cancellationStatus
-      .getByText(
-        "Request cancelled. Continue in conversation when you are ready.",
-        {
-          exact: true,
-        },
-      )
-      .count(),
-    1,
-    "a stale rejection replaced the cancellation state",
-  );
-  assert.equal(
-    await staleFailureFrame.getByText(/could not confirm this action/u).count(),
-    0,
-    "a stale rejection replaced the current selection with an error",
-  );
-  await staleFailurePage.close();
-
-  const milkCard = frame
-    .locator(".product-card")
-    .filter({ hasText: "Synthetic milk" });
-  const milkDisclosure = milkCard.locator(
-    '[data-viewer-component="product-summary"]',
-  );
-  const rowHitArea = await milkCard.evaluate((card) => {
-    const row = card.getBoundingClientRect();
-    const button = card
-      .querySelector('[data-viewer-component="product-summary"]')!
-      .getBoundingClientRect();
-    return {
-      top: button.top - row.top,
-      left: button.left - row.left,
-      right: row.right - button.right,
-      bottom: row.bottom - button.bottom,
-    };
-  });
-  assert.ok(
-    Object.values(rowHitArea).every((gap) => gap <= 2),
-    `product row has a non-interactive edge: ${JSON.stringify(rowHitArea)}`,
-  );
-  await page.bringToFront();
-  await milkDisclosure.click();
-  const details = frame.locator(".product-detail-modal");
-  await details.waitFor();
-  const detailsLayout = await details.evaluate((modal) => ({
-    width: modal.getBoundingClientRect().width,
-    height: modal.getBoundingClientRect().height,
-    viewport: modal.ownerDocument.documentElement.clientHeight,
-  }));
-  assert.ok(
-    detailsLayout.height >= detailsLayout.viewport - 32 &&
-      detailsLayout.width >= 300,
-    `product details did not open as a near-full-screen modal: ${JSON.stringify(detailsLayout)}`,
-  );
-  const detailsBox = await details.boundingBox();
-  const hostFrameBox = await page
-    .locator('iframe[title="viewer"]')
-    .boundingBox();
-  assert.ok(
-    detailsBox && detailsBox.y >= 0 && detailsBox.y + detailsBox.height <= 860,
-    `product details extend beyond the visible host viewport: ${JSON.stringify(detailsBox)}`,
-  );
-  assert.ok(
-    hostFrameBox && detailsBox && detailsBox.y - hostFrameBox.y <= 16,
-    "product details are not top-aligned in the viewer",
-  );
-  for (const label of ["Remove product", "Find alternatives"]) {
-    assert.equal(await details.getByRole("button", { name: label }).count(), 1);
-  }
-  await details
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
-  await details
-    .getByRole("button", { name: "Decrease quantity of Synthetic milk" })
-    .click();
-  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 1);
-  await details.getByRole("button", { name: "Back to shopping list" }).click();
-  await milkDisclosure.press("Shift+F10");
-  const actionSheet = frame.getByRole("group", {
-    name: "Actions for Synthetic milk",
-  });
-  await actionSheet.waitFor();
-  assert.equal(
-    await frame.getByRole("dialog").count(),
-    0,
-    "actions opened a modal",
-  );
-  const rowBox = await frame.locator('[data-product-id="1"]').boundingBox();
-  const sheetBox = await actionSheet.boundingBox();
-  assert.ok(rowBox);
-  assert.ok(sheetBox);
-  assert.ok(
-    Math.abs(rowBox.y - sheetBox.y) < 2,
-    "actions did not replace the product row",
-  );
-  assert.equal(
-    await frame
-      .getByRole("button", { name: "Show details for Synthetic milk" })
-      .evaluate((button) => {
-        button.focus({ preventScroll: true });
-        return (
-          button.closest("article")?.inert &&
-          button.ownerDocument.activeElement !== button
-        );
-      }),
-    true,
-    "replaced product summary is still interactive",
-  );
-  for (const label of ["Remove product", "Find alternatives"]) {
-    assert.equal(
-      await actionSheet.getByRole("button", { name: label }).count(),
-      1,
-    );
-  }
-  const assertActionLayout = async (surface = actionSheet) => {
-    await surface.evaluate(async (node) => {
-      await Promise.all(
-        node.getAnimations().map((animation) => animation.finished),
-      );
-    });
-    const remove = await surface
-      .getByRole("button", { name: "Remove product" })
-      .boundingBox();
-    const quantity = await surface
-      .locator('[data-viewer-component="quantity-control"]')
-      .boundingBox();
-    const alternatives = await surface
-      .getByRole("button", { name: "Find alternatives" })
-      .boundingBox();
-    assert.ok(remove, "trash control is missing");
-    assert.ok(remove.x >= 0, "trash control is clipped offscreen");
-    assert.equal(
-      await surface.evaluate((node) => node.parentElement?.scrollLeft),
-      0,
-      "focusing inline actions scrolled the row sideways",
-    );
-    assert.ok(quantity, "quantity controls are missing");
-    assert.ok(alternatives, "Find alternatives is missing");
-    assert.ok(
-      remove.x + remove.width < quantity.x,
-      "trash control is not left of quantity controls",
-    );
-    assert.ok(
-      Math.abs(remove.y - quantity.y) < 2,
-      "trash and quantity controls are not aligned",
-    );
-    assert.ok(
-      Math.abs(alternatives.y - quantity.y) < 2,
-      "alternatives and quantity controls are not on the same line",
-    );
-    assert.ok(
-      remove.x + remove.width <= alternatives.x,
-      "alternatives is not beside trash",
-    );
-    assert.ok(
-      alternatives.x + alternatives.width <= quantity.x,
-      "alternatives is not before quantity controls",
-    );
-    const targets = await surface
-      .locator(".product-action-controls button")
-      .evaluateAll((buttons) =>
-        buttons.map((button) => {
-          const rect = button.getBoundingClientRect();
-          return rect.width >= 44 && rect.height >= 44;
-        }),
-      );
-    assert.equal(
-      targets.length,
-      4,
-      "trash, alternatives, minus, and plus controls are required",
-    );
-    assert.ok(
-      targets.every(Boolean),
-      "action controls have undersized touch targets",
-    );
-    assert.equal(
-      await surface.evaluate((modal) => modal.scrollWidth <= modal.clientWidth),
-      true,
-      "action sheet overflows horizontally",
-    );
-  };
-  await assertActionLayout();
-  await page.setViewportSize({ width: 320, height: 860 });
-  await assertActionLayout();
-  await capture("local-basket-actions-320");
-  await page.setViewportSize({ width: 375, height: 860 });
-  await capture("local-basket-quantity");
-  await actionSheet
-    .getByRole("button", { name: "Close product actions" })
-    .click();
-  await milkDisclosure.click();
-  await details.waitFor();
-  await assertActionLayout(details);
-  await page.setViewportSize({ width: 320, height: 860 });
-  await assertActionLayout(details);
-  await capture("product-details-actions-320");
-  await page.setViewportSize({ width: 375, height: 860 });
-  await details.getByRole("button", { name: "Find alternatives" }).click();
-  await frame
-    .getByRole("heading", { name: "Find an alternative", level: 1 })
-    .waitFor();
-  assert.equal(
-    await frame.getByRole("dialog").count(),
-    0,
-    "details stayed open over alternatives",
-  );
-  assert.equal(
-    await page.evaluate(() => window.getReview().items[0]?.quantity),
-    1,
-    "details alternatives changed quantity",
-  );
-  await frame.getByRole("button", { name: "Back to shopping list" }).click();
-  await frame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  const callsBeforeMenu = await page.evaluate(() => window.calls.length);
-  const box = await milkDisclosure.boundingBox();
-  assert.ok(box, "product summary has no hit area");
-  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.mouse.down();
-  await page.waitForTimeout(250);
-  await page.mouse.up();
-  await frame.getByRole("dialog", { name: "Synthetic milk" }).waitFor();
-  await frame
-    .getByRole("dialog", { name: "Synthetic milk" })
-    .getByRole("button", { name: "Back to shopping list" })
-    .click();
-  const swipeSummary = async (from: number, to: number, dy = 0) => {
-    const box = await milkDisclosure.boundingBox();
-    assert.ok(box, "product summary has no swipe hit area");
-    await page.mouse.move(box.x + box.width * from, box.y + box.height / 2);
-    await page.mouse.down();
-    // Tiny initial finger jitter must not lock a horizontal swipe to the vertical axis.
-    await page.mouse.move(box.x + box.width * from, box.y + box.height / 2 + 2);
-    await page.mouse.move(box.x + box.width * to, box.y + box.height / 2 + dy, {
-      steps: 5,
-    });
-    await page.mouse.up();
-  };
-  await swipeSummary(0.8, 0.2);
-  await actionSheet.waitFor();
-  assert.equal(
-    await page.evaluate(() => window.calls.length),
-    callsBeforeMenu,
-    "opening the action menu changed the Local basket",
-  );
-  await capture("local-basket-actions");
-  await actionSheet.press("Escape");
-  await actionSheet.waitFor({ state: "detached" });
-  for (const [from, to, dy] of [
-    [0.2, 0.8, 0],
-    [0.8, 0.7, 0],
-    [0.8, 0.7, 80],
-  ] as const) {
-    await swipeSummary(from, to, dy);
-    assert.equal(
-      await frame.locator(".product-inline-actions, [role=dialog]").count(),
-      0,
-      "rightward, short, or vertical movement opened a product overlay",
-    );
-  }
-  for (const cancelEvent of ["pointercancel", "lostpointercapture"]) {
-    const cancelBox = await milkDisclosure.boundingBox();
-    assert.ok(cancelBox, "product summary has no cancel hit area");
-    await page.mouse.move(cancelBox.x + cancelBox.width * 0.8, cancelBox.y + 5);
-    await page.mouse.down();
-    await page.mouse.move(cancelBox.x + cancelBox.width * 0.2, cancelBox.y + 5);
-    await milkDisclosure.dispatchEvent(cancelEvent, { pointerId: 1 });
-    await page.mouse.up();
-    assert.equal(
-      await frame.locator(".product-inline-actions, [role=dialog]").count(),
-      0,
-      `${cancelEvent} opened an overlay`,
-    );
-  }
-  await milkDisclosure.press("Enter");
-  await details.waitFor();
-  await details.press("Escape");
-  await details.waitFor({ state: "detached" });
-  const openMilkAlternatives = async () => {
-    await milkDisclosure.press("Shift+F10");
-    await frame
-      .locator(".product-inline-actions")
-      .getByRole("button", { name: "Find alternatives" })
-      .click();
-    await frame
-      .getByRole("heading", { name: "Find an alternative", level: 1 })
-      .waitFor();
-  };
-  await openMilkAlternatives();
-  assert.equal(
-    await page.evaluate(() =>
+  const currentRows = async () =>
+    page.evaluate(() =>
       window
         .getReview()
-        .items.map((item: { product_id: number; quantity: number }) => [
-          item.product_id,
-          item.quantity,
-        ])
-        .map(String)
-        .join(";"),
-    ),
-    "1,1;2,2",
-    "opening alternatives changed the basket",
-  );
-  await capture("alternatives");
-  const backCalls = await page.evaluate(() => window.calls.length);
-  await frame.getByRole("button", { name: "Back to shopping list" }).click();
-  await frame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  assert.equal(
-    await page.evaluate(() => window.calls.length),
-    backCalls,
-    "Back changed server state",
-  );
-
-  await milkDisclosure.press("Shift+F10");
-  await frame
-    .getByRole("group", { name: "Actions for Synthetic milk" })
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await frame.locator(".product-inline-actions").press("Escape");
-  await page.waitForFunction(() => window.getReview().items[0]?.quantity === 2);
-  await frame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  await page.evaluate(() => window.sendPassive());
-  assert.equal(
-    await frame.getByText("Foreign product").count(),
-    0,
-    "a passive host snapshot replaced a confirmed Local basket edit",
-  );
-  assert.equal(
-    await page.evaluate(() => window.getReview().items[0]?.quantity),
-    2,
-    "ordinary snapshot reopened alternatives or lost quantity after Back",
-  );
-  await openMilkAlternatives();
-  const candidate = frame
-    .locator(".alternative-options .product-card")
-    .filter({ hasText: "Synthetic alternative" });
-  await candidate
-    .getByRole("button", {
-      name: "Use Synthetic alternative as the alternative",
-    })
-    .click();
-  await frame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  const replacement = await page.evaluate(() =>
-    window
-      .getReview()
-      .items.find((item: { product_id: number }) => item.product_id === 3),
-  );
-  assert.ok(replacement, "replacement missing from Local basket");
-  assert.equal(replacement.quantity, 2, "replacement lost quantity");
-  assert.equal(replacement.state, "ready", "replacement did not remain Ready");
-  assert.equal(
-    await page.evaluate(() => window.getReview().items.length),
-    2,
-    "replacement dropped another row",
-  );
-
-  const oatsCard = frame
-    .locator(".product-card")
-    .filter({ hasText: longOatsName });
-  const oatsDisclosure = oatsCard.locator(
-    '[data-viewer-component="product-summary"]',
-  );
-  await oatsDisclosure.press("Shift+F10");
-  const increase = frame
-    .locator(".product-inline-actions")
-    .getByRole("button", {
-      name: `Increase quantity of ${longOatsName}`,
-    });
-  await increase.click();
-  await frame.locator(".product-inline-actions").press("Escape");
-  assert.equal(
-    await frame
-      .getByRole("button", { name: "Save list before review" })
-      .isDisabled(),
-    true,
-    "unsaved draft allowed submission before saving a native list",
-  );
-
-  // Save can change a draft's target identity; Back must still stay on the list.
-  for (const outcome of ["partial", "saved"] as const) {
-    const savePage = await context.newPage();
-    await savePage.goto(`http://127.0.0.1:${address.port}/host-draft`);
-    const saveFrame = savePage.frameLocator('iframe[title="viewer"]');
-    await saveFrame
-      .getByRole("button", { name: "Show details for Synthetic milk" })
-      .press("Shift+F10");
-    await saveFrame
-      .getByRole("button", { name: "Find alternatives", exact: true })
-      .click();
-    await saveFrame
-      .getByRole("heading", { name: "Find an alternative", exact: true })
-      .waitFor();
-    await saveFrame
-      .getByRole("button", { name: "Back to shopping list" })
-      .click();
-    await savePage.evaluate((value) => {
-      window.saveOutcome = value;
-    }, outcome);
-    await saveFrame
-      .getByRole("textbox", { name: "Nemlig shopping list name" })
-      .fill("Synthetic save");
-    await saveFrame
-      .getByRole("button", { name: "Save shopping list", exact: true })
-      .click();
-    await saveFrame
-      .getByRole("heading", { name: "Synthetic save", exact: true })
-      .waitFor();
-    assert.equal(
-      await saveFrame
-        .getByRole("heading", { name: "Find an alternative", exact: true })
-        .count(),
-      0,
-      `${outcome} save reopened stale alternatives`,
+        .items.map(({ product_id, quantity }) => [product_id, quantity]),
     );
-    await savePage.close();
-  }
-
-  const partialPage = await context.newPage();
-  await partialPage.goto(`http://127.0.0.1:${address.port}/host-partial`);
-  const partialFrame = partialPage.frameLocator('iframe[title="viewer"]');
-  const resumeSaving = partialFrame.getByRole("button", {
-    name: "Resume saving",
-  });
-  try {
-    await resumeSaving.waitFor({ timeout: 5_000 });
-  } catch (error) {
-    const content = await partialPage
-      .locator('iframe[title="viewer"]')
-      .evaluate(
-        (iframe) =>
-          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
-      );
-    await partialPage.screenshot({
-      path: resolve(
-        process.cwd(),
-        "../../.codex/review/partial-save-state.png",
-      ),
-    });
-    throw new Error(`Partial-save controls not rendered: ${content}`, {
-      cause: error,
-    });
-  }
-  await resumeSaving.click();
-  await partialPage.waitForFunction(() => window.calls.length > 0);
-  assert.deepEqual(
-    await partialPage.evaluate(() => window.calls.at(-1)?.args),
-    {
-      action: { kind: "save", name: "Synthetic partial list" },
-      draft_id: "12345678-1234-4234-8234-123456789def",
-    },
-    "partial-list resume did not target its original draft",
-  );
-  await partialFrame
-    .getByRole("button", { name: "Review saved products only" })
-    .click();
-  await partialFrame
-    .getByRole("button", { name: "Submit to Nemlig basket" })
-    .waitFor();
-  assert.deepEqual(
-    await partialPage.evaluate(() => window.calls.at(-1)?.args),
-    {
-      action: {
-        kind: "select",
-        accept_saved_subset_draft_id: "12345678-1234-4234-8234-123456789def",
-      },
-      shopping_list_id: 44,
-    },
-    "partial-list review did not target its exact native list",
-  );
-  assert.equal(
-    await partialPage.evaluate(() => window.getReview().items.length),
-    1,
-    "partial-list review did not show only saved rows",
-  );
-  await partialPage.close();
-
-  const nativePage = await context.newPage();
-  await nativePage.goto(`http://127.0.0.1:${address.port}/host-native`);
-  const nativeFrame = nativePage.frameLocator('iframe[title="viewer"]');
-  try {
-    await nativeFrame
-      .getByRole("heading", { name: "Synthetic saved list", exact: true })
-      .waitFor({ timeout: 5_000 });
-  } catch (error) {
-    const content = await nativePage
-      .locator('iframe[title="viewer"]')
-      .evaluate(
-        (iframe) =>
-          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
-      );
-    const hostErrors = await nativePage.evaluate(() => window.hostErrors);
-    await nativePage.screenshot({
-      path: resolve(process.cwd(), "../../.codex/review/native-list-state.png"),
-    });
-    throw new Error(
-      `Native-list review did not render: ${content}; hostErrors=${JSON.stringify(hostErrors)}`,
-      { cause: error },
-    );
-  }
-  assert.equal(
-    await nativeFrame
-      .getByRole("button", { name: "Submit to Nemlig basket" })
-      .isDisabled(),
-    false,
-    "saved Nemlig shopping list could not be submitted",
-  );
-  await nativePage.evaluate(() => {
-    window.deferSubmitNext = true;
-  });
-  await nativeFrame
-    .getByRole("button", { name: "Submit to Nemlig basket" })
-    .click();
-  await nativePage.waitForFunction(() => window.submissionAttempts === 1);
-  await nativeFrame.getByText("Updating…", { exact: true }).waitFor();
-  assert.equal(
-    await nativeFrame
-      .getByRole("heading", { name: "We could not verify the addition" })
-      .count(),
-    0,
-    "pending submit was shown as a failed addition",
-  );
-  assert.equal(
-    await nativeFrame
-      .getByRole("button", { name: "Submit to Nemlig basket", exact: true })
-      .isDisabled(),
-    true,
-    "pending submit allowed another attempt",
-  );
-  await nativePage.evaluate(() => window.resolveDeferredSubmit());
-  await nativeFrame
-    .getByRole("heading", { name: "Nemlig confirmed the addition" })
-    .waitFor();
-  assert.equal(
-    await nativePage.evaluate(() => window.submissionAttempts),
-    1,
-    "saved-list submission was not dispatched exactly once",
-  );
-  const nativeSubmit = await nativePage.evaluate(
-    () =>
-      window.calls.find(({ name }) => name === "submit_product_review")?.args,
-  );
-  assert.equal(nativeSubmit?.shopping_list_id, 44);
-  assert.equal(typeof nativeSubmit?.submission_id, "string");
-  await nativePage.close();
-
-  const completedPage = await context.newPage();
-  await completedPage.goto(`http://127.0.0.1:${address.port}/host-native`);
-  const completedFrame = completedPage.frameLocator('iframe[title="viewer"]');
-  await completedFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await completedFrame
-    .getByRole("button", { name: "Submit to Nemlig basket" })
-    .click();
-  await completedFrame
-    .getByRole("heading", { name: "Nemlig confirmed the addition" })
-    .waitFor();
-  await completedFrame
-    .getByRole("button", { name: "Choose another shopping list" })
-    .click();
-  await completedFrame
-    .getByRole("heading", { name: "Shopping lists", exact: true })
-    .waitFor();
-  await completedPage.close();
-
-  const uncertainPage = await context.newPage();
-  await uncertainPage.goto(`http://127.0.0.1:${address.port}/host-native`, {
-    waitUntil: "domcontentloaded",
-  });
-  const uncertainFrame = uncertainPage.frameLocator('iframe[title="viewer"]');
-  await uncertainFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await uncertainPage.evaluate(() => {
-    window.failNext = true;
-  });
-  await uncertainFrame
-    .getByRole("button", { name: "Submit to Nemlig basket" })
-    .click();
-  await uncertainPage.waitForFunction(() => window.submissionAttempts === 1);
-  await uncertainFrame
-    .getByRole("dialog")
-    .getByRole("heading", { name: "Check your Nemlig basket" })
-    .waitFor();
-  await uncertainFrame
-    .getByRole("dialog")
-    .getByRole("button", { name: "Inspect Nemlig basket in conversation" })
-    .waitFor();
-  assert.equal(
-    await uncertainFrame
-      .getByText(/known result is that no product was sent/iu)
-      .count(),
-    0,
-    "uncertain provider response was presented as a confirmed no-write",
-  );
-  assert.equal(
-    await uncertainPage.evaluate(() => window.submissionAttempts),
-    1,
-    "uncertain write was retried",
-  );
-  const uncertainDialog = uncertainFrame.getByRole("dialog");
-  assert.equal(
-    await uncertainDialog.evaluate((dialog) =>
-      dialog.contains(dialog.ownerDocument.activeElement),
-    ),
-    true,
-    "recovery dialog did not receive focus",
-  );
-  await uncertainDialog.press("Escape");
-  await uncertainFrame.getByRole("dialog").waitFor({ state: "detached" });
-  await uncertainPage.waitForFunction(
-    () => {
-      const active = document.querySelector<HTMLIFrameElement>(
-        'iframe[title="viewer"]',
-      )?.contentDocument?.activeElement;
-      return active?.id === "title" || active?.classList.contains("viewer");
-    },
-    undefined,
-    { timeout: 2_000 },
-  );
-  const recoveredSurface = await uncertainFrame
-    .locator("body")
-    .evaluate((body) => {
-      const active = body.ownerDocument.activeElement;
-      return {
-        focusRestored:
-          active?.id === "title" || active?.classList.contains("viewer"),
-        contents: (body as HTMLBodyElement).innerText,
-      };
-    });
-  assert.equal(
-    recoveredSurface.focusRestored,
-    true,
-    "Escape did not return focus to the review surface",
-  );
-  assert.match(
-    recoveredSurface.contents,
-    /Inspect the actual Nemlig basket before making another request/u,
-    "uncertain state did not retain its no-replay recovery guidance",
-  );
-  assert.equal(
-    await uncertainFrame
-      .getByRole("button", { name: "Inspect Nemlig basket in conversation" })
-      .isVisible(),
-    true,
-    "uncertain state did not retain its read-only recovery action",
-  );
-  assert.equal(
-    await uncertainFrame
-      .getByRole("button", { name: "Submit to Nemlig basket" })
-      .count(),
-    0,
-    "uncertain state offered a replay action",
-  );
-  await uncertainPage.close();
-
-  const noWritePage = await context.newPage();
-  await noWritePage.goto(`http://127.0.0.1:${address.port}/host-native`, {
-    waitUntil: "domcontentloaded",
-  });
-  const noWriteFrame = noWritePage.frameLocator('iframe[title="viewer"]');
-  await noWriteFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await noWritePage.evaluate(() => {
-    window.failNoWriteNext = true;
-  });
-  await noWriteFrame
-    .getByRole("button", { name: "Submit to Nemlig basket" })
-    .click();
-  const noWriteDialog = noWriteFrame.getByRole("dialog");
-  try {
-    await noWriteDialog
-      .getByRole("heading", { name: "Submission was not sent" })
-      .waitFor();
-  } catch (error) {
-    const content = await noWritePage
-      .locator('iframe[title="viewer"]')
-      .evaluate(
-        (iframe) =>
-          (iframe as HTMLIFrameElement).contentDocument?.body.innerText ?? "",
-      );
-    const hostErrors = await noWritePage.evaluate(() => window.hostErrors);
-    await noWritePage.screenshot({
-      path: resolve(process.cwd(), "../../.codex/review/no-write-state.png"),
-    });
-    throw new Error(
-      `Known no-write recovery did not render: ${content}; hostErrors=${JSON.stringify(hostErrors)}`,
-      { cause: error },
-    );
-  }
-  await noWriteDialog
-    .getByRole("button", { name: "Review shopping list" })
-    .click();
-  await noWriteFrame.getByRole("dialog").waitFor({ state: "detached" });
-  assert.equal(
-    await noWritePage.evaluate(() => window.submissionAttempts),
-    1,
-    "known no-write recovery retried submission instead of refreshing",
-  );
-  assert.equal(
-    await noWriteFrame.getByText("Synthetic milk", { exact: true }).count(),
-    1,
-    "known no-write recovery lost the reviewed products",
-  );
-  await noWritePage.close();
-
-  const saveFailurePage = await context.newPage();
-  await saveFailurePage.goto(`http://127.0.0.1:${address.port}/host-draft`, {
-    waitUntil: "domcontentloaded",
-  });
-  const saveFailureFrame = saveFailurePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await saveFailureFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  await saveFailureFrame
-    .getByLabel("Nemlig shopping list name")
-    .fill("Fixture list");
-  await saveFailurePage.evaluate(() => {
-    window.failGenericNext = true;
-  });
-  await saveFailureFrame
-    .getByRole("button", { name: "Save shopping list" })
-    .click();
-  await saveFailureFrame
-    .getByRole("dialog", { name: "Save was not confirmed" })
-    .waitFor();
-  await saveFailureFrame
-    .getByRole("dialog")
-    .getByText("Temporary synthetic failure", { exact: false })
-    .waitFor();
-  await saveFailureFrame
-    .getByRole("dialog")
-    .getByRole("button", { name: "Return to draft" })
-    .click();
-  await saveFailureFrame.getByRole("dialog").waitFor({ state: "detached" });
-  await saveFailureFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  assert.equal(
-    await saveFailureFrame.getByText("Synthetic milk", { exact: true }).count(),
-    1,
-    "Save recovery left the original draft visible",
-  );
-  assert.equal(
-    await saveFailurePage.evaluate(() => window.submissionAttempts),
-    0,
-    "Save recovery unexpectedly attempted basket submission",
-  );
-  await saveFailurePage.close();
-
-  const knownNoWriteSavePage = await context.newPage();
-  await knownNoWriteSavePage.goto(
-    `http://127.0.0.1:${address.port}/host-draft`,
-    {
-      waitUntil: "domcontentloaded",
-    },
-  );
-  const knownNoWriteSaveFrame = knownNoWriteSavePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await knownNoWriteSaveFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  await knownNoWriteSaveFrame
-    .getByLabel("Nemlig shopping list name")
-    .fill("Fixture list");
-  await knownNoWriteSavePage.evaluate(() => {
-    window.nextReviewResponse = "tool";
-    window.failMessageNext =
-      "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.";
-  });
-  await knownNoWriteSaveFrame
-    .getByRole("button", { name: "Save shopping list" })
-    .click();
-  await knownNoWriteSaveFrame
-    .getByRole("dialog", { name: "Save was not sent to Nemlig" })
-    .waitFor();
-  await knownNoWriteSaveFrame
-    .getByRole("dialog")
-    .getByText(
-      "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.",
-      { exact: true },
-    )
-    .waitFor();
-  await knownNoWriteSaveFrame
-    .getByRole("dialog")
-    .getByRole("button", { name: "Return to draft" })
-    .click();
-  await knownNoWriteSaveFrame
-    .getByRole("dialog")
-    .waitFor({ state: "detached" });
-  assert.equal(
-    await knownNoWriteSaveFrame
-      .getByText("Synthetic milk", { exact: true })
-      .count(),
-    1,
-    "known no-write Save recovery lost the original draft",
-  );
-  await knownNoWriteSavePage.close();
-
-  const knownNoWriteUpdatePage = await context.newPage();
-  await knownNoWriteUpdatePage.goto(
-    `http://127.0.0.1:${address.port}/host-restored`,
-    { waitUntil: "domcontentloaded" },
-  );
-  const knownNoWriteUpdateFrame = knownNoWriteUpdatePage.frameLocator(
-    'iframe[title="viewer"]',
-  );
-  await knownNoWriteUpdateFrame
-    .getByRole("heading", { name: "Synthetic saved list", exact: true })
-    .waitFor();
-  await knownNoWriteUpdatePage.evaluate(() => {
-    window.markNativeListDirty = true;
-  });
-  await knownNoWriteUpdateFrame
-    .getByRole("button", { name: "Show details for Synthetic milk" })
-    .press("Shift+F10");
-  await knownNoWriteUpdateFrame
-    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
-    .click();
-  await knownNoWriteUpdateFrame.locator(".viewer").press("Escape");
-  await knownNoWriteUpdateFrame
-    .getByRole("button", { name: "Update shopping list" })
-    .waitFor();
-  await knownNoWriteUpdatePage.evaluate(() => {
-    window.nextReviewResponse = "tool";
-    window.failMessageNext =
-      "The update could not be recorded safely. No products were changed in Nemlig; refresh this list before continuing.";
-  });
-  await knownNoWriteUpdateFrame
-    .getByRole("button", { name: "Update shopping list" })
-    .click();
-  await knownNoWriteUpdateFrame
-    .getByRole("dialog", { name: "Update was not sent to Nemlig" })
-    .waitFor();
-  await knownNoWriteUpdateFrame
-    .getByRole("dialog")
-    .getByText(
-      "The update could not be recorded safely. No products were changed in Nemlig; refresh this list before continuing.",
-      { exact: true },
-    )
-    .waitFor();
-  assert.equal(
-    await knownNoWriteUpdatePage.evaluate(() => window.submissionAttempts),
-    0,
-    "known no-write Update unexpectedly submitted the list",
-  );
-  await knownNoWriteUpdatePage.close();
-
-  const removePage = await context.newPage();
-  await removePage.goto(`http://127.0.0.1:${address.port}/host`);
-  const removeFrame = removePage.frameLocator('iframe[title="viewer"]');
-  await removeFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  const removeProduct = async (name: string, remaining: number) => {
-    await removeFrame
-      .getByRole("button", { name: `Show details for ${name}` })
-      .click();
-    await removeFrame
-      .getByRole("dialog", { name })
-      .getByRole("button", { name: "Remove product" })
-      .click();
-    await removePage.waitForFunction(
-      (count) => window.getReview().items.length === count,
-      remaining,
-    );
-  };
-  await removeProduct("Synthetic milk", 1);
-  assert.equal(
-    await removeFrame
-      .getByRole("button", { name: `Show details for ${longOatsName}` })
-      .evaluate((button) => button.ownerDocument.activeElement === button),
-    true,
-    "removal lost focus instead of moving it to the remaining row",
-  );
-  await removeProduct(longOatsName, 0);
-  assert.equal(
-    await removeFrame
-      .locator(".viewer")
-      .evaluate((viewer) => viewer.ownerDocument.activeElement === viewer),
-    true,
-    "removing the last row lost keyboard focus",
-  );
-  assert.equal(
-    await removePage.evaluate(() => window.providerWrites),
-    0,
-    "local row removal reached a provider write",
-  );
-  await removePage.close();
-
-  const openRowsPage = await context.newPage();
-  await openRowsPage.goto(`http://127.0.0.1:${address.port}/host`);
-  const openRowsFrame = openRowsPage.frameLocator('iframe[title="viewer"]');
-  for (const name of ["Synthetic milk", longOatsName]) {
-    await openRowsFrame
-      .getByRole("button", { name: `Show details for ${name}` })
-      .press("Shift+F10");
-  }
-  await openRowsFrame
-    .locator('[data-product-id="1"]')
-    .getByRole("button", { name: "Remove product" })
-    .click();
-  await openRowsPage.waitForFunction(
-    () => window.getReview().items.length === 1,
-  );
-  await openRowsFrame.locator('[data-product-id="1"]').waitFor({
-    state: "detached",
-  });
-  assert.equal(
-    await openRowsFrame
-      .locator(".product-inline-actions")
-      .evaluate(
-        (controls) => controls.ownerDocument.activeElement === controls,
-      ),
-    true,
-    "removal did not focus the remaining row's open controls",
-  );
-  await openRowsPage.close();
-
-  hostDocuments.set(
-    "/host-delayed",
-    parentDocument(fixtureJson).replace(
-      "return post(event,{jsonrpc:'2.0',id:message.id,result:response});",
-      "return setTimeout(()=>post(event,{jsonrpc:'2.0',id:message.id,result:response}),1000);",
-    ),
-  );
-  for (const [initialDistance, releaseDuringSave] of [
-    [100, true],
-    [100, false],
-    [5, false],
-  ] as const) {
-    const savingPage = await context.newPage();
-    await savingPage.goto(`http://127.0.0.1:${address.port}/host-delayed`);
-    const savingFrame = savingPage.frameLocator('iframe[title="viewer"]');
-    await savingFrame
-      .getByRole("button", {
-        name: "Show details for Synthetic milk",
-      })
-      .press("Shift+F10");
-    await savingFrame
-      .getByRole("button", {
-        name: "Increase quantity of Synthetic milk",
-      })
-      .click();
-    const swiped = savingFrame.getByRole("button", {
-      name: `Show details for ${longOatsName}`,
-    });
-    const swipeBox = await swiped.boundingBox();
-    assert.ok(swipeBox);
-    await savingPage.mouse.move(swipeBox.x + 200, swipeBox.y + 20);
-    await savingPage.mouse.down();
-    await savingPage.mouse.move(
-      swipeBox.x + 200 - initialDistance,
-      swipeBox.y + 20,
-      { steps: 5 },
-    );
-    assert.equal(
-      await swiped.evaluate(
-        (button) =>
-          new DOMMatrix(getComputedStyle(button.closest("article")!).transform)
-            .m41,
-      ),
-      initialDistance === 5 ? 0 : -100,
-    );
-    await savingPage.waitForFunction(
-      () =>
-        document
-          .querySelector<HTMLIFrameElement>("iframe")!
-          .contentDocument!.querySelector<HTMLButtonElement>(
-            '[data-product-id="2"] button',
-          )!.disabled,
-    );
-    if (releaseDuringSave) {
-      await savingPage.mouse.up();
-    }
-    await savingPage.waitForFunction(
-      () =>
-        !document
-          .querySelector<HTMLIFrameElement>("iframe")!
-          .contentDocument!.querySelector<HTMLButtonElement>(
-            '[data-product-id="2"] button',
-          )!.disabled,
-    );
-    if (!releaseDuringSave) {
-      await savingPage.mouse.move(swipeBox.x + 100, swipeBox.y + 20, {
-        steps: 5,
-      });
-      await savingPage.mouse.up();
-    }
-    assert.equal(
-      await swiped.evaluate(
-        (button) =>
-          new DOMMatrix(getComputedStyle(button.closest("article")!).transform)
-            .m41,
-      ),
-      0,
-      "quantity save left another product row displaced",
-    );
-    assert.equal(
-      await savingFrame
-        .locator('[data-product-id="2"] .product-inline-actions')
-        .count(),
-      0,
-      "a swipe interrupted by saving opened actions on release",
-    );
-    await savingPage.close();
-  }
-
-  const imageUrl = "https://www.nemlig.com/synthetic-swipe-image.svg";
-  hostDocuments.set(
-    "/host-image",
-    parentDocument(
-      fixtureJson.replaceAll("https://example.invalid/image.png", imageUrl),
-    ),
-  );
-  const imagePage = await context.newPage();
-  await imagePage.route(imageUrl, (route) =>
-    route.fulfill({
-      contentType: "image/svg+xml",
-      body: '<svg xmlns="http://www.w3.org/2000/svg" width="58" height="58"><rect width="58" height="58" fill="green"/></svg>',
-    }),
-  );
-  await imagePage.goto(`http://127.0.0.1:${address.port}/host-image`);
-  const imageFrame = imagePage.frameLocator('iframe[title="viewer"]');
-  const thumbnail = imageFrame.locator('[data-product-id="1"] img');
-  await thumbnail.waitFor();
-  await thumbnail.evaluate((image: HTMLImageElement) => image.decode());
-  const imageBox = await thumbnail.boundingBox();
-  assert.ok(imageBox);
-  await imagePage.mouse.move(imageBox.x + imageBox.width - 2, imageBox.y + 20);
-  await imagePage.mouse.down();
-  await imagePage.mouse.move(
-    imageBox.x + imageBox.width - 57,
-    imageBox.y + 20,
-    { steps: 8 },
-  );
-  await imagePage.mouse.up();
-  await imageFrame
-    .getByRole("group", { name: "Actions for Synthetic milk" })
-    .waitFor();
-  assert.equal(
-    await imagePage.evaluate(() => window.calls.length),
-    0,
-    "swiping from a thumbnail activated a basket action",
-  );
-  await imagePage.close();
-
-  const longPage = await context.newPage();
-  await longPage.goto(`http://127.0.0.1:${address.port}/host-long`);
-  const longFrame = longPage.frameLocator('iframe[title="viewer"]');
-  await longFrame
-    .getByRole("heading", { name: "Draft products", exact: true })
-    .waitFor();
-  await longFrame.locator(".product-action-row").first().waitFor();
-  const longList = await longFrame.locator(".viewer").evaluate((viewer) => ({
-    height: viewer.clientHeight,
-    scrollHeight: viewer.scrollHeight,
-    rendered: viewer.querySelectorAll(".product-action-row").length,
-  }));
-  assert.ok(
-    longList.height <= 620 &&
-      longList.scrollHeight > longList.height &&
-      longList.rendered < 12,
-    `long Local basket was not bounded and virtualized: ${JSON.stringify(longList)}`,
-  );
-  const firstLongRow = longFrame.locator(".product-action-row").first();
-  await firstLongRow
-    .locator('[data-viewer-component="product-summary"]')
-    .press("Shift+F10");
-  await longFrame
-    .locator(".product-inline-actions")
-    .locator('[data-viewer-component="quantity-control"]')
-    .waitFor();
-  await longFrame
-    .locator(".product-inline-actions")
-    .getByRole("button", { name: "Remove product" })
-    .click();
-  await longPage.waitForFunction(() => window.getReview().items.length === 11);
-  await longPage.waitForFunction(() => {
-    const doc = document.querySelector<HTMLIFrameElement>(
-      'iframe[title="viewer"]',
-    )?.contentDocument;
-    const next = doc?.querySelector(
-      '[data-product-id="2"] [data-viewer-component="product-summary"]',
-    );
-    return next && doc?.activeElement === next;
-  });
-  await longFrame.locator(".viewer").evaluate((viewer) => {
-    viewer.scrollTop = viewer.scrollHeight;
-  });
-  await longFrame.locator('[data-product-id="12"]').waitFor();
-  assert.equal(
-    await longPage.evaluate(() => window.providerWrites),
-    0,
-    "virtualized Local basket reached a provider write",
-  );
-  await longPage.close();
-
-  const touchContext = await browser.newContext({
-    viewport: { width: 375, height: 860 },
-    hasTouch: true,
-    isMobile: true,
-  });
-  const touchRequests = await installViewerAssetFixture(
-    touchContext,
-    viewerGeneration,
-    new Map(),
-  );
-  const touchPage = await touchContext.newPage();
-  await touchPage.goto(`http://127.0.0.1:${address.port}/host`);
-  const touchFrame = touchPage.frameLocator('iframe[title="viewer"]');
-  const touchSummary = touchFrame.getByRole("button", {
-    name: "Show details for Synthetic milk",
-  });
-  const touchBox = await touchSummary.boundingBox();
-  assert.ok(touchBox, "touch row has no hit area");
-  const touch = await touchContext.newCDPSession(touchPage);
-  const touchSwipe = async (
-    from: number,
-    to: number,
-    cancel = false,
-    dy = 0,
+  const openRowActions = async (
+    targetFrame: FrameLocator,
+    productId: number,
   ) => {
-    await touch.send("Input.dispatchTouchEvent", {
-      type: "touchStart",
-      touchPoints: [
-        { x: touchBox.x + touchBox.width * from, y: touchBox.y + 5 },
-      ],
-    });
-    await touch.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [
-        { x: touchBox.x + touchBox.width * to, y: touchBox.y + 5 + dy },
-      ],
-    });
-    assert.equal(
-      await touchFrame
-        .locator(".product-inline-actions, [role=dialog]")
-        .count(),
-      0,
-      "touch opened actions before release",
+    const row = targetFrame.locator(
+      `.product-action-row[data-product-id="${productId}"]`,
     );
-    await touch.send("Input.dispatchTouchEvent", {
-      type: cancel ? "touchCancel" : "touchEnd",
-      touchPoints: [],
-    });
+    await row
+      .locator('[data-viewer-component="product-summary"]')
+      .press("Shift+F10");
+    await row.locator(".product-inline-actions").waitFor();
+    return row;
   };
-  for (const [from, to, cancel, dy] of [
-    [0.2, 0.8, false, 0],
-    [0.8, 0.7, false, 0],
-    [0.8, 0.2, true, 0],
-    [0.8, 0.7, false, 80],
-  ] as const) {
-    await touchSwipe(from, to, cancel, dy);
-    assert.equal(
-      await touchFrame
-        .locator(".product-inline-actions, [role=dialog]")
-        .count(),
-      0,
-      `touch (${from}, ${to}, cancel=${cancel}, dy=${dy}) opened ${await touchFrame.locator(".product-inline-actions, [role=dialog]").allTextContents()}`,
+  const clickQuantityIncrease = async (
+    targetFrame: FrameLocator,
+    productId: number,
+    label: string,
+  ) => {
+    const row = await openRowActions(targetFrame, productId);
+    await row
+      .getByRole("button", { name: `Increase quantity of ${label}` })
+      .click();
+  };
+  const incrementQuantity = async (
+    targetFrame: FrameLocator,
+    productId: number,
+    label: string,
+    expectedQuantity: number,
+  ) => {
+    await clickQuantityIncrease(targetFrame, productId, label);
+    await page.waitForFunction(
+      ({ id, quantity }) =>
+        window.getReview().items.find((item) => item.product_id === id)
+          ?.quantity === quantity,
+      { id: productId, quantity: expectedQuantity },
     );
-    if (cancel) {
-      // Assistive activation can send a click without a fresh pointer or keyboard event.
-      await touchSummary.evaluate((button) =>
-        (button as HTMLButtonElement).click(),
-      );
-      const touchDetails = touchFrame.getByRole("dialog", {
-        name: "Synthetic milk",
-      });
-      await touchDetails.waitFor();
-      await touchDetails
-        .getByRole("button", { name: "Back to shopping list" })
-        .click();
-      await touchDetails.waitFor({ state: "detached" });
+  };
+  const waitForActionCall = async (kind: string) =>
+    page.waitForFunction(
+      (actionKind) =>
+        window.calls.some(({ args }) => args.action?.kind === actionKind),
+      kind,
+    );
+  const countActionCalls = async (kind: string) =>
+    page.evaluate(
+      (actionKind) =>
+        window.calls.filter(({ args }) => args.action?.kind === actionKind)
+          .length,
+      kind,
+    );
+  const open = async (path: string) => {
+    await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" });
+    const targetFrame = page.frameLocator('iframe[title="viewer"]');
+    await targetFrame.locator("#title").waitFor();
+    return targetFrame;
+  };
+  const capture = async (name: string) => {
+    if (!screenshotDirectory) {
+      return;
     }
-  }
-  await touchSwipe(0.8, 0.2);
-  await touchFrame
-    .getByRole("group", { name: "Actions for Synthetic milk" })
+    await mkdir(screenshotDirectory, { recursive: true });
+    const path = resolve(screenshotDirectory, `${name}.png`);
+    await page.screenshot({ path });
+    console.log(`Synthetic viewer mockup: ${path}`);
+  };
+
+  const activeFrame = await open("/host");
+  await activeFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await activeFrame
+    .getByRole("button", { name: "Add to Nemlig basket", exact: true })
     .waitFor();
   assert.equal(
-    await touchPage.evaluate(() => window.calls.length),
-    0,
-    "touch swipe activated a basket action",
+    await activeFrame.locator(".product-list article").count(),
+    5,
+    "the original five native-list rows were not shown",
   );
   assert.equal(
-    await touchPage.evaluate(() => window.providerWrites),
+    await activeFrame
+      .getByRole("button", { name: /Save|Update shopping list/u })
+      .count(),
     0,
-    "touch swipe reached a provider write",
+    "retired manual Save/Update control rendered",
   );
-  assert.deepEqual(
-    touchRequests,
-    [],
-    "touch UI requested an external resource",
-  );
-  await touchPage.goto(`http://127.0.0.1:${address.port}/host-long`);
-  await touchFrame.locator(".product-action-row").first().waitFor();
-  await touch.send("Input.dispatchTouchEvent", {
-    type: "touchStart",
-    touchPoints: [{ x: 180, y: 300 }],
-  });
-  for (const y of [260, 220, 180, 140]) {
-    await touch.send("Input.dispatchTouchEvent", {
-      type: "touchMove",
-      touchPoints: [{ x: 180, y }],
-    });
-  }
-  await touch.send("Input.dispatchTouchEvent", {
-    type: "touchEnd",
-    touchPoints: [],
-  });
-  await touchPage.waitForFunction(() => {
-    const viewer = document
-      .querySelector<HTMLIFrameElement>('iframe[title="viewer"]')
-      ?.contentDocument?.querySelector(".viewer");
-    return viewer && viewer.scrollTop > 0;
-  });
   assert.equal(
-    await touchFrame.locator(".product-inline-actions, [role=dialog]").count(),
-    0,
-    "vertical touch scrolling opened an overlay",
+    await page.evaluate(() => window.calls[0]?.args.shopping_list_id),
+    44,
+    "initial native refresh did not use the exact list ID",
   );
-  await touchContext.close();
-
   assert.equal(
     await page.evaluate(() => window.providerWrites),
     0,
-    "synthetic browser smoke reached provider write",
+    "mount/show wrote or cleaned up a native list",
   );
+  await capture("native-shopping-list");
+  const basketAction = activeFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+    exact: true,
+  });
+  await basketAction.scrollIntoViewIfNeeded();
+  const basketActionBounds = await basketAction.boundingBox();
+  assert.ok(
+    basketActionBounds &&
+      basketActionBounds.y >= 0 &&
+      basketActionBounds.y + basketActionBounds.height <= 860,
+    "Add to Nemlig basket was not reachable by scrolling the native list",
+  );
+
+  // Persist quantity, removal, and replacement, then replay the original host snapshot on remount.
+  await incrementQuantity(activeFrame, 1, "Synthetic milk", 2);
+  let row = await openRowActions(activeFrame, 1);
+  const increase = row.getByRole("button", {
+    name: "Increase quantity of Synthetic milk",
+  });
+  await increase.click();
+  await increase.click();
+  await page.waitForFunction(
+    () =>
+      window.getReview().items.find((item) => item.product_id === 1)
+        ?.quantity === 4,
+  );
+  row = await openRowActions(activeFrame, 5);
+  await row.getByRole("button", { name: "Remove product" }).click();
+  await page.waitForFunction(() => window.getReview().items.length === 4);
+  row = await openRowActions(activeFrame, 4);
+  await row.getByRole("button", { name: "Find alternatives" }).click();
+  await activeFrame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
+  const writesBeforeSearch = await page.evaluate(() => window.providerWrites);
+  const search = activeFrame.locator("#alternative-query");
+  await search.fill("oats");
+  await search.press("Enter");
+  const replacement = activeFrame.getByRole("button", {
+    name: "Use Synthetic alternative as the alternative",
+  });
+  await replacement.waitFor();
+  await replacement.click();
+  await activeFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.waitForFunction(() =>
+    window.getReview().items.some((item) => item.product_id === 6),
+  );
+  assert.equal(
+    await page.evaluate(() => window.providerWrites),
+    writesBeforeSearch + 1,
+    "read-only alternatives search changed the provider list",
+  );
+  assert.deepEqual(
+    await currentRows(),
+    [
+      [1, 4],
+      [2, 1],
+      [3, 1],
+      [6, 1],
+    ],
+    "native edits did not preserve current rows and quantities",
+  );
+  await page.evaluate(() => window.sendPassive());
+  await page.waitForTimeout(50);
+  assert.deepEqual(
+    await currentRows(),
+    [
+      [1, 4],
+      [2, 1],
+      [3, 1],
+      [6, 1],
+    ],
+    "passive original host snapshot rolled back current native contents",
+  );
+  const beforeRemount = await page.evaluate(() => window.calls.length);
+  await page.evaluate(() =>
+    document
+      .querySelector<HTMLIFrameElement>('iframe[title="viewer"]')
+      ?.contentWindow?.location.reload(),
+  );
+  await page.waitForFunction(
+    (count) =>
+      window.calls
+        .slice(count)
+        .some(({ args }) => args.action?.kind === "show"),
+    beforeRemount,
+  );
+  await activeFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await activeFrame.locator(".product-list article").first().waitFor();
+  assert.deepEqual(
+    await currentRows(),
+    [
+      [1, 4],
+      [2, 1],
+      [3, 1],
+      [6, 1],
+    ],
+    "remount of the original five-product card rolled back current native contents",
+  );
+  assert.equal(
+    await page.evaluate(
+      (count) =>
+        window.calls
+          .slice(count)
+          .every(({ args }) => args.shopping_list_id === 44),
+      beforeRemount,
+    ),
+    true,
+    "remount refresh guessed another list",
+  );
+
+  // Remount blocks every edit until the exact-list read completes.
+  const delayedFrame = await open("/host-delayed");
+  await delayedFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.waitForFunction(() =>
+    window.calls.some(({ args }) => args.action?.kind === "show"),
+  );
+  assert.equal(
+    await delayedFrame
+      .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+      .count(),
+    0,
+    "quantity control appeared before native refresh completed",
+  );
+  assert.equal(
+    await delayedFrame
+      .getByRole("button", { name: "Add to Nemlig basket" })
+      .isDisabled(),
+    true,
+    "basket action enabled before native refresh completed",
+  );
+  await page.evaluate(() => window.resolveDeferredShow());
+  await openRowActions(delayedFrame, 1);
+  await delayedFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .waitFor({ state: "visible" });
+  assert.equal(
+    await delayedFrame
+      .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+      .isDisabled(),
+    false,
+    "exact-list refresh did not enable current controls",
+  );
+
+  // An unavailable exact read preserves the cached rows and offers an exact retry.
+  const unavailableFrame = await open("/host-unavailable");
+  await unavailableFrame
+    .getByRole("dialog", { name: "Shopping list change needs review" })
+    .waitFor();
+  assert.equal(
+    await unavailableFrame.locator(".product-list article").count(),
+    5,
+    "unavailable refresh erased the cached rows",
+  );
+  const unavailableDialog = unavailableFrame.getByRole("dialog");
+  await unavailableDialog
+    .getByRole("button", { name: "Refresh shopping list" })
+    .click();
+  await unavailableDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    44,
+    "retry did not target the same native list",
+  );
+  assert.equal(
+    await unavailableFrame.locator(".product-list article").count(),
+    5,
+    "successful exact retry did not retain the list rows",
+  );
+
+  // A partial creation keeps its warning until the user explicitly adopts the confirmed rows.
+  const partialCreateFrame = await open("/host-partial-create");
+  const partialCreateDialog = partialCreateFrame.getByRole("dialog", {
+    name: "Shopping list change needs review",
+  });
+  await partialCreateDialog.waitFor();
+  assert.equal(
+    await partialCreateFrame.locator(".product-list article").count(),
+    2,
+    "partial creation invented an unconfirmed third row",
+  );
+  await partialCreateFrame
+    .getByText(/Only 2 of 3 selected products were confirmed/u)
+    .waitFor();
+  assert.match(
+    await partialCreateFrame.locator("main").innerText(),
+    /Only 2 of 3 selected products were confirmed/u,
+    "refresh erased the partial-creation warning",
+  );
+  await capture("native-partial-create");
+  const partialBasketAction = partialCreateFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  assert.equal(
+    (await partialBasketAction.count()) === 0 ||
+      (await partialBasketAction.isDisabled()),
+    true,
+    "partial creation exposed basket submission before acknowledgement",
+  );
+  await partialCreateDialog
+    .getByRole("button", { name: "Use confirmed products" })
+    .click();
+  await partialCreateDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    46,
+    "partial creation acknowledgement refreshed a different native list",
+  );
+  assert.equal(
+    await partialCreateFrame.locator(".product-list article").count(),
+    2,
+    "partial creation acknowledgement invented the missing third product",
+  );
+  assert.equal(
+    await partialCreateFrame
+      .getByText(/Only 2 of 3 selected products were confirmed/u)
+      .count(),
+    0,
+    "acknowledging confirmed products did not clear the partial warning",
+  );
+  await incrementQuantity(partialCreateFrame, 1, "Synthetic milk", 2);
+  assert.equal(
+    await partialCreateFrame
+      .getByRole("button", { name: "Add to Nemlig basket" })
+      .isDisabled(),
+    false,
+    "explicitly adopted confirmed products could not be submitted",
+  );
+  assert.equal(
+    await partialCreateFrame.locator(".product-list article").count(),
+    2,
+    "editing adopted partial creation reintroduced the missing product",
+  );
+  const unknownCreationFrame = await open("/host-unknown-creation");
+  const unknownCreationDialog = unknownCreationFrame.getByRole("dialog", {
+    name: "Shopping list change needs review",
+  });
+  await unknownCreationDialog.waitFor();
+  assert.equal(
+    await unknownCreationFrame.locator(".product-list article").count(),
+    3,
+    "uncertain no-ID creation discarded its selected context",
+  );
+  assert.equal(
+    await unknownCreationFrame
+      .getByRole("heading", { name: "Shopping lists" })
+      .count(),
+    0,
+    "uncertain no-ID creation silently fell back to the unrelated-list picker",
+  );
+  await unknownCreationDialog.getByText(/no list ID was confirmed/u).waitFor();
+  await capture("native-creation-unknown-id");
+
+  // Partial and uncertain tool results are successful JSON-RPC responses that open recovery without replay.
+  for (const kind of ["partial", "uncertain"] as const) {
+    const recoveryFrame = await open("/host");
+    await recoveryFrame
+      .getByRole("heading", { name: "Synthetic saved list", exact: true })
+      .waitFor();
+    await page.evaluate((response) => {
+      window.nextReviewResponse = response;
+    }, kind);
+    await clickQuantityIncrease(recoveryFrame, 1, "Synthetic milk");
+    const recoveryDialog = recoveryFrame.getByRole("dialog", {
+      name: "Shopping list change needs review",
+    });
+    await recoveryDialog.waitFor();
+    assert.equal(
+      await countActionCalls("quantity"),
+      1,
+      `${kind} edit was replayed automatically`,
+    );
+    if (kind === "uncertain") {
+      await recoveryDialog
+        .getByRole("button", {
+          name: "Discard pending changes and use current list",
+        })
+        .click();
+      await recoveryDialog.waitFor({ state: "detached" });
+      await recoveryFrame
+        .getByRole("heading", { name: "Synthetic saved list", exact: true })
+        .waitFor();
+      await recoveryFrame
+        .getByRole("button", { name: "Find alternatives" })
+        .first()
+        .click();
+      await recoveryFrame
+        .getByRole("heading", { name: "Find an alternative", level: 1 })
+        .waitFor();
+      assert.equal(
+        await countActionCalls("quantity"),
+        1,
+        "discarded quantity was resent during navigation",
+      );
+      await recoveryFrame
+        .getByRole("button", { name: "Back to shopping list" })
+        .click();
+      await recoveryFrame
+        .getByRole("heading", { name: "Synthetic saved list", exact: true })
+        .waitFor();
+      await incrementQuantity(recoveryFrame, 1, "Synthetic milk", 2);
+      assert.equal(
+        await countActionCalls("quantity"),
+        2,
+        "a later explicit edit replayed the discarded quantity",
+      );
+      assert.equal(
+        await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+        44,
+        "post-discard edit changed native-list identity",
+      );
+    } else {
+      await recoveryDialog
+        .getByRole("button", { name: "Refresh shopping list" })
+        .click();
+      await recoveryDialog.waitFor({ state: "detached" });
+      assert.equal(
+        await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+        44,
+        `${kind} recovery refreshed a different list`,
+      );
+    }
+  }
+
+  // A rejected quantity requires exact-list readback before later edits can proceed.
+  const failedQuantityFrame = await open("/host");
+  await failedQuantityFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.failGenericNext = true;
+    window.deferGenericNext = true;
+  });
+  await clickQuantityIncrease(failedQuantityFrame, 1, "Synthetic milk");
+  await waitForActionCall("quantity");
+  await failedQuantityFrame
+    .getByText("Quantity change pending; waiting for Nemlig to confirm it.", {
+      exact: true,
+    })
+    .waitFor();
+  await page.evaluate(() => window.rejectDeferredGeneric());
+  const failedQuantityDialog = failedQuantityFrame.getByRole("dialog", {
+    name: "Shopping list change needs review",
+  });
+  await failedQuantityDialog.waitFor();
+  assert.equal(
+    await countActionCalls("quantity"),
+    1,
+    "failed quantity edit was retried before recovery",
+  );
+  await failedQuantityDialog
+    .getByRole("button", { name: "Refresh shopping list" })
+    .click();
+  await failedQuantityDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.action?.kind),
+    "show",
+    "failed quantity recovery did not read back current native contents",
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    44,
+    "failed quantity recovery refreshed a different native list",
+  );
+  const recoveredQuantityRow = await openRowActions(failedQuantityFrame, 1);
+  await recoveredQuantityRow
+    .getByRole("button", { name: "Find alternatives" })
+    .click();
+  await failedQuantityFrame
+    .getByRole("heading", { name: "Find an alternative", level: 1 })
+    .waitFor();
+  assert.equal(
+    await countActionCalls("quantity"),
+    1,
+    "failed quantity was resent during navigation after readback",
+  );
+  await failedQuantityFrame
+    .getByRole("button", { name: "Back to shopping list" })
+    .click();
+  await failedQuantityFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await incrementQuantity(failedQuantityFrame, 1, "Synthetic milk", 2);
+  assert.equal(
+    await countActionCalls("quantity"),
+    2,
+    "later explicit edit resent the failed quantity instead of its new intent",
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    44,
+    "post-discard quantity edit changed native-list identity",
+  );
+
+  // Host cancellation leaves the visible context and never retries the edit.
+  const cancelledFrame = await open("/host");
+  await cancelledFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.failGenericNext = true;
+    window.deferGenericNext = true;
+  });
+  await clickQuantityIncrease(cancelledFrame, 1, "Synthetic milk");
+  await waitForActionCall("quantity");
+  await page.evaluate(() => window.cancelPendingTool());
+  const cancelledDialog = cancelledFrame.getByRole("dialog", {
+    name: "Shopping list change needs review",
+  });
+  await cancelledDialog.waitFor();
+  await page.evaluate(() => {
+    window.rejectDeferredGeneric();
+    window.sendPassive();
+  });
+  await cancelledDialog
+    .getByRole("button", { name: "Refresh shopping list" })
+    .click();
+  await cancelledDialog.waitFor({ state: "detached" });
+  assert.equal(
+    await countActionCalls("quantity"),
+    1,
+    "cancelled edit was retried",
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    44,
+    "cancellation recovery refreshed a different native list",
+  );
+  assert.equal(
+    await page.evaluate(() => window.calls.at(-1)?.args.action?.kind),
+    "show",
+    "cancellation recovery did not read back the native list before resuming",
+  );
+
+  // Selecting a second native list scopes all future edits to that ID.
+  const pickerPage = await context.newPage();
+  await installViewerAssetFixture(
+    await pickerPage.context(),
+    viewerGeneration,
+    new Map(),
+  );
+  await pickerPage.goto(`${base}/host-picker`);
+  const pickerFrame = pickerPage.frameLocator('iframe[title="viewer"]');
+  await openBasket(
+    pickerPage,
+    pickerFrame,
+    "45",
+    "Synthetic saved list 2",
+    "selection did not use the exact foreign list ID",
+  );
+  const selectWriteCount = await pickerPage.evaluate(
+    () => window.providerWrites,
+  );
+  assert.equal(
+    selectWriteCount,
+    0,
+    "show/select changed or cleaned up a native list",
+  );
+  const foreignRow = await openRowActions(pickerFrame, 8);
+  await foreignRow
+    .getByRole("button", { name: "Increase quantity of Foreign list product" })
+    .click();
+  await pickerPage.waitForFunction(
+    (kind) => window.calls.some(({ args }) => args.action?.kind === kind),
+    "quantity",
+  );
+  assert.equal(
+    await pickerPage.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
+    45,
+    "foreign-list edit escaped its selected list",
+  );
+  assert.deepEqual(
+    await pickerPage.evaluate(() =>
+      window.getReview().items.map(({ product_id }) => product_id),
+    ),
+    [8],
+    "foreign-list selection leaked rows from the original list",
+  );
+  await pickerPage.close();
+
+  // Keep a no-write failure retry and an uncertain basket result with no replay path.
+  const basketFailureFrame = await open("/host-native");
+  await basketFailureFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.failNoWriteNext = true;
+  });
+  await basketFailureFrame
+    .getByRole("button", { name: "Add to Nemlig basket" })
+    .click();
+  const noWriteDialog = basketFailureFrame.getByRole("dialog", {
+    name: "Submission was not sent",
+  });
+  await noWriteDialog.waitFor();
+  assert.equal(
+    await page.evaluate(() => window.submissionAttempts),
+    1,
+    "known no-write failure was retried",
+  );
+  const firstBasketAttempt = await page.evaluate(
+    () =>
+      window.calls
+        .slice()
+        .reverse()
+        .find((call) => call.name === "submit_product_review")?.args,
+  );
+  assert.ok(firstBasketAttempt?.reviewed_list);
+  assert.equal(
+    firstBasketAttempt?.shopping_list_id,
+    44,
+    "basket attempt did not target the exact reviewed native list",
+  );
+  assert.deepEqual(
+    firstBasketAttempt?.reviewed_list?.items,
+    [
+      { product_id: 1, quantity: 1 },
+      { product_id: 2, quantity: 1 },
+      { product_id: 3, quantity: 1 },
+      { product_id: 4, quantity: 1 },
+      { product_id: 5, quantity: 1 },
+    ],
+    "basket attempt did not carry the exact reviewed native-list contents",
+  );
+  await noWriteDialog
+    .getByRole("button", { name: "Review shopping list" })
+    .click();
+  await noWriteDialog.waitFor({ state: "detached" });
+  await basketFailureFrame
+    .getByRole("button", { name: "Add to Nemlig basket" })
+    .click();
+  await basketFailureFrame
+    .getByText(/Nemlig confirmed the addition/u)
+    .waitFor();
+  assert.equal(
+    await page.evaluate(() => window.submissionAttempts),
+    2,
+    "explicit retry did not submit exactly once",
+  );
+  const basketAttempts = await page.evaluate(() =>
+    window.calls.filter((call) => call.name === "submit_product_review"),
+  );
+  assert.equal(
+    basketAttempts.length,
+    2,
+    "basket retry changed the attempt count",
+  );
+  const secondBasketAttempt = basketAttempts[1];
+  assert.ok(secondBasketAttempt?.args.reviewed_list);
+  assert.deepEqual(
+    secondBasketAttempt.args.reviewed_list.items,
+    firstBasketAttempt.reviewed_list.items,
+    "explicit retry changed the reviewed native-list payload",
+  );
+  const uncertainFrame = await open("/host-native");
+  await uncertainFrame
+    .getByRole("heading", { name: "Synthetic saved list", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.failNext = true;
+  });
+  await uncertainFrame
+    .getByRole("button", { name: "Add to Nemlig basket" })
+    .click();
+  const uncertainDialog = uncertainFrame.getByRole("dialog", {
+    name: "Check your Nemlig basket",
+  });
+  await uncertainDialog.waitFor();
+  assert.equal(
+    await page.evaluate(() => window.submissionAttempts),
+    1,
+    "uncertain transfer retried",
+  );
+  const uncertainSubmitButton = uncertainFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  assert.equal(
+    (await uncertainSubmitButton.count()) === 0 ||
+      (await uncertainSubmitButton.isDisabled()),
+    true,
+    "uncertain result allowed another basket submission",
+  );
+  await page.evaluate(() => window.sendPassive());
+  assert.equal(
+    await page.evaluate(() => window.submissionAttempts),
+    1,
+    "passive payload replayed uncertain transfer",
+  );
+
   assert.deepEqual(
     externalRequests,
     [],
-    "built UI requested a resource outside the synthetic host",
+    "viewer requested a resource outside the synthetic host",
   );
   assert.deepEqual(errors, [], "React UI raised browser errors");
+  assert.equal(
+    await page.evaluate(() => window.providerWrites),
+    0,
+    "basket recovery performed an unexpected native-list edit",
+  );
   assert.equal(
     await frame
       .locator("body")
@@ -2301,5 +1102,5 @@ try {
 }
 
 console.log(
-  "Built React viewer passed synthetic MCP browser smoke: product actions, alternatives/back and replacement, partial/full Save navigation, delayed Submit feedback, quantity flush, cancellation, confirmation, zero provider writes, and no external requests.",
+  "Built React viewer passed synthetic MCP browser smoke: native creation recovery, exact-list remount, immediate edits, uncertainty recovery, basket no-replay guards, and no external requests.",
 );
