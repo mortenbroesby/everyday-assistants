@@ -6,4 +6,4 @@
 - [x] Add separate explicit whole-current-basket save after verified submission; preserve basket and guard replay.
 - [x] Update MCP, viewer, and docs for direct drafts, source loading, optional save, and provider uncertainty.
 - [x] Verify focused tests, app checks, browser flow, and packaged viewer.
-- [ ] Open one PR linked to issue #317.
+- [x] Open one PR linked to issue #317.
