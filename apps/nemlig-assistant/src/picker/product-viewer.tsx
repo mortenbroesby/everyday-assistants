@@ -374,8 +374,7 @@ function hasUnselectedReview(value: unknown) {
   );
 }
 function requiresBasketPicker(envelope: Record<string, unknown>) {
-  const serverRequiresSelection =
-    envelope.selectionRequired === true || envelope.unavailable === true;
+  const serverRequiresSelection = envelope.selectionRequired === true;
   return serverRequiresSelection || hasUnselectedReview(envelope.review);
 }
 function readPayload(value: unknown): ViewerScreen | undefined {
@@ -399,6 +398,9 @@ function readPayload(value: unknown): ViewerScreen | undefined {
     : isBasketId(envelope.selectedBasketId)
       ? envelope.selectedBasketId
       : undefined;
+  if (envelope.unavailable === true) {
+    return { kind: "unavailable" };
+  }
   if (requiresBasketPicker(envelope)) {
     return { kind: "picker", baskets, selectedBasketId };
   }
@@ -669,7 +671,8 @@ export function ProductViewer() {
           next.kind === "picker" &&
           (actionKind === "list" || actionKind === "select")
         ) &&
-        !(next.kind === "empty" && actionKind === "end")
+        !(next.kind === "empty" && actionKind === "end") &&
+        !(next.kind === "unavailable" && actionKind === "show")
       ) {
         return false;
       }

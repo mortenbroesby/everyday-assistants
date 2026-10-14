@@ -153,7 +153,7 @@ const longFixtureJson = JSON.stringify({
 const basketIds = ["44", "45"];
 const parentDocument = (
   reviewJson: string,
-  mode: "normal" | "picker" | "idless" | "restored" = "normal",
+  mode: "normal" | "picker" | "idless" | "restored" | "unavailable" = "normal",
 ) => `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>synthetic MCP host</title>
 <style>body{margin:0}</style><iframe title="viewer" src="/resource" style="display:block;width:100%;height:100vh;border:0"></iframe>
 <script>
@@ -188,7 +188,7 @@ window.addEventListener('message',event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin) return;
  const message=event.data; if(!message || message.jsonrpc!=='2.0') return;
  if(message.method==='ui/initialize') return post(event,{jsonrpc:'2.0',id:message.id,result:{protocolVersion:message.params.protocolVersion,hostInfo:{name:'synthetic-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}});
- if(message.method==='ui/notifications/initialized'){const initial=mode==='picker'?payload({shoppingLists:inventory,selectionRequired:true}):mode==='idless'?payload({review,shoppingLists:inventory,selectionRequired:true}):result(review);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
+ if(message.method==='ui/notifications/initialized'){const initial=mode==='unavailable'?payload({unavailable:true,selectionRequired:true,shoppingLists:inventory}):mode==='picker'?payload({shoppingLists:inventory,selectionRequired:true}):mode==='idless'?payload({review,shoppingLists:inventory,selectionRequired:true}):result(review);return post(event,{jsonrpc:'2.0',method:'ui/notifications/tool-result',params:initial})}
  if(message.method==='ui/message'){const text=message.params.content.map(block=>block.type==='text'?block.text:'').join('');window.messages.push(text);post(event,{jsonrpc:'2.0',id:message.id,result:{}});return}
  if(message.method==='tools/call'){
   const {name,arguments:args}=message.params; window.calls.push({name,args});
@@ -214,6 +214,16 @@ const hostDocuments = new Map([
   ["/host", parentDocument(fixtureJson)],
   ["/host-native", parentDocument(nativeFixtureJson)],
   ["/host-draft", parentDocument(draftFixtureJson)],
+  ["/host-unavailable", parentDocument(draftFixtureJson, "unavailable")],
+  [
+    "/host-partial-dirty",
+    parentDocument(
+      JSON.stringify({
+        ...JSON.parse(partialFixtureJson),
+        shoppingListDirty: true,
+      }),
+    ),
+  ],
   ["/host-partial", parentDocument(partialFixtureJson)],
   ["/host-long", parentDocument(longFixtureJson)],
   ["/host-picker", parentDocument(fixtureJson, "picker")],
@@ -419,6 +429,71 @@ try {
     "Clear is not below the submit control",
   );
   await capture("local-basket");
+
+  // Explicit unavailability outranks picker hints and a stale review refresh.
+  const unavailablePage = await context.newPage();
+  await unavailablePage.goto(
+    `http://127.0.0.1:${address.port}/host-unavailable`,
+  );
+  const unavailableFrame = unavailablePage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await unavailableFrame
+    .getByRole("heading", { name: "Shopping list unavailable", exact: true })
+    .waitFor({ timeout: 5000 });
+  assert.equal(
+    await unavailableFrame
+      .getByRole("button", { name: /Open shopping list/u })
+      .count(),
+    0,
+  );
+  assert.deepEqual(await unavailablePage.evaluate(() => window.calls), []);
+  await unavailablePage.close();
+
+  const expiredPage = await context.newPage();
+  await expiredPage.goto(`http://127.0.0.1:${address.port}/host-partial-dirty`);
+  const expiredFrame = expiredPage.frameLocator('iframe[title="viewer"]');
+  await expiredFrame
+    .getByRole("button", { name: "Update shopping list", exact: true })
+    .waitFor();
+  await expiredPage.evaluate(() => {
+    window.failGenericNext = true;
+  });
+  await expiredFrame
+    .getByRole("button", { name: "Update shopping list", exact: true })
+    .click();
+  const updateRecovery = expiredFrame.getByRole("dialog", {
+    name: "Update was not confirmed",
+  });
+  await updateRecovery.waitFor();
+  await expiredPage.evaluate(() => {
+    window.failUnavailableNext = true;
+  });
+  await updateRecovery
+    .getByRole("button", { name: "Refresh shopping list", exact: true })
+    .click();
+  await expiredFrame
+    .getByRole("heading", { name: "Shopping list unavailable", exact: true })
+    .waitFor({ timeout: 5000 });
+  assert.match(
+    await expiredFrame.locator("body").innerText(),
+    /draft is no longer available/u,
+  );
+  assert.equal(await expiredFrame.getByRole("dialog").count(), 0);
+  assert.equal(
+    await expiredFrame
+      .getByRole("button", { name: "Save shopping list", exact: true })
+      .count(),
+    0,
+  );
+  assert.deepEqual(
+    await expiredPage.evaluate(() =>
+      window.calls.map(({ args }) => args.action?.kind),
+    ),
+    ["update", "show"],
+  );
+  assert.equal(await expiredPage.evaluate(() => window.providerWrites), 0);
+  await expiredPage.close();
 
   // A failed alternatives request must not erase an already-edited draft.
   for (const failure of [
