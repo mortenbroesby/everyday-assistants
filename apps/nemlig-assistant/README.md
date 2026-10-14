@@ -93,6 +93,8 @@ changes or uncertain cleanup keep the list and show a warning.
 - Failed draft edits or alternatives requests keep the current products and
   quantities visible in a recoverable error dialog. Dismissing it does not
   replay the action or restore an older host snapshot.
+- An explicitly refreshed draft that has expired shows an unavailable state,
+  rather than opening unrelated saved lists or reporting a generic edit failure.
 - Save/Update errors preserve the server's explanation in a recoverable dialog.
   Confirmed no-write failures are distinguished from unconfirmed results;
   returning to the draft or refreshing the exact list never replays the write.
