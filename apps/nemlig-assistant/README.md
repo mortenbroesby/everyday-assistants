@@ -247,8 +247,14 @@ The MCP surface is organized around household actions:
   continue a draft using its exact `draft_id`; saved-list cards carry the
   transient `review_context_id` with `shopping_list_id` to keep staged edits
   isolated between chats. Exact reviewed-list submission remains available
-  after that transient context expires. A show without a target does not choose another draft or
-  enumerate saved lists. Use action `list` to open the picker. Use
+  after that transient context expires. Each principal-scoped service holds at
+  most eight transient reviews; the hosted cache keeps up to sixteen principal
+  contexts. Inactive drafts and clean saved-list editor state can expire after
+  two hours; clean saved-list views can be reclaimed earlier under capacity
+  pressure. Unexpired drafts and dirty or unresolved work are protected from
+  eviction. The provider list and durable operation receipts remain; reopen the
+  exact list to rebuild its view. A show without a target does not choose
+  another draft or enumerate saved lists. Use action `list` to open the picker. Use
   `show_my_basket` when the user means products already in Nemlig. Tool success
   alone does not prove that a client rendered the product viewer.
 - Submit the exact saved native shopping list only after the user's explicit

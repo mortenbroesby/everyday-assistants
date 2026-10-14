@@ -302,24 +302,98 @@ export class ProductReviewService {
     this.drafts.set(owner, stored);
   }
 
-  private makeRoom(): void {
-    if (this.drafts.size + this.startingOwners.size < 8) {
+  // Keep every state that can represent unresolved user or provider work.
+  // fallow-ignore-next-line complexity
+  private isProtected(stored: StoredReview): boolean {
+    const { snapshot } = stored;
+    return (
+      stored.busy ||
+      snapshot.shoppingListDirty === true ||
+      snapshot.updateStatus !== undefined ||
+      ["saving", "partial", "uncertain"].includes(snapshot.saveStatus ?? "") ||
+      (snapshot.submissionAttempted === true &&
+        snapshot.submission?.status !== "submitted") ||
+      ["prepared", "uncertain", "partial"].includes(
+        snapshot.submission?.status ?? "",
+      ) ||
+      stored.createAttempted === true ||
+      stored.operationGeneration !== undefined ||
+      stored.proposalId !== undefined
+    );
+  }
+
+  private shouldExpire(
+    owner: string,
+    stored: StoredReview,
+    now: number,
+  ): boolean {
+    const { snapshot } = stored;
+    return (
+      !this.startingOwners.has(owner) &&
+      !this.isProtected(stored) &&
+      now - (stored.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS &&
+      (snapshot.draftId !== undefined ||
+        snapshot.shoppingListId !== undefined ||
+        (!snapshot.items.length && snapshot.actionNotice !== undefined))
+    );
+  }
+
+  private pruneExpiredReviews(): void {
+    const now = this.now();
+    for (const [owner, stored] of this.drafts) {
+      if (!this.shouldExpire(owner, stored, now)) {
+        continue;
+      }
+      if (stored.snapshot.draftId) {
+        this.expireDraft(owner, stored);
+      } else if (
+        stored.snapshot.shoppingListId !== undefined ||
+        (!stored.snapshot.items.length && stored.snapshot.actionNotice)
+      ) {
+        // Only transient editor state expires; native lists and receipts remain durable.
+        this.drafts.delete(owner);
+      }
+    }
+  }
+
+  private makeRoom(owner: string): void {
+    this.pruneExpiredReviews();
+    const occupied = () =>
+      this.drafts.size +
+      [...this.startingOwners].filter((pending) => !this.drafts.has(pending))
+        .length;
+    if (this.drafts.has(owner) || occupied() < 8) {
       return;
     }
-    const oldest = [...this.drafts.entries()].find(
-      ([, draft]) =>
-        !draft.busy &&
-        draft.snapshot.submission?.status !== "submitted" &&
-        draft.snapshot.submission?.status !== "uncertain" &&
-        draft.snapshot.submission?.status !== "partial",
+    const disposable = [...this.drafts.entries()].find(
+      ([key, stored]) =>
+        key !== owner &&
+        !this.startingOwners.has(key) &&
+        !stored.snapshot.draftId &&
+        !this.isProtected(stored) &&
+        ((stored.snapshot.shoppingListId !== undefined &&
+          stored.snapshot.saveStatus === "saved") ||
+          (!stored.snapshot.shoppingListId &&
+            !stored.snapshot.items.length &&
+            stored.snapshot.actionNotice !== undefined)),
     );
-    if (!oldest) {
+    if (disposable) {
+      this.drafts.delete(disposable[0]);
+      return;
+    }
+    throw new NemligError(
+      "Active review limit reached. Finish or resolve an existing review before opening another.",
+    );
+  }
+
+  private reserve(owner: string): void {
+    if (this.startingOwners.has(owner)) {
       throw new NemligError(
-        "Active Local basket limit reached. Finish an in-progress Local basket and try again.",
+        "A review is already opening. Refresh it after the current request finishes.",
       );
     }
-    const [owner] = oldest;
-    this.drafts.delete(owner);
+    this.makeRoom(owner);
+    this.startingOwners.add(owner);
   }
 
   private expireDraft(owner: string, stored: StoredReview): void {
@@ -375,11 +449,7 @@ export class ProductReviewService {
   // fallow-ignore-next-line complexity
   private get(owner: string, expectedDraftId?: string): StoredReview {
     let draft = this.drafts.get(owner);
-    if (
-      draft?.snapshot.draftId &&
-      !draft.busy &&
-      this.now() - (draft.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
-    ) {
+    if (draft && this.shouldExpire(owner, draft, this.now())) {
       this.expireDraft(owner, draft);
       draft = undefined;
     }
@@ -415,11 +485,7 @@ export class ProductReviewService {
     if (!stored) {
       return undefined;
     }
-    if (
-      stored.snapshot.draftId &&
-      !stored.busy &&
-      this.now() - (stored.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
-    ) {
+    if (this.shouldExpire(owner, stored, this.now())) {
       this.expireDraft(owner, stored);
       return undefined;
     }
@@ -454,6 +520,7 @@ export class ProductReviewService {
         shoppingListId: number;
       }
     | undefined {
+    this.pruneExpiredReviews();
     for (const [owner, stored] of this.drafts) {
       const shoppingListId = stored.snapshot.shoppingListId;
       if (
@@ -500,14 +567,16 @@ export class ProductReviewService {
         "A Local basket is starting. Refresh it after the current request finishes.",
       );
     }
-    const active = this.drafts.get(owner);
+    let active = this.drafts.get(owner);
     if (active) {
       if (
         active.snapshot.draftId &&
         !active.busy &&
+        !this.isProtected(active) &&
         this.now() - (active.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
       ) {
         this.expireDraft(owner, active);
+        active = undefined;
       } else {
         if (active.snapshot.draftId) {
           const activeIds = active.snapshot.items
@@ -548,13 +617,10 @@ export class ProductReviewService {
         // has been fully hydrated. Its provider data is never changed here.
       }
     }
-    if (!active) {
-      this.makeRoom();
-    }
+    this.reserve(owner);
     if (active && this.drafts.get(owner) === active) {
       active.busy = true;
     }
-    this.startingOwners.add(owner);
     try {
       const rows = await this.readItems(items, signal);
       const createdAt = this.now();
@@ -641,9 +707,14 @@ export class ProductReviewService {
         "This shopping list was deleted in Nemlig. Its pending update was retired; choose another list or start a draft.",
     };
     const active = this.drafts.get(owner);
-    if (!active?.busy && active?.snapshot.shoppingListId === listId) {
+    if (
+      !this.startingOwners.has(owner) &&
+      !active?.busy &&
+      active?.snapshot.shoppingListId === listId
+    ) {
       this.drafts.set(owner, {
         busy: false,
+        lastActivityAt: this.now(),
         accountIdentity,
         nativeFingerprint: undefined,
         nativeItems: [],
@@ -667,6 +738,7 @@ export class ProductReviewService {
         : randomUUID();
     this.drafts.set(owner, {
       busy: false,
+      lastActivityAt: this.now(),
       accountIdentity,
       nativeFingerprint: shoppingListFingerprint(list),
       nativeItems: list.items.map((item) => ({ ...item })),
@@ -675,8 +747,6 @@ export class ProductReviewService {
     });
   }
 
-  // Validate account, inventory, native identity, and rows before trusting a list ID.
-  // fallow-ignore-next-line complexity
   async openShoppingList(
     owner: string,
     listId: number,
@@ -691,7 +761,30 @@ export class ProductReviewService {
     ) {
       throw new NemligError("Shopping list is unavailable.");
     }
-    const accountIdentity = this.client.providerIdentity();
+    this.reserve(owner);
+    try {
+      return await this.openShoppingListReserved(
+        owner,
+        listId,
+        signal,
+        journal,
+        acceptedDraftId,
+      );
+    } finally {
+      this.startingOwners.delete(owner);
+    }
+  }
+
+  // Validate account, inventory, native identity, and rows before trusting a list ID.
+  // fallow-ignore-next-line complexity
+  private async openShoppingListReserved(
+    owner: string,
+    listId: number,
+    signal?: AbortSignal,
+    journal?: ReviewOperationJournal,
+    acceptedDraftId?: string,
+  ): Promise<ProductReviewSnapshot> {
+    const accountIdentity = this.client.providerIdentity!();
     const current = this.drafts.get(owner);
     const initialSnapshot = current?.snapshot;
     if (current?.busy) {
@@ -707,15 +800,8 @@ export class ProductReviewService {
           "The active shopping-list review changed. Refresh it before continuing.",
         );
       }
-      if (
-        current?.snapshot.draftId &&
-        this.now() - (current.lastActivityAt ?? 0) >= DRAFT_IDLE_TIMEOUT_MS
-      ) {
-        this.expireDraft(owner, current);
-        throw new NemligError(
-          "Unsaved draft expired. Start a new draft; its previous products cannot be restored.",
-        );
-      }
+      // This owner is reserved until the awaited load settles, so expiry/pruning
+      // cannot remove its previous snapshot during this comparison.
     };
     const lists = await this.getShoppingLists(signal);
     if (!lists.some((list) => list.id === listId)) {
@@ -735,15 +821,15 @@ export class ProductReviewService {
         404,
       );
     }
-    const list = await this.client.getShoppingList(listId, signal);
+    const list = await this.client.getShoppingList!(listId, signal);
     if (
       list.id !== listId ||
-      this.client.providerIdentity() !== accountIdentity
+      this.client.providerIdentity!() !== accountIdentity
     ) {
       throw new NemligError("Shopping list identity changed. Select it again.");
     }
     const rows = await this.readItems(reviewItemInputs(list.items), signal);
-    if (this.client.providerIdentity() !== accountIdentity) {
+    if (this.client.providerIdentity!() !== accountIdentity) {
       throw new NemligError(
         "Connected Nemlig account changed. Select a list again.",
       );
@@ -790,7 +876,7 @@ export class ProductReviewService {
         reviewItemInputs(operation.items),
         signal,
       );
-      if (this.client.providerIdentity() !== accountIdentity) {
+      if (this.client.providerIdentity!() !== accountIdentity) {
         throw new NemligError(
           "Connected Nemlig account changed. Select a list again.",
         );
@@ -885,7 +971,7 @@ export class ProductReviewService {
             };
             const currentBasket = await this.client.getCart(signal);
             if (
-              this.client.providerIdentity() === accountIdentity &&
+              this.client.providerIdentity!() === accountIdentity &&
               this.proposals.matchesNativeShoppingListTransfer(
                 baseline,
                 currentBasket,
@@ -1123,6 +1209,7 @@ export class ProductReviewService {
     );
     const desired = reviewQuantities(next.items);
     stored.snapshot = next;
+    stored.lastActivityAt = this.now();
     stored.snapshot.shoppingListDirty =
       JSON.stringify([...baseline].sort()) !==
       JSON.stringify([...desired].sort());
@@ -1939,7 +2026,7 @@ export class ProductReviewService {
     }
     delete stored.snapshot.draftId;
     delete stored.snapshot.draftExpiresAt;
-    delete stored.lastActivityAt;
+    stored.lastActivityAt = this.now();
     delete stored.createAttempted;
     delete stored.snapshot.actionNotice;
     this.touch(owner, stored);
@@ -1955,48 +2042,58 @@ export class ProductReviewService {
     journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
     if (!this.drafts.has(owner) && expectedDraftId && journal) {
-      const operation = await journal.read(expectedDraftId);
-      if (operation?.kind === "save") {
-        if (operation.completedUntil !== undefined) {
-          if (
-            !operation.listId ||
-            operation.name !== name.trim() ||
-            operation.accountIdentity !== this.client.providerIdentity?.()
-          ) {
-            throw new NemligError(
-              "The completed save cannot be resumed. Open the saved shopping list to review it.",
+      this.reserve(owner);
+      let reservationHeld = true;
+      try {
+        const operation = await journal.read(expectedDraftId);
+        if (operation?.kind === "save") {
+          if (operation.completedUntil !== undefined) {
+            if (
+              !operation.listId ||
+              operation.name !== name.trim() ||
+              operation.accountIdentity !== this.client.providerIdentity?.()
+            ) {
+              throw new NemligError(
+                "The completed save cannot be resumed. Open the saved shopping list to review it.",
+              );
+            }
+            this.startingOwners.delete(owner);
+            reservationHeld = false;
+            return await this.openShoppingList(
+              owner,
+              operation.listId,
+              signal,
+              journal,
             );
           }
-          return this.openShoppingList(
-            owner,
-            operation.listId,
+          const items = await this.readItems(
+            operation.items.map(({ productId, quantity }) => ({
+              product_id: productId,
+              quantity,
+            })),
             signal,
-            journal,
           );
+          const lastActivityAt = this.now();
+          this.drafts.set(owner, {
+            busy: false,
+            lastActivityAt,
+            accountIdentity: operation.accountIdentity,
+            createAttempted: operation.createAttempted,
+            snapshot: {
+              draftId: operation.operationId,
+              draftExpiresAt: lastActivityAt + DRAFT_IDLE_TIMEOUT_MS,
+              destination: "ready",
+              items,
+              shoppingListName: operation.name,
+              ...(operation.listId ? { shoppingListId: operation.listId } : {}),
+              saveStatus: "partial",
+            },
+          });
         }
-        const items = await this.readItems(
-          operation.items.map(({ productId, quantity }) => ({
-            product_id: productId,
-            quantity,
-          })),
-          signal,
-        );
-        const lastActivityAt = this.now();
-        this.drafts.set(owner, {
-          busy: false,
-          lastActivityAt,
-          accountIdentity: operation.accountIdentity,
-          createAttempted: operation.createAttempted,
-          snapshot: {
-            draftId: operation.operationId,
-            draftExpiresAt: lastActivityAt + DRAFT_IDLE_TIMEOUT_MS,
-            destination: "ready",
-            items,
-            shoppingListName: operation.name,
-            ...(operation.listId ? { shoppingListId: operation.listId } : {}),
-            saveStatus: "partial",
-          },
-        });
+      } finally {
+        if (reservationHeld) {
+          this.startingOwners.delete(owner);
+        }
       }
     }
     const previous = this.drafts.get(owner);
@@ -2359,6 +2456,9 @@ export class ProductReviewService {
   }
 
   private lock(owner: string, expectedDraftId?: string): StoredReview {
+    if (this.startingOwners.has(owner)) {
+      throw new NemligError("A review is opening. Refresh after it finishes.");
+    }
     const stored = this.get(owner, expectedDraftId);
     if (stored.busy) {
       throw new NemligError(

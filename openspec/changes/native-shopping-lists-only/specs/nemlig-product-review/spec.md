@@ -60,6 +60,28 @@ succeeds; dirty, in-flight, or uncertain saved-list state SHALL remain available
 - **THEN** unsaved products disappear, saved shopping-list contents remain on
   Nemlig, and neither a draft nor a list is silently recreated
 
+### Requirement: Bounded transient review cache
+The process-local review cache SHALL hold at most eight owners per
+principal-scoped service. The hosted context cache SHALL remain bounded to
+sixteen authenticated principal contexts. Ordinary inactive drafts and clean
+saved-list editor views MAY expire after two hours of inactivity and clean native
+views MAY be reclaimed earlier under capacity pressure. Unexpired drafts and
+recoverable state SHALL NOT be evicted to make room. Expiry or capacity
+reclamation SHALL NOT delete native lists or durable operation receipts. Dirty,
+busy, partial, uncertain, or otherwise recoverable state SHALL NOT be silently
+evicted; when no disposable entry is available, a new review SHALL fail before
+product or list hydration. Confirmed submission views MAY be reclaimed
+because the durable receipt retains the no-replay fence. Exact reviewed-list
+Submit SHALL remain available after transient view expiry.
+
+#### Scenario: Cache pressure protects recoverable work
+- **WHEN** all cached slots contain unexpired drafts, staged edits, or unresolved operations
+- **THEN** opening another review fails before provider reads and leaves each existing view unchanged
+
+#### Scenario: Clean saved-list view expires
+- **WHEN** a clean saved-list editor view remains inactive for two hours
+- **THEN** its transient handle expires without deleting the provider list or durable receipt, and selecting that exact list rebuilds the view
+
 ### Requirement: Contextual alternatives and reversible navigation
 The system SHALL offer alternatives for an identified candidate or saved item,
 preserve product details and cancellation, and allow returning without changes.

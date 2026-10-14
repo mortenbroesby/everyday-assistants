@@ -457,7 +457,7 @@ test("new draft replaces only a clean saved review after hydration", async () =>
   assert.equal(service.active("owner")?.shoppingListDirty, true);
 });
 
-test("opening a native list cannot replace a draft edited during deferred reads", async () => {
+test("an explicit native-list selection serializes edits before replacing a draft", async () => {
   let releaseList!: (list: {
     id: number;
     name: string;
@@ -483,57 +483,104 @@ test("opening a native list cannot replace a draft edited during deferred reads"
       return delayedList;
     },
   });
-  await service.start("owner", [{ product_id: 1, quantity: 1 }]);
+  const draft = await service.start("owner", [{ product_id: 1, quantity: 1 }]);
   const opening = service.openShoppingList("owner", 44);
   await readStarted;
-  const edited = await service.update("owner", {
-    kind: "quantity",
-    product_id: 1,
-    quantity: 2,
-  });
+  await assert.rejects(
+    service.update("owner", {
+      kind: "quantity",
+      product_id: 1,
+      quantity: 2,
+    }),
+    /review is opening/u,
+  );
+  assert.equal(service.active("owner")?.draftId, draft.draftId);
   releaseList({
     id: 44,
     name: "Family",
     items: [{ productId: 1, quantity: 1 }],
   });
-
-  await assert.rejects(opening, /active shopping-list review changed/u);
-  assert.equal(service.active("owner")?.draftId, edited.draftId);
-  assert.equal(service.active("owner")?.items[0]?.quantity, 2);
+  await opening;
+  assert.equal(service.active("owner")?.shoppingListId, 44);
 });
 
-test("a later deferred native-list open cannot replace an earlier open", async () => {
-  let releaseFirst!: (list: {
+test("an existing native review stays protected during its delayed refresh", async () => {
+  let delay = false;
+  let releaseList!: (list: {
     id: number;
     name: string;
     items: Array<{ productId: number; quantity: number }>;
   }) => void;
-  let releaseSecond!: (list: {
-    id: number;
-    name: string;
-    items: Array<{ productId: number; quantity: number }>;
-  }) => void;
-  let readsStarted = 0;
-  let markBothReadsStarted!: () => void;
-  const bothReadsStarted = new Promise<void>((resolve) => {
-    markBothReadsStarted = resolve;
+  let markReadStarted!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    markReadStarted = resolve;
   });
-  const gates = [
-    new Promise<{
-      id: number;
-      name: string;
-      items: Array<{ productId: number; quantity: number }>;
-    }>((resolve) => {
-      releaseFirst = resolve;
+  const delayedList = new Promise<{
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }>((resolve) => {
+    releaseList = resolve;
+  });
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => {
+      if (delay) {
+        markReadStarted();
+        return delayedList;
+      }
+      return { id: 44, name: "Family", items: [{ productId: 1, quantity: 1 }] };
+    },
+    updateShoppingListProduct: async () => undefined,
+  });
+  await service.openShoppingList("native", 44);
+  delay = true;
+  const opening = service.openShoppingList("native", 44);
+  await readStarted;
+  assert.throws(() => service.end("native"), /review is opening/u);
+  await assert.rejects(
+    service.updateShoppingList("native", 44, {
+      kind: "quantity",
+      product_id: 1,
+      quantity: 2,
     }),
-    new Promise<{
-      id: number;
-      name: string;
-      items: Array<{ productId: number; quantity: number }>;
-    }>((resolve) => {
-      releaseSecond = resolve;
-    }),
-  ];
+    /review is opening/u,
+  );
+  for (let index = 0; index < 7; index += 1) {
+    await service.start(`protected-${index}`, [
+      { product_id: index + 10, quantity: 1 },
+    ]);
+  }
+  await assert.rejects(
+    service.start("overflow", [{ product_id: 99, quantity: 1 }]),
+    /limit reached/u,
+  );
+  assert.equal(service.active("native")?.shoppingListId, 44);
+  releaseList({
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  });
+  await opening;
+  assert.equal(service.active("native")?.shoppingListId, 44);
+});
+
+test("a concurrent native-list open is rejected before a second provider read", async () => {
+  let release!: (list: {
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }) => void;
+  let reads = 0;
+  const pending = new Promise<{
+    id: number;
+    name: string;
+    items: Array<{ productId: number; quantity: number }>;
+  }>((resolve) => {
+    release = resolve;
+  });
   const service = new ProductReviewService({
     ...client,
     providerIdentity: () => "account-1",
@@ -542,29 +589,18 @@ test("a later deferred native-list open cannot replace an earlier open", async (
       { id: 45, name: "Work" },
     ],
     getShoppingList: async () => {
-      const gate = gates[readsStarted++];
-      if (readsStarted === 2) {
-        markBothReadsStarted();
-      }
-      return gate;
+      reads += 1;
+      return pending;
     },
   });
   const first = service.openShoppingList("owner", 44);
-  const second = service.openShoppingList("owner", 45);
-  await bothReadsStarted;
-  releaseFirst({
-    id: 44,
-    name: "Family",
-    items: [{ productId: 1, quantity: 1 }],
-  });
+  await assert.rejects(
+    service.openShoppingList("owner", 45),
+    /already opening/u,
+  );
+  assert.equal(reads, 1);
+  release({ id: 44, name: "Family", items: [{ productId: 1, quantity: 1 }] });
   await first;
-  releaseSecond({
-    id: 45,
-    name: "Work",
-    items: [{ productId: 2, quantity: 1 }],
-  });
-
-  await assert.rejects(second, /active shopping-list review changed/u);
   assert.equal(service.active("owner")?.shoppingListId, 44);
 });
 
@@ -616,6 +652,7 @@ test("reopening a changed native list preserves staged edits and shows current r
 });
 
 test("saved native list verifies transfer before durable source cleanup and replay fence", async () => {
+  let now = 0;
   const native = {
     id: 44,
     name: "Family",
@@ -700,11 +737,26 @@ test("saved native list verifies transfer before durable source cleanup and repl
     updateShoppingListProduct: nativeClient.updateShoppingListProduct,
     addShoppingListToCart: nativeClient.addShoppingListToCart,
   });
-  const service = new ProductReviewService(nativeClient, { proposals });
+  const service = new ProductReviewService(nativeClient, {
+    proposals,
+    now: () => now,
+  });
   const { journal, read } = createDurableReviewJournal("owner");
   readOperation = async (operationId) =>
     (await read(operationId)) as ReviewOperation | undefined;
   await service.openShoppingList("owner", 44, undefined, journal);
+  const expiredContextId = service.active("owner")?.reviewContextId;
+  now += DRAFT_IDLE_TIMEOUT_MS / 2;
+  for (let index = 0; index < 7; index += 1) {
+    await service.start(`protected-${index}`, [
+      { product_id: index + 10, quantity: 1 },
+    ]);
+  }
+  now += DRAFT_IDLE_TIMEOUT_MS / 2 + 1;
+  assert.ok(expiredContextId);
+  assert.equal(service.reviewContextOwner(expiredContextId), undefined);
+  assert.equal(service.active("owner"), undefined);
+  await service.start("protected-7", [{ product_id: 20, quantity: 1 }]);
   events.length = 0;
 
   const submitted = await service.submit(
@@ -713,12 +765,16 @@ test("saved native list verifies transfer before durable source cleanup and repl
     44,
     undefined,
     journal,
+    { name: "Family", items: [{ product_id: 1, quantity: 1 }] },
   );
 
-  assert.equal(submitted.review.submission?.status, "submitted");
+  assert.ok(submitted.review.submission);
+  assert.equal(submitted.review.submission.status, "submitted");
   assert.equal(submitted.result.basket.number_of_products, 4);
-  assert.equal(basket.items[0]?.quantity, 3);
-  assert.equal(basket.items[1]?.id, 99);
+  assert.ok(basket.items[0]);
+  assert.ok(basket.items[1]);
+  assert.equal(basket.items[0].quantity, 3);
+  assert.equal(basket.items[1].id, 99);
   assert.equal(sourcePresent, false);
   assert.deepEqual(
     [transfers, listCreates, listUpdates, listDeletes],
@@ -728,13 +784,17 @@ test("saved native list verifies transfer before durable source cleanup and repl
   assert.ok(events.lastIndexOf("basket-read") < events.indexOf("delete-list"));
   const receipt = (await read("native-list-submit:44")) as
     ReviewOperation | undefined;
-  assert.equal(receipt?.kind, "submit");
-  assert.equal(receipt?.dispatchAttempted, true);
-  assert.equal(receipt?.completed, true);
-  assert.equal(receipt?.cleanupStatus, "deleted");
+  assert.ok(receipt);
+  assert.equal(receipt.kind, "submit");
+  assert.equal(receipt.dispatchAttempted, true);
+  assert.equal(receipt.completed, true);
+  assert.equal(receipt.cleanupStatus, "deleted");
 
   await assert.rejects(
-    service.submit("owner", "attempt-2", 44, undefined, journal),
+    service.submit("owner", "attempt-2", 44, undefined, journal, {
+      name: "Family",
+      items: [{ product_id: 1, quantity: 1 }],
+    }),
     /unavailable or was deleted/u,
   );
   assert.equal(transfers, 1);
@@ -1833,6 +1893,7 @@ test("native list update stops if the Nemlig account changes during refresh", as
 });
 
 test("partial draft saves reconcile and resume the same native list", async () => {
+  let now = 0;
   let resolveCreate!: (id: number) => void;
   let creates = 0;
   let updates = 0;
@@ -1842,41 +1903,44 @@ test("partial draft saves reconcile and resume the same native list", async () =
     name: "List",
     items: [] as Array<{ productId: number; quantity: number }>,
   };
-  const service = new ProductReviewService({
-    ...client,
-    providerIdentity: () => "account-1",
-    createShoppingList: async () => {
-      creates += 1;
-      return new Promise<number>((resolve) => {
-        resolveCreate = resolve;
-      });
-    },
-    updateShoppingListProduct: async (
-      listId: number,
-      productId: number,
-      quantity: number,
-    ) => {
-      updates += 1;
-      if (updates === 2) {
-        if (failSecondUpdate) {
-          throw new Error("uncertain update");
+  const service = new ProductReviewService(
+    {
+      ...client,
+      providerIdentity: () => "account-1",
+      createShoppingList: async () => {
+        creates += 1;
+        return new Promise<number>((resolve) => {
+          resolveCreate = resolve;
+        });
+      },
+      updateShoppingListProduct: async (
+        listId: number,
+        productId: number,
+        quantity: number,
+      ) => {
+        updates += 1;
+        if (updates === 2) {
+          if (failSecondUpdate) {
+            throw new Error("uncertain update");
+          }
         }
-      }
-      const items = new Map(
-        saved.items.map((item) => [item.productId, item.quantity]),
-      );
-      items.set(productId, quantity);
-      saved = {
-        ...saved,
-        id: listId,
-        items: [...items].map(([id, amount]) => ({
-          productId: id,
-          quantity: amount,
-        })),
-      };
+        const items = new Map(
+          saved.items.map((item) => [item.productId, item.quantity]),
+        );
+        items.set(productId, quantity);
+        saved = {
+          ...saved,
+          id: listId,
+          items: [...items].map(([id, amount]) => ({
+            productId: id,
+            quantity: amount,
+          })),
+        };
+      },
+      getShoppingList: async () => structuredClone(saved),
     },
-    getShoppingList: async () => structuredClone(saved),
-  });
+    { now: () => now },
+  );
   const draft = await service.start("owner", [
     { product_id: 1, quantity: 1 },
     { product_id: 2, quantity: 1 },
@@ -1893,6 +1957,9 @@ test("partial draft saves reconcile and resume the same native list", async () =
   assert.equal(partial.draftId, draft.draftId);
   assert.deepEqual(partial.saveProgress, { completed: 1, total: 2 });
 
+  now += DRAFT_IDLE_TIMEOUT_MS + 1;
+  assert.equal(service.active("owner", draft.draftId)?.saveStatus, "partial");
+
   failSecondUpdate = false;
   const resumed = await service.save("owner", "List", draft.draftId);
   assert.equal(resumed.saveStatus, "saved");
@@ -1906,6 +1973,69 @@ test("partial draft saves reconcile and resume the same native list", async () =
   const duplicate = await service.save("owner", "List", draft.draftId);
   assert.equal(duplicate.saveStatus, "saved");
   assert.deepEqual({ creates, updates }, { creates: 1, updates: 3 });
+});
+
+test("restart Save reserves its owner before awaiting the durable journal", async () => {
+  const base = createDurableReviewJournal("owner").journal;
+  const operation: ReviewOperation = {
+    operationId: "save-recovery-1",
+    generation: "save-recovery-1",
+    accountIdentity: "account-1",
+    kind: "save",
+    name: "Family",
+    createAttempted: true,
+    listId: 44,
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  await base.write(operation);
+  let release!: () => void;
+  let markReadStarted!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const readStarted = new Promise<void>((resolve) => {
+    markReadStarted = resolve;
+  });
+  let reads = 0;
+  const journal: ReviewOperationJournal = {
+    read: async (id) => {
+      reads += 1;
+      markReadStarted();
+      await pending;
+      return base.read(id);
+    },
+    claim: (...args) => base.claim(...args),
+    write: (value) => base.write(value),
+    complete: (...args) => base.complete(...args),
+  };
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 1, quantity: 1 }],
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+  });
+  const first = service.save(
+    "owner",
+    "Family",
+    operation.operationId,
+    undefined,
+    journal,
+  );
+  await readStarted;
+  await assert.rejects(
+    service.save("owner", "Family", operation.operationId, undefined, journal),
+    /already opening/u,
+  );
+  assert.equal(reads, 1);
+  release();
+  const recovered = await first;
+  assert.equal(recovered.saveStatus, "saved");
+  assert.equal(recovered.shoppingListId, 44);
 });
 
 test("draft save writes at most two products concurrently and verifies the actual list", async () => {
@@ -2577,8 +2707,15 @@ test("session drafts survive an hour, repeated starts preserve them, and explici
   assert.equal(restarted.items[0]?.product_id, 1);
 });
 
-test("adding exact products is atomic, reviewable, and bounded; older idle sessions are evicted", async () => {
-  const service = new ProductReviewService(client);
+test("bounded capacity never silently evicts an unexpired draft", async () => {
+  let reads = 0;
+  const service = new ProductReviewService({
+    ...client,
+    getProduct: async (id: number) => {
+      reads++;
+      return product(id);
+    },
+  });
   const draft = await service.start("owner-1", [
     { product_id: 1, quantity: 1 },
   ]);
@@ -2619,10 +2756,225 @@ test("adding exact products is atomic, reviewable, and bounded; older idle sessi
     { product_id: 1, quantity: 1 },
     { product_id: 2, quantity: 3 },
   ]);
-  await service.start("owner-9", [{ product_id: 9, quantity: 1 }]);
-  assert.equal(service.active("owner-2"), undefined);
+  const readsAtCapacity = reads;
+  await assert.rejects(
+    service.start("owner-9", [{ product_id: 9, quantity: 1 }]),
+    /limit reached/u,
+  );
+  assert.equal(reads, readsAtCapacity);
   assert.equal(service.active("owner-1")?.items[0]?.product_id, 1);
-  assert.equal(service.active("owner-9")?.items[0]?.product_id, 9);
+  for (let index = 2; index <= 8; index++) {
+    assert.equal(service.active(`owner-${index}`)?.items[0]?.product_id, index);
+  }
+
+  service.end("owner-1");
+  assert.equal(
+    (await service.start("owner-9", [{ product_id: 9, quantity: 1 }])).items[0]
+      ?.product_id,
+    9,
+  );
+});
+
+test("expired drafts release capacity after the existing idle deadline", async () => {
+  let now = 1_000;
+  const service = new ProductReviewService(client, { now: () => now });
+  for (let index = 1; index <= 8; index++) {
+    await service.start(`owner-${index}`, [{ product_id: index, quantity: 1 }]);
+  }
+  now += DRAFT_IDLE_TIMEOUT_MS;
+  const next = await service.start("owner-9", [{ product_id: 9, quantity: 1 }]);
+  assert.equal(next.items[0]?.product_id, 9);
+  for (let index = 1; index <= 8; index++) {
+    assert.equal(service.active(`owner-${index}`), undefined);
+  }
+});
+
+test("native review admission reserves capacity before provider hydration and releases it on failure", async () => {
+  let releaseListRead!: () => void;
+  let listReadStarted!: () => void;
+  const listReadPending = new Promise<void>((resolve) => {
+    releaseListRead = resolve;
+  });
+  const listReadReady = new Promise<void>((resolve) => {
+    listReadStarted = resolve;
+  });
+  let productReads = 0;
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => {
+      listReadStarted();
+      await listReadPending;
+      return [{ id: 44, name: "Family" }];
+    },
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Family",
+      items: [{ productId: 99, quantity: 1 }],
+    }),
+    getProduct: async (id: number) => {
+      productReads++;
+      return product(id);
+    },
+  });
+  for (let index = 1; index <= 7; index++) {
+    await service.start(`draft-${index}`, [{ product_id: index, quantity: 1 }]);
+  }
+
+  const opening = service.openShoppingList("native", 44);
+  await listReadReady;
+  const readsAtReservation = productReads;
+  await assert.rejects(
+    service.start("overflow", [{ product_id: 88, quantity: 1 }]),
+    /limit reached/u,
+  );
+  assert.equal(productReads, readsAtReservation);
+  releaseListRead();
+  await opening;
+
+  const fullReviewService = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [],
+    getShoppingList: async () => ({ id: 44, name: "Family", items: [] }),
+  });
+  for (let index = 1; index <= 7; index++) {
+    await fullReviewService.start(`draft-${index}`, [
+      { product_id: index, quantity: 1 },
+    ]);
+  }
+  await assert.rejects(
+    fullReviewService.openShoppingList("failed-native", 44),
+    /unavailable or was deleted/u,
+  );
+  assert.equal(
+    (
+      await fullReviewService.start("released-slot", [
+        { product_id: 90, quantity: 1 },
+      ])
+    ).items[0]?.product_id,
+    90,
+  );
+});
+
+test("stateless native reviews stay bounded and clean expiry only drops the transient handle", async () => {
+  let now = 5_000;
+  let deletes = 0;
+  const service = new ProductReviewService(
+    {
+      ...client,
+      providerIdentity: () => "account-1",
+      listShoppingLists: async () =>
+        Array.from({ length: 9 }, (_, index) => ({
+          id: index + 1,
+          name: `List ${index + 1}`,
+        })),
+      getShoppingList: async (id: number) => ({
+        id,
+        name: `List ${id}`,
+        items: [{ productId: id, quantity: 1 }],
+      }),
+      deleteShoppingList: async () => {
+        deletes++;
+      },
+    },
+    { now: () => now },
+  );
+  const contexts: string[] = [];
+  for (let index = 1; index <= 9; index++) {
+    const review = await service.openShoppingList(`stateless-${index}`, index);
+    assert.ok(review.reviewContextId);
+    contexts.push(review.reviewContextId);
+  }
+  assert.equal(service.reviewContextOwner(contexts[0]!), undefined);
+  for (const context of contexts.slice(1)) {
+    assert.ok(service.reviewContextOwner(context));
+  }
+
+  const lastContext = contexts.at(-1)!;
+  now += DRAFT_IDLE_TIMEOUT_MS;
+  assert.equal(service.reviewContextOwner(lastContext), undefined);
+  const reopened = await service.openShoppingList("stateless-9", 9);
+  assert.ok(reopened.reviewContextId);
+  assert.notEqual(reopened.reviewContextId, lastContext);
+  assert.equal(deletes, 0);
+});
+
+test("capacity pressure preserves staged native edits", async () => {
+  const native = {
+    id: 44,
+    name: "Family",
+    items: [{ productId: 99, quantity: 1 }],
+  };
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => structuredClone(native),
+    updateShoppingListProduct: async () => undefined,
+  };
+  const service = new ProductReviewService(provider);
+  const nativeReview = await service.openShoppingList("native", 44);
+  await service.updateShoppingList("native", 44, {
+    kind: "quantity",
+    product_id: 99,
+    quantity: 2,
+  });
+  for (let index = 1; index <= 7; index++) {
+    await service.start(`draft-${index}`, [{ product_id: index, quantity: 1 }]);
+  }
+  await assert.rejects(
+    service.start("overflow", [{ product_id: 88, quantity: 1 }]),
+    /limit reached/u,
+  );
+  const staged = service.active("native");
+  assert.equal(staged?.shoppingListDirty, true);
+  assert.equal(staged?.items[0]?.quantity, 2);
+  assert.equal(
+    service.reviewContextOwner(nativeReview.reviewContextId!)?.shoppingListId,
+    44,
+  );
+});
+
+test("capacity pressure preserves an unresolved native submission fence", async () => {
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => [{ id: 44, name: "Family" }],
+    getShoppingList: async () => ({
+      id: 44,
+      name: "Family",
+      items: [{ productId: 99, quantity: 1 }],
+    }),
+  };
+  const { journal } = createDurableReviewJournal("owner");
+  await journal.write({
+    operationId: "native-list-submit:44",
+    generation: "uncertain-attempt",
+    accountIdentity: "account-1",
+    kind: "submit",
+    name: "Family",
+    listId: 44,
+    items: [{ productId: 99, quantity: 1 }],
+    baseline: [],
+    dispatchAttempted: true,
+  });
+  const service = new ProductReviewService(provider);
+  const review = await service.openShoppingList(
+    "native",
+    44,
+    undefined,
+    journal,
+  );
+  assert.equal(review.submission?.status, "uncertain");
+  for (let index = 1; index <= 7; index++) {
+    await service.start(`draft-${index}`, [{ product_id: index, quantity: 1 }]);
+  }
+  await assert.rejects(
+    service.start("overflow", [{ product_id: 88, quantity: 1 }]),
+    /limit reached/u,
+  );
+  assert.equal(service.active("native")?.submission?.status, "uncertain");
 });
 
 test("an asynchronous alternatives search excludes conflicting edits and leaves no partial state on failure", async () => {
