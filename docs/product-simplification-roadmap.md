@@ -35,7 +35,7 @@ independent implementations, not a target file size or exactly a fixed MCP tool 
 
 This deliverable is planning only. Each non-trivial delivery slice needs its own
 reviewed OpenSpec proposal, characterization or failing behavior test, focused
-checks, full `pnpm verify`, integration and applicable acceptance. Provider changes,
+local checks, required CI, integration and applicable acceptance. Provider changes,
 real-user data migration and basket changes retain their existing authority gates.
 The original roadmap authorized no runtime change. The subsequent explicit
 feature-request and saved-shopping removals are tracked separately; SDK upgrades

@@ -14,9 +14,10 @@ repository routing, invariants, and delivery policy.
 - The nearest `AGENTS.md` adds scope-specific requirements. Loading guidance
   never grants authority for secrets, provider changes, production actions, or
   basket mutations.
-- Run `pnpm format` after changing executable source. Prettier uses semicolons,
-  double quotes, two spaces, trailing commas, and an 80-column target; `pnpm
-  lint` verifies it. Every `if` and `else` body must use braces.
+- Format changed executable files with `pnpm exec prettier --write <paths>`.
+  Prettier uses semicolons, double quotes, two spaces, trailing commas, and an
+  80-column target. Every `if` and `else` body must use braces. Local checks are
+  scoped; the Definition of Done assigns comprehensive validation to CI.
 - For work spanning turns or agents, carry forward the accepted outcome, current
   hypothesis and evidence, completed work, next unresolved question, and owner;
   revisit the hypothesis after two uninformative attempts.

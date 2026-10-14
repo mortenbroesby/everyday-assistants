@@ -64,7 +64,7 @@ jobs:
       - run: pnpm privacy:check
       - run: pnpm exec turbo run lint build check test
       - run: pnpm format:check
-      - run: node --test scripts/fallow-git-hook.test.mjs
+      - run: node --test scripts/git-hooks.test.mjs
       - run: pnpm nemlig:smoke:package
       - name: Run Nemlig Cloudflare check
         run: |

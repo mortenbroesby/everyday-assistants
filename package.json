@@ -26,7 +26,7 @@
     "nemlig:cloudflare:preflight": "pnpm --dir apps/nemlig-assistant exec wrangler deployments list --env production --json >/dev/null && pnpm --dir apps/nemlig-assistant exec wrangler containers list --env production --json >/dev/null",
     "nemlig:mcp": "pnpm --dir apps/nemlig-assistant mcp",
     "nemlig:production:deploy": "pnpm --dir apps/nemlig-assistant production:deploy",
-    "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm verify && pnpm nemlig:smoke:package && pnpm nemlig:cloudflare:check",
+    "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm exec turbo run lint build && pnpm format:check && pnpm nemlig:smoke:package && pnpm nemlig:cloudflare:check",
     "nemlig:release:apply": "pnpm --dir apps/nemlig-assistant release:apply",
     "nemlig:release:plan": "pnpm --dir apps/nemlig-assistant release:plan",
     "nemlig:smoke": "turbo smoke",
@@ -40,8 +40,8 @@
     "privacy:check": "node --test scripts/check-public-tree.test.mjs && node scripts/check-public-tree.mjs",
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
-    "test": "turbo test && node --test scripts/fallow-git-hook.test.mjs",
-    "verify": "turbo run lint build && pnpm format:check"
+    "test": "turbo test && node --test scripts/git-hooks.test.mjs",
+    "verify": "turbo lint"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",

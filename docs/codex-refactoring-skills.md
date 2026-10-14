@@ -27,11 +27,32 @@ edit generated output under `apps/*/dist/` or `apps/*/coverage/`. The coverage
 script also excludes `src/**/generated/**`, `src/**/*.generated.ts`,
 `release/**/generated/**`, and `release/**/*.generated.ts`.
 
-From the repository root, `pnpm verify` runs lint and build. `pnpm check` runs
-type checks, `pnpm test` runs tests, and `pnpm spec:validate` validates OpenSpec.
-The [app development guide](../apps/nemlig-assistant/README.md) lists narrower
-commands. Choose checks for the changed surface; documentation
-changes do not require the application build.
+From the repository root, `pnpm verify` runs fast lint only (no build, formatting,
+TypeScript check, or tests). Commits check staged whitespace and run the pinned
+Fallow audit with `--gate new-only`; pushes run fast lint. The audit reports
+changed-code findings relative to the upstream merge-base (or `main` without an
+upstream), not an isolated staged-index snapshot. It still builds the project
+graph and may analyze the base revision to distinguish introduced findings.
+
+The required CI `verify` job retains OpenSpec/privacy checks, lint,
+formatting, build, type checks, all tests, package/Cloudflare checks, dead-code
+regressions, and browser smoke. A green local command does not establish a green
+build or correct behavior; inspect CI on the exact PR head before merge.
+
+For behavior changes, run the relevant tests and direct consumers locally using
+the existing Node/tsx runner, for example from the repository root:
+
+```sh
+pnpm --dir apps/nemlig-assistant exec tsx --test src/read-coordination.test.ts
+```
+
+Choose files from imports, callers, and affected contracts; filename matching
+alone is not test-impact analysis. Run broader checks locally only for a concrete
+risk or to reproduce a CI failure. Existing `pnpm check`, `pnpm test`, `pnpm build`,
+`pnpm lint`, and `pnpm spec:validate` remain available for that purpose. Format
+only changed executable files with `pnpm exec prettier --write <paths>`.
+Documentation-only changes do not need application checks. Do not add a new
+runner or automatic changed-test selector to use this workflow.
 
 ## Provenance and updates
 

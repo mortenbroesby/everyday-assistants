@@ -5,15 +5,16 @@ when every applicable criterion below is satisfied with current evidence.
 
 - **Implementation complete:** Acceptance, intended failure behavior, safety
   boundaries, and state readback are verified where applicable.
-- **Quality:** Choose checks that cover the changed surface and support the
-  claims being made. Behavior changes require focused checks and one
-  representative end-to-end smoke test. Run `pnpm verify` when application
-  code, package configuration, or another changed surface it exercises is in
-  scope, or when a delivery gate requires it. Documentation- and
-  instruction-only changes use focused checks for those files; they do not
-  require running unrelated application checks. Run applicable checks after
-  the last relevant edit. Review the final diff for secrets, accidental edits,
-  and unjustified complexity.
+- **Quality:** Run the fast lint-only `pnpm verify` for executable/configuration
+  changes and focused tests for changed behavior and relevant callers. Use
+  existing tests and tooling; select by actual dependencies/contracts, not only
+  matching filenames. CI owns the full build, type checks, tests, formatting,
+  and smoke checks. Do not duplicate those suites locally by default; run a
+  broader local check only to investigate a failure or answer a concrete risk.
+  Documentation-only changes need only relevant file checks. Reuse completed
+  evidence while its inputs are unchanged, report pending CI as pending, and
+  do not treat lint as proof of behavior. Inspect the final diff for secrets,
+  accidental edits, and unjustified complexity.
 - **Documentation:** Update affected instructions, docs, backlog, and OpenSpec
   artifacts; do not leave planning or task state misleading.
 - **Implementation handoff:** Commit and push the scoped change, report the

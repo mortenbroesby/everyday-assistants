@@ -374,8 +374,9 @@ function hasUnselectedReview(value: unknown) {
   );
 }
 function requiresBasketPicker(envelope: Record<string, unknown>) {
-  const serverRequiresSelection = envelope.selectionRequired === true;
-  return serverRequiresSelection || hasUnselectedReview(envelope.review);
+  return (
+    envelope.selectionRequired === true || hasUnselectedReview(envelope.review)
+  );
 }
 function readPayload(value: unknown): ViewerScreen | undefined {
   if (Array.isArray(value) && value.every(isProductView)) {
@@ -516,37 +517,46 @@ export function ProductViewer() {
   const quantityTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
-  const stopQuantityTimer = () => {
+  const stopQuantityTimer = useCallback(() => {
     if (quantityTimer.current) {
       clearTimeout(quantityTimer.current);
     }
     quantityTimer.current = undefined;
-  };
-  const showDraftRecovery = (message: string) => {
-    stopQuantityTimer();
-    ignorePassivePayloads.current = true;
-    setMessage(message);
-    setRecoveryOperation("draft");
-    setSubmitErrorOpen(true);
-  };
-  const showSaveUpdateRecovery = (
-    operation: "save" | "update",
+  }, []);
+  const showRecovery = (
+    operation: "draft" | "save" | "update",
     message: string,
   ) => {
     stopQuantityTimer();
     ignorePassivePayloads.current = true;
-    setRecoveryKnownNoWrite(false);
+    if (operation !== "draft") {
+      setRecoveryKnownNoWrite(false);
+    }
     setMessage(message);
     setRecoveryOperation(operation);
     setSubmitErrorOpen(true);
   };
+  const recoverInterruptedDraft = (message: string) => {
+    const operation = activeDraftOperation.current;
+    if (operation) {
+      showRecovery(
+        operation,
+        operation === "save"
+          ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
+          : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
+      );
+      return true;
+    }
+    if (activeReview.current?.active && activeReview.current.review.draftId) {
+      showRecovery("draft", message);
+      return true;
+    }
+    return false;
+  };
   const quantityFlush = useRef<Promise<boolean> | undefined>(undefined);
   const callIdleWaiters = useRef<Array<() => void>>([]);
   const resetBasketUi = (preservePresentationDestination = false) => {
-    if (quantityTimer.current) {
-      clearTimeout(quantityTimer.current);
-    }
-    quantityTimer.current = undefined;
+    stopQuantityTimer();
     pendingQuantitiesRef.current.clear();
     setPendingQuantities(new Map());
     quantityFlush.current = undefined;
@@ -601,10 +611,7 @@ export function ProductViewer() {
     }
   };
   const deactivateReview = useCallback(() => {
-    if (quantityTimer.current) {
-      clearTimeout(quantityTimer.current);
-    }
-    quantityTimer.current = undefined;
+    stopQuantityTimer();
     clearPendingQuantities();
     setConfirmEnd(false);
     const current = activeReview.current;
@@ -613,7 +620,7 @@ export function ProductViewer() {
       activeReview.current = inactive;
       setScreen({ kind: "review", ...inactive });
     }
-  }, []);
+  }, [stopQuantityTimer]);
   const applyPayload = useCallback(
     (
       payload: unknown,
@@ -628,53 +635,34 @@ export function ProductViewer() {
       if (!current && ignorePassivePayloads.current) {
         return true;
       }
-      if (isRecord(payload) && payload.isError === true) {
-        if (!current && activeReview.current?.review.draftId) {
-          return true;
-        }
-        if (current && activeReview.current?.review.draftId) {
-          return false;
+      const toolError = isRecord(payload) && payload.isError === true;
+      if (toolError || !next) {
+        if (activeReview.current?.review.draftId) {
+          return !current;
         }
         deactivateReview();
         setScreen({
           kind: "error",
-          message:
-            "Could not load the shopping list. Reconnect Nemlig or try again in conversation.",
-        });
-        return false;
-      }
-      if (!next) {
-        if (!current && activeReview.current?.review.draftId) {
-          return true;
-        }
-        if (current && activeReview.current?.review.draftId) {
-          return false;
-        }
-        deactivateReview();
-        setScreen({
-          kind: "error",
-          message:
-            "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.",
+          message: toolError
+            ? "Could not load the shopping list. Reconnect Nemlig or try again in conversation."
+            : "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.",
         });
         return false;
       }
       const previous = activeReview.current;
       const activeDraft = Boolean(previous?.active && previous.review.draftId);
-      if (activeDraft && !current && next.kind !== "review") {
-        return true;
-      }
-      if (
-        activeDraft &&
-        current &&
-        next.kind !== "review" &&
-        !(
-          next.kind === "picker" &&
-          (actionKind === "list" || actionKind === "select")
-        ) &&
-        !(next.kind === "empty" && actionKind === "end") &&
-        !(next.kind === "unavailable" && actionKind === "show")
-      ) {
-        return false;
+      if (activeDraft && next.kind !== "review") {
+        if (!current) {
+          return true;
+        }
+        const expectedTransition =
+          (next.kind === "picker" &&
+            (actionKind === "list" || actionKind === "select")) ||
+          (next.kind === "empty" && actionKind === "end") ||
+          (next.kind === "unavailable" && actionKind === "show");
+        if (!expectedTransition) {
+          return false;
+        }
       }
       if (
         !current &&
@@ -817,22 +805,11 @@ export function ProductViewer() {
         cancelledCallPending.current = true;
         cancellationEpoch.current++;
         activeToolController.current?.abort();
-        if (activeDraftOperation.current) {
-          const operation = activeDraftOperation.current;
-          showSaveUpdateRecovery(
-            operation,
-            operation === "save"
-              ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
-              : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
-          );
-        } else if (
-          activeReview.current?.active &&
-          activeReview.current.review.draftId
-        ) {
-          showDraftRecovery(
+        if (
+          !recoverInterruptedDraft(
             "The action was cancelled. Your current products and quantities remain visible; review them before continuing.",
-          );
-        } else {
+          )
+        ) {
           ignorePassivePayloads.current = true;
           deactivateReview();
           setScreen({ kind: "cancelled" });
@@ -854,22 +831,11 @@ export function ProductViewer() {
           cancellationEpoch.current++;
           activeToolController.current?.abort();
         }
-        if (activeDraftOperation.current) {
-          const operation = activeDraftOperation.current;
-          showSaveUpdateRecovery(
-            operation,
-            operation === "save"
-              ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
-              : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
-          );
-        } else if (
-          activeReview.current?.active &&
-          activeReview.current.review.draftId
-        ) {
-          showDraftRecovery(
+        if (
+          !recoverInterruptedDraft(
             "The shopping-list connection failed. Your current products and quantities remain visible; review them before continuing.",
-          );
-        } else {
+          )
+        ) {
           ignorePassivePayloads.current = true;
           deactivateReview();
           setScreen({
@@ -885,12 +851,10 @@ export function ProductViewer() {
   useEffect(
     () => () => {
       activeToolController.current?.abort();
-      if (quantityTimer.current) {
-        clearTimeout(quantityTimer.current);
-      }
+      stopQuantityTimer();
       connectedApp?.close();
     },
-    [connectedApp],
+    [connectedApp, stopQuantityTimer],
   );
   const handleCallFailure = (
     cause: unknown,
@@ -951,7 +915,7 @@ export function ProductViewer() {
           activeReview.current.review.draftId &&
           error
         ) {
-          showDraftRecovery(detail);
+          showRecovery("draft", detail);
         } else {
           setMessage(detail);
         }
@@ -1094,9 +1058,7 @@ export function ProductViewer() {
           result,
           true,
           adoptPresentationDestination,
-          isRecord(requestArgs.action)
-            ? String(requestArgs.action.kind ?? "")
-            : undefined,
+          actionKind === undefined ? undefined : String(actionKind),
         )
       ) {
         throw new Error("Could not confirm the updated shopping list.");
@@ -1119,9 +1081,6 @@ export function ProductViewer() {
           submissionNoWrite.current = true;
         }
       }
-      const actionKind = isRecord(requestArgs.action)
-        ? requestArgs.action.kind
-        : undefined;
       if (
         name === "update_product_review" &&
         (actionKind === "save" || actionKind === "update") &&
@@ -1163,7 +1122,7 @@ export function ProductViewer() {
           : /changed/iu.test(detail)
             ? "Nemlig reports that this draft changed. Your current products and quantities remain visible; refresh the draft before continuing."
             : "The action could not be confirmed. Your current products and quantities remain visible; review them before continuing. No automatic retry was made.";
-        showDraftRecovery(recoveryMessage);
+        showRecovery("draft", recoveryMessage);
         return false;
       }
       if (
@@ -1224,19 +1183,14 @@ export function ProductViewer() {
     );
     pendingQuantitiesRef.current = pending;
     setPendingQuantities(pending);
-    if (quantityTimer.current) {
-      clearTimeout(quantityTimer.current);
-    }
+    stopQuantityTimer();
     quantityTimer.current = setTimeout(() => {
       quantityTimer.current = undefined;
       void flushQuantities();
     }, 2_500);
   };
   const flushQuantities = async (expected = selectionContext()) => {
-    if (quantityTimer.current) {
-      clearTimeout(quantityTimer.current);
-    }
-    quantityTimer.current = undefined;
+    stopQuantityTimer();
     if (quantityFlush.current) {
       return quantityFlush.current;
     }
