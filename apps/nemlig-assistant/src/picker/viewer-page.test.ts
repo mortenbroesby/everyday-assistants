@@ -70,6 +70,8 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onFactExpandedChange: noop,
     onRefresh: noop,
     onOpenPicker: noop,
+    onAbandonDraft: noop,
+    onSaveCurrentBasketAsShoppingList: noop,
     onSelectBasket: noop,
     onQuantity: noop,
     onRemove: noop,
@@ -85,6 +87,81 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     onDismissSubmitError: noop,
     onSendFollowUp: noop,
   },
+});
+
+test("direct basket review offers explicit submit and describes its temporary draft", () => {
+  const direct = props();
+  if (direct.model.screen.kind !== "review") {
+    throw new Error("Expected review fixture");
+  }
+  direct.model.screen.review = {
+    ...direct.model.screen.review,
+    basketMode: "direct-basket",
+    draftId: "11111111-1111-4111-8111-111111111111",
+    reviewContextId: "22222222-2222-4222-8222-222222222222",
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, direct));
+  assert.match(markup, /Temporary basket draft/u);
+  assert.match(
+    markup,
+    /Edits stay in this temporary draft until you explicitly submit/u,
+  );
+  assert.match(markup, />Add to Nemlig basket<\/button>/u);
+  assert.doesNotMatch(markup, /Choose another shopping list/u);
+  assert.doesNotMatch(markup, /Save current basket as shopping list/u);
+});
+
+test("a confirmed direct addition offers saving the whole current basket separately", () => {
+  const direct = props();
+  if (direct.model.screen.kind !== "review") {
+    throw new Error("Expected review fixture");
+  }
+  direct.model.screen.review = {
+    ...direct.model.screen.review,
+    basketMode: "direct-basket",
+    draftId: "11111111-1111-4111-8111-111111111111",
+    reviewContextId: "22222222-2222-4222-8222-222222222222",
+    submission: {
+      status: "submitted",
+      submission_id: "33333333-3333-4333-8333-333333333333",
+      review: {},
+    },
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, direct));
+  assert.match(markup, />Save current basket as shopping list<\/button>/u);
+  assert.match(markup, /Nemlig confirmed the addition/u);
+});
+
+test("basket save success and uncertainty remain separate from the addition", () => {
+  const direct = props();
+  if (direct.model.screen.kind !== "review") {
+    throw new Error("Expected review fixture");
+  }
+  direct.model.screen.review = {
+    ...direct.model.screen.review,
+    basketMode: "direct-basket",
+    draftId: "11111111-1111-4111-8111-111111111111",
+    reviewContextId: "22222222-2222-4222-8222-222222222222",
+    submission: {
+      status: "submitted",
+      submission_id: "33333333-3333-4333-8333-333333333333",
+      review: {},
+    },
+    actionNotice:
+      "Basket save may have completed. Inspect saved shopping lists; this action cannot be retried.",
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, direct));
+  assert.match(markup, /Nemlig confirmed the addition/u);
+  assert.match(markup, /Basket save may have completed/u);
+  assert.match(markup, /Inspect saved shopping lists/u);
+  assert.doesNotMatch(markup, /Save current basket as shopping list/u);
+
+  direct.model.screen.review.actionNotice =
+    "Basket save was not sent. Anti-forgery state could not be prepared; no provider write was sent.";
+  const notSentMarkup = renderToStaticMarkup(createElement(ViewerPage, direct));
+  assert.match(notSentMarkup, /Nemlig confirmed the addition/u);
+  assert.match(notSentMarkup, /Basket save was not sent/u);
+  assert.match(notSentMarkup, /Save current basket as shopping list/u);
 });
 
 test("shopping-list picker shows native names and product counts without delete", () => {
@@ -831,6 +908,6 @@ test("a submitted basket names skipped products without claiming they were added
   );
   assert.doesNotMatch(html, /Only the prepared products were added/u);
   assert.doesNotMatch(html, /A previous addition needs checking/u);
-  assert.match(html, /Choose another shopping list/u);
+  assert.match(html, /Choose saved shopping lists/u);
   assert.doesNotMatch(html, /Continue with shopping list/u);
 });

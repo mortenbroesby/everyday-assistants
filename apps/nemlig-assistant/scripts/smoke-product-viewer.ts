@@ -616,18 +616,18 @@ try {
       .getByRole("button", { name: "Increase quantity of Synthetic milk" })
       .count(),
     0,
-    "quantity control appeared before native refresh completed",
+    "quantity control appeared before direct-draft refresh completed",
   );
   assert.equal(
     await delayedFrame
       .getByRole("button", { name: "Add to Nemlig basket" })
       .isDisabled(),
     true,
-    "basket action enabled before native refresh completed",
+    "basket action enabled before direct-draft refresh completed",
   );
   await delayedFrame
     .getByRole("status")
-    .filter({ hasText: "Refreshing this Nemlig shopping list…" })
+    .filter({ hasText: "Refreshing your temporary basket draft…" })
     .waitFor();
   assert.equal(
     await delayedFrame.locator(".progress-spinner").isVisible(),
@@ -637,7 +637,7 @@ try {
     await delayedFrame.getByRole("main").getAttribute("aria-busy"),
     "true",
   );
-  await capture("native-shopping-list-loading");
+  await capture("direct-draft-loading");
   await page.evaluate(() => window.resolveDeferredShow());
   await delayedFrame.locator(".progress-spinner").waitFor({ state: "hidden" });
   await openRowActions(delayedFrame, 1);
@@ -1117,5 +1117,5 @@ try {
 }
 
 console.log(
-  "Built React viewer passed synthetic MCP browser smoke: native creation recovery, exact-list remount, immediate edits, uncertainty recovery, basket no-replay guards, and no external requests.",
+  "Built React viewer passed supplemental synthetic legacy-list rendering smoke; direct-flow acceptance is covered by the MCP adapter smoke.",
 );

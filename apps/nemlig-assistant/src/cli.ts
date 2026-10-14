@@ -5,6 +5,7 @@ import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import {
   matchFavorites,
+  type BasketAddition,
   type ShoppingClient,
   type Basket,
   type Product,
@@ -32,10 +33,21 @@ interface CliDependencies {
 
 const positiveInteger = (value: string): number => {
   const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1) {
+  if (!Number.isSafeInteger(parsed) || parsed < 1) {
     throw new InvalidArgumentError("must be a positive integer");
   }
   return parsed;
+};
+
+const basketAddition = (value: string): BasketAddition => {
+  const parts = value.split(":");
+  if (parts.length !== 2) {
+    throw new InvalidArgumentError("use <product-id>:<quantity>");
+  }
+  return {
+    productId: positiveInteger(parts[0] ?? ""),
+    quantity: positiveInteger(parts[1] ?? ""),
+  };
 };
 
 export const formatBasket = (basket: Basket): string => {
@@ -273,6 +285,30 @@ export function createProgram(
       );
       dependencies.out(
         `✓ Added ${options.quantity}x product ${productId}.\n${formatBasket(basket)}`,
+      );
+    });
+
+  program
+    .command("add-many")
+    .description(
+      "Add multiple reviewed products in one provider request, then verify the basket.",
+    )
+    .argument("<items...>", "Additional units, for example 123:2 456:1")
+    .action(async (items: string[]) => {
+      const additions = items.map(basketAddition);
+      if (
+        new Set(additions.map(({ productId }) => productId)).size !==
+        additions.length
+      ) {
+        throw new InvalidArgumentError("product IDs must be unique");
+      }
+      if (!dependencies.client.addManyToCart) {
+        throw new Error("Bulk basket addition is unavailable.");
+      }
+      await ensureLoggedIn(dependencies.client, dependencies.credentials);
+      const basket = await dependencies.client.addManyToCart(additions);
+      dependencies.out(
+        `✓ Added ${additions.length} products in one request.\n${formatBasket(basket)}`,
       );
     });
 

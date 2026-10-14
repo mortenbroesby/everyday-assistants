@@ -129,6 +129,11 @@ export interface Basket {
   deliveryTime: string | undefined;
 }
 
+export interface BasketAddition {
+  productId: number;
+  quantity: number;
+}
+
 /** Provider-owned contents used as the durable backing for a Local basket. */
 export interface ShoppingList {
   id: number;
@@ -156,6 +161,95 @@ export const basketFingerprint = (basket: Basket): string => {
     deliveryTime: basket.deliveryTime ?? null,
   };
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+};
+
+const basketQuantities = (
+  basket: Basket,
+  message: string,
+  ErrorType: typeof NemligError | typeof BasketPreflightError,
+): Map<number, number> => {
+  const quantities = new Map<number, number>();
+  for (const item of basket.items) {
+    if (
+      !Number.isSafeInteger(item.id) ||
+      item.id! < 1 ||
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity! < 0 ||
+      quantities.has(item.id!)
+    ) {
+      throw new ErrorType(message);
+    }
+    quantities.set(item.id!, item.quantity!);
+  }
+  return quantities;
+};
+
+const parseBasketAdditions = (
+  additions: BasketAddition[],
+): Map<number, number> => {
+  if (!Array.isArray(additions) || additions.length === 0) {
+    throw new BasketPreflightError("At least one basket addition is required.");
+  }
+  const requested = new Map<number, number>();
+  for (const addition of additions) {
+    if (
+      !Number.isSafeInteger(addition.productId) ||
+      addition.productId < 1 ||
+      !Number.isSafeInteger(addition.quantity) ||
+      addition.quantity < 1 ||
+      requested.has(addition.productId)
+    ) {
+      throw new BasketPreflightError(
+        "Basket additions must have unique positive product IDs and quantities.",
+      );
+    }
+    requested.set(addition.productId, addition.quantity);
+  }
+  return requested;
+};
+
+const assertBasketAdditionReadback = (
+  before: Basket,
+  after: Basket,
+  requested: Map<number, number>,
+): void => {
+  const baseline = basketQuantities(
+    before,
+    "Basket baseline is ambiguous; inspect the basket and do not retry.",
+    NemligError,
+  );
+  const observed = basketQuantities(
+    after,
+    "Basket readback is ambiguous; inspect the basket and do not retry.",
+    NemligError,
+  );
+  for (const [id, oldQuantity] of baseline) {
+    if ((observed.get(id) ?? 0) < oldQuantity) {
+      throw new NemligError(
+        "A previous basket line was not preserved; inspect the basket and do not retry.",
+      );
+    }
+  }
+  for (const [id, quantity] of requested) {
+    if (observed.get(id) !== (baseline.get(id) ?? 0) + quantity) {
+      throw new NemligError(
+        "Bulk basket readback did not confirm the exact additive quantities; inspect the basket and do not retry.",
+      );
+    }
+  }
+};
+
+const assertSafeBasketIncreases = (
+  baseline: Map<number, number>,
+  requested: Map<number, number>,
+): void => {
+  for (const [id, quantity] of requested) {
+    if ((baseline.get(id) ?? 0) + quantity > Number.MAX_SAFE_INTEGER) {
+      throw new BasketPreflightError(
+        "Basket quantity cannot be increased safely; no provider write was sent.",
+      );
+    }
+  }
 };
 
 export const shoppingListFingerprint = (list: ShoppingList): string =>
@@ -1164,6 +1258,151 @@ export class NemligClient {
     return after;
   }
 
+  private async prepareBasketMutation(
+    basket: Basket,
+    signal: AbortSignal | undefined,
+    beforeDispatch: ((baseline: Basket) => void | Promise<void>) | undefined,
+  ): Promise<void> {
+    throwIfAborted(signal);
+    try {
+      await this.ensureAntiForgery(signal);
+    } catch {
+      throw new BasketPreflightError(
+        "Anti-forgery state could not be prepared; no provider write was sent.",
+      );
+    }
+    throwIfAborted(signal);
+    await beforeDispatch?.(basket);
+  }
+
+  /** Send approved positive basket deltas in one provider request. */
+  async addManyToCart(
+    additions: BasketAddition[],
+    options: {
+      signal?: AbortSignal;
+      expectedBasket?: Basket;
+      beforeDispatch?: (baseline: Basket) => Promise<void>;
+    } = {},
+  ): Promise<Basket> {
+    const requested = parseBasketAdditions(additions);
+    this.requireLogin("add items to the basket");
+    const products = [...requested].map(([productId, quantity]) => ({
+      ProductId: String(productId),
+      Quantity: quantity,
+    }));
+    const { signal, expectedBasket } = options;
+    throwIfAborted(signal);
+    let before: Basket;
+    try {
+      before = await this.getCart(signal);
+    } catch {
+      throw new BasketPreflightError(
+        "Basket could not be verified before addition; no provider write was sent.",
+      );
+    }
+    if (
+      expectedBasket &&
+      basketFingerprint(before) !== basketFingerprint(expectedBasket)
+    ) {
+      throw new BasketSnapshotChangedError();
+    }
+    const baseline = basketQuantities(
+      before,
+      "Basket lines cannot be verified safely; no provider write was sent.",
+      BasketPreflightError,
+    );
+    assertSafeBasketIncreases(baseline, requested);
+    await this.prepareBasketMutation(before, signal, options.beforeDispatch);
+    try {
+      await this.json(
+        `${API_BASE_URL}/Basket/AddManyToBasket`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            addToExisting: true,
+            Products: products,
+          }),
+          signal,
+        },
+        "Add items to basket",
+        false,
+      );
+    } catch {
+      throw new NemligError(
+        "Bulk basket write outcome is unconfirmed; inspect the basket and do not retry.",
+      );
+    }
+    let after: Basket;
+    try {
+      after = await this.getCart(signal);
+    } catch {
+      throw new NemligError(
+        "Bulk basket write was sent, but readback is unconfirmed; inspect the basket and do not retry.",
+      );
+    }
+    assertBasketAdditionReadback(before, after, requested);
+    return after;
+  }
+
+  async createShoppingListFromBasket(
+    options: {
+      signal?: AbortSignal;
+      beforeDispatch?: (basket: Basket) => void | Promise<void>;
+    } = {},
+  ): Promise<Basket> {
+    const { signal } = options;
+    this.requireLogin("save the current basket as a shopping list");
+    throwIfAborted(signal);
+    let before: Basket;
+    try {
+      before = await this.getCart(signal);
+    } catch {
+      throw new BasketPreflightError(
+        "Basket could not be verified before saving; no provider write was sent.",
+      );
+    }
+    basketQuantities(
+      before,
+      "Basket lines cannot be verified safely; no provider write was sent.",
+      BasketPreflightError,
+    );
+    await this.prepareBasketMutation(before, signal, options.beforeDispatch);
+    try {
+      await this.json(
+        `${API_BASE_URL}/ShoppingList/CreateShoppingListFromBasket`,
+        { method: "POST", body: null, signal },
+        "Save current basket as a shopping list",
+        false,
+        false,
+        true,
+        true,
+      );
+    } catch {
+      throw new NemligError(
+        "Saving the basket as a shopping list is unconfirmed; inspect saved lists and do not retry blindly.",
+      );
+    }
+    let after: Basket;
+    try {
+      after = await this.getCart(signal);
+    } catch {
+      throw new NemligError(
+        "The list endpoint acknowledged the request, but basket readback is unconfirmed; inspect saved lists and the basket before continuing.",
+      );
+    }
+    basketQuantities(
+      after,
+      "The basket did not read back unambiguously after saving; inspect saved lists and do not retry.",
+      NemligError,
+    );
+    if (basketFingerprint(before) !== basketFingerprint(after)) {
+      throw new NemligError(
+        "The list endpoint acknowledged the request, but the basket changed during verification; inspect saved lists and the basket.",
+      );
+    }
+    return after;
+  }
+
   private async readback(action: string): Promise<Basket> {
     try {
       return await this.getCart();
@@ -1612,7 +1851,8 @@ export type ShoppingClient = Pick<
   | "browseDepartment"
   | "getCart"
   | "addToCart"
->;
+> &
+  Partial<Pick<NemligClient, "addManyToCart" | "createShoppingListFromBasket">>;
 
 export type ShoppingListClient = Pick<
   NemligClient,

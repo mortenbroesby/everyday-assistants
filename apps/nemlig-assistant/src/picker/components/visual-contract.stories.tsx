@@ -271,6 +271,8 @@ const baseProps = (
     onFactExpandedChange: noop,
     onRefresh: noop,
     onOpenPicker: noop,
+    onAbandonDraft: noop,
+    onSaveCurrentBasketAsShoppingList: noop,
     onSelectBasket: noop,
     onQuantity: noop,
     onRemove: noop,

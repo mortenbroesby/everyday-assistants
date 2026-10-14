@@ -78,6 +78,9 @@ export const mutateOwnerLocalBasketInventory = async (
           : operation,
       )
       .filter((operation) => {
+        if (operation.kind === "basket-save" && operation.completed === true) {
+          return true;
+        }
         if (operation.completedUntil !== undefined) {
           return operation.completedUntil > now;
         }
@@ -171,7 +174,7 @@ export const mutateOwnerLocalBasketInventory = async (
       }
       if (current) {
         const completed =
-          current.kind === "submit"
+          current.kind === "submit" || current.kind === "basket-save"
             ? { ...current, completed: true }
             : {
                 ...current,
@@ -206,10 +209,15 @@ export const mutateOwnerLocalBasketInventory = async (
       current.accountIdentity === operation.accountIdentity &&
       current.listId === operation.listId &&
       sameReviewItems(current.items, operation.items);
+    const completedBasketSave =
+      current?.kind === "basket-save" &&
+      current.completed === true &&
+      operation.kind === "basket-save";
     const replaceCompleted =
       (current?.completed === true ||
         current?.completedUntil !== undefined ||
         (current?.kind === "submit" && !current.dispatchAttempted)) &&
+      !completedBasketSave &&
       operation.generation !== current.generation &&
       !sameCompletedSubmission;
     if (

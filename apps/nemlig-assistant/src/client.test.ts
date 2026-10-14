@@ -1477,6 +1477,154 @@ test("basket add treats quantity as a positive delta and preserves every existin
   assert.equal(basket.numberOfProducts, 4);
 });
 
+test("bulk basket addition sends one additive request and verifies all lines", async () => {
+  const additions = Array.from({ length: 37 }, (_, index) => ({
+    productId: index + 100,
+    quantity: 1,
+  }));
+  let writes = 0;
+  const before = [{ Id: 9, Name: "Existing", Quantity: 2 }];
+  const after = [
+    ...before,
+    ...additions.map(({ productId, quantity }) => ({
+      Id: productId,
+      Name: `Product ${productId}`,
+      Quantity: quantity,
+    })),
+  ];
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: before }) },
+    {
+      match: "/Basket/AddManyToBasket$",
+      inspect: (_url, init) => {
+        writes += 1;
+        assert.equal(init?.method, "POST");
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          addToExisting: true,
+          Products: additions.map(({ productId, quantity }) => ({
+            ProductId: String(productId),
+            Quantity: quantity,
+          })),
+        });
+      },
+      response: json({}),
+    },
+    { match: "/basket/GetBasket$", response: json({ Lines: after }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  const result = await client.addManyToCart(additions);
+  assert.equal(writes, 1);
+  assert.equal(result.items.length, 38);
+  assert.equal(requests.length, 0);
+});
+
+test("bulk basket addition rejects invalid or duplicate input before provider writes", async () => {
+  const client = new NemligClient(mockFetch([]));
+  await client.login("person@example.test", "secret").catch(() => {});
+  await assert.rejects(client.addManyToCart([]), /At least one/);
+  await assert.rejects(
+    client.addManyToCart([
+      { productId: 1, quantity: 1 },
+      { productId: 1, quantity: 2 },
+    ]),
+    /unique positive/,
+  );
+});
+
+test("bulk basket addition reports partial readback without retrying the POST", async () => {
+  let writes = 0;
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: [] }) },
+    {
+      match: "/Basket/AddManyToBasket$",
+      inspect: () => {
+        writes++;
+      },
+      response: json({}),
+    },
+    { match: "/basket/GetBasket$", response: json({ Lines: [] }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await assert.rejects(
+    client.addManyToCart([{ productId: 7, quantity: 2 }]),
+    /readback did not confirm/u,
+  );
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
+});
+
+test("bulk basket addition does not retry an uncertain POST or dispatch after cancellation", async () => {
+  let writes = 0;
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: [] }) },
+    {
+      match: "/Basket/AddManyToBasket$",
+      inspect: () => {
+        writes++;
+      },
+      response: () => {
+        throw new Error("response timed out after dispatch");
+      },
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  await assert.rejects(
+    client.addManyToCart([{ productId: 7, quantity: 2 }]),
+    /outcome is unconfirmed|do not retry/iu,
+  );
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
+
+  const controller = new AbortController();
+  const reason = new Error("cancel before dispatch");
+  controller.abort(reason);
+  await assert.rejects(
+    client.addManyToCart([{ productId: 7, quantity: 2 }], {
+      signal: controller.signal,
+    }),
+    (error) => error === reason,
+  );
+});
+
+test("saving a basket as a list uses the basket endpoint and verifies no basket change", async () => {
+  const before = [{ Id: 9, Name: "Existing", Quantity: 2 }];
+  let writes = 0;
+  const requests: ExpectedRequest[] = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    { match: "/basket/GetBasket$", response: json({ Lines: before }) },
+    {
+      match: "/ShoppingList/CreateShoppingListFromBasket$",
+      inspect: (_url, init) => {
+        writes++;
+        assert.equal(init?.method, "POST");
+        assert.equal(init?.body, null);
+      },
+      response: json({}),
+    },
+    { match: "/basket/GetBasket$", response: json({ Lines: before }) },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  const result = await client.createShoppingListFromBasket();
+  assert.equal(result.items[0]?.id, 9);
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
+});
+
 test("shopping-list transfer uses the native list endpoints and never the individual basket endpoint", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),

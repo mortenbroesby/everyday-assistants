@@ -19,7 +19,7 @@ const reviewOperationSchema = z
     operationId: z.string().min(1).max(128),
     generation: z.string().min(1).max(128),
     accountIdentity: z.string().min(1).max(512),
-    kind: z.enum(["save", "update", "submit"]),
+    kind: z.enum(["save", "update", "submit", "basket-save"]),
     name: z.string().min(1).max(512),
     createAttempted: z.boolean().optional(),
     dispatchAttempted: z.boolean().optional(),

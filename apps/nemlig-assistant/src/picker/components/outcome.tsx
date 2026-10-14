@@ -74,7 +74,7 @@ export function ShoppingListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find ingredients for dinner. Search and compare products first. When I choose products, create a named Nemlig shopping list and save my edits there automatically. Do not add anything to the actual basket.",
+              "Help me find ingredients for dinner. Search and compare products first. When I choose products, prepare a temporary draft that I can edit before explicitly adding it to my basket.",
             )
           }
         >
@@ -84,7 +84,7 @@ export function ShoppingListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find a product. Search and compare options first. When I choose a product, create a Nemlig shopping list and save edits there automatically. Do not add anything to the actual basket.",
+              "Help me find a product. Search and compare options first. When I choose a product, prepare a temporary draft that I can edit before explicitly adding it to my basket.",
             )
           }
         >

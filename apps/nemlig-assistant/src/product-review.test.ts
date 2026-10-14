@@ -4,7 +4,12 @@ import {
   BasketProposalService,
   NativeTransferUnconfirmedError,
 } from "./proposals.js";
-import { NemligError, type Product } from "./client.js";
+import {
+  NemligError,
+  type Basket,
+  type BasketAddition,
+  type Product,
+} from "./client.js";
 import {
   DRAFT_IDLE_TIMEOUT_MS,
   MAX_DRAFT_PRODUCTS,
@@ -174,7 +179,7 @@ test("choosing products creates and reads back one exact native shopping list", 
   const writes: Array<[number, number, number]> = [];
   let nextId = 41;
   let basketWrites = 0;
-  const service = new ProductReviewService({
+  const provider = {
     ...client,
     providerIdentity: () => "account-1",
     listShoppingLists: async () =>
@@ -183,13 +188,17 @@ test("choosing products creates and reads back one exact native shopping list", 
         name,
         productCount: items.length,
       })),
-    createShoppingList: async (name) => {
+    createShoppingList: async (name: string) => {
       const id = nextId++;
       lists.set(id, { id, name, items: [] });
       return id;
     },
-    getShoppingList: async (id) => structuredClone(lists.get(id)!),
-    updateShoppingListProduct: async (id, productId, quantity) => {
+    getShoppingList: async (id: number) => structuredClone(lists.get(id)!),
+    updateShoppingListProduct: async (
+      id: number,
+      productId: number,
+      quantity: number,
+    ) => {
       writes.push([id, productId, quantity]);
       const list = lists.get(id)!;
       list.items = list.items.filter((item) => item.productId !== productId);
@@ -200,7 +209,8 @@ test("choosing products creates and reads back one exact native shopping list", 
     addShoppingListToCart: async () => {
       basketWrites += 1;
     },
-  });
+  };
+  const service = new ProductReviewService(provider);
 
   const review = await service.startShoppingList(
     owner,
@@ -372,6 +382,521 @@ test("creation IDs fence uncertain retries while new IDs allow identical lists",
   );
   assert.equal(deliberateNewList.shoppingListId, 50);
   assert.equal(createCalls, 2);
+});
+
+test("direct basket draft submits 37 lines once, saves whole basket once, and abandons locally", async () => {
+  const owner = "direct-owner";
+  const durable = createDurableReviewJournal(owner);
+  const requested = Array.from({ length: 37 }, (_, index) => ({
+    product_id: index + 1,
+    quantity: (index % 3) + 1,
+  }));
+  let basket = {
+    items: [{ id: 900, name: "Existing", quantity: 2, total: 10 }],
+    productsPrice: 10,
+    deliveryPrice: 5,
+    numberOfProducts: 2,
+    deliveryTime: "Tomorrow",
+  };
+  let writes = 0;
+  let listSaves = 0;
+  let listCalls = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    listShoppingLists: async () => {
+      listCalls++;
+      return [];
+    },
+    createShoppingList: async () => {
+      listCalls++;
+      throw new Error("must not create a native list");
+    },
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      writes++;
+      basket = {
+        ...basket,
+        items: [
+          ...basket.items,
+          ...items.map(({ productId, quantity }) => ({
+            id: productId,
+            name: `Product ${productId}`,
+            quantity,
+            total: 5 * quantity,
+          })),
+        ],
+        numberOfProducts:
+          basket.numberOfProducts! +
+          items.reduce((sum, item) => sum + item.quantity, 0),
+      };
+      return structuredClone(basket);
+    },
+    createShoppingListFromBasket: async (options: {
+      beforeDispatch?: (baseline: Basket) => Promise<void>;
+    }) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      listSaves++;
+      return structuredClone(basket);
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const draft = await service.startDirectBasket(owner, requested);
+  assert.equal(draft.basketMode, "direct-basket");
+  assert.equal(draft.items.length, 37);
+  await assert.rejects(
+    service.update(
+      "different-owner",
+      { kind: "quantity", product_id: 1, quantity: 9 },
+      undefined,
+      draft.draftId,
+    ),
+    /Unsaved draft is unavailable/u,
+  );
+  assert.equal(
+    service.active(owner)?.items[0]?.quantity,
+    requested[0]?.quantity,
+  );
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "11111111-1111-4111-8111-111111111111",
+      requested.map((item, index) =>
+        index === 0 ? { ...item, quantity: item.quantity + 1 } : item,
+      ),
+      undefined,
+      durable.journal,
+    ),
+    /exact products and quantities/u,
+  );
+  assert.equal(writes, 0);
+  const submitted = await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "22222222-2222-4222-8222-222222222222",
+    requested,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(submitted.result.status, "completed");
+  assert.equal(writes, 1);
+  assert.equal(listCalls, 0);
+  assert.equal(basket.items[0]?.id, 900);
+  assert.equal(basket.items.length, 38);
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      [{ ...requested[0]!, quantity: requested[0]!.quantity + 1 }],
+      undefined,
+      durable.journal,
+    ),
+    /receipt does not match.*exact reviewed products/u,
+  );
+  const wrongAccount = new ProductReviewService({
+    ...provider,
+    providerIdentity: () => "account-2",
+  });
+  await assert.rejects(
+    wrongAccount.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+      requested,
+      undefined,
+      durable.journal,
+    ),
+    /receipt does not match the connected account/u,
+  );
+
+  const saveId = "33333333-3333-4333-8333-333333333333";
+  const saved = await service.saveCurrentBasketAsShoppingList(
+    owner,
+    draft.draftId!,
+    saveId,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(saved.replayed, false);
+  assert.equal(listSaves, 1);
+  const restarted = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(basket),
+    createShoppingListFromBasket: async () => {
+      listSaves++;
+      return structuredClone(basket);
+    },
+  });
+  const replay = await restarted.saveCurrentBasketAsShoppingList(
+    owner,
+    draft.draftId!,
+    "44444444-4444-4444-8444-444444444444",
+    undefined,
+    durable.journal,
+  );
+  assert.equal(replay.replayed, true);
+  assert.equal(listSaves, 1);
+  assert.equal(writes, 1);
+
+  const anotherOwner = "abandon-owner";
+  const abandoned = await service.startDirectBasket(
+    anotherOwner,
+    requested.slice(0, 1),
+  );
+  service.end(anotherOwner, abandoned.draftId);
+  assert.equal(service.active(anotherOwner), undefined);
+  assert.equal(writes, 1);
+  assert.equal(listCalls, 0);
+});
+
+test("loading a saved list copies rows into a draft without mutating its source", async () => {
+  const owner = "loaded-source-owner";
+  const durable = createDurableReviewJournal(owner);
+  const source = {
+    id: 55,
+    name: "Family list",
+    items: [{ productId: 1, quantity: 2 }],
+  };
+  let account = "account-1";
+  let listReads = 0;
+  let listWrites = 0;
+  let basketWrites = 0;
+  let basket = {
+    items: [] as Array<{
+      id: number;
+      name: string;
+      quantity: number;
+      total: number;
+    }>,
+    productsPrice: 0,
+    deliveryPrice: 5,
+    numberOfProducts: 0,
+    deliveryTime: "Tomorrow",
+  };
+  const provider = {
+    ...client,
+    providerIdentity: () => account,
+    getShoppingList: async () => {
+      listReads++;
+      return structuredClone(source);
+    },
+    updateShoppingListProduct: async () => {
+      listWrites++;
+    },
+    deleteShoppingList: async () => {
+      listWrites++;
+    },
+    getCart: async (): Promise<Basket> => structuredClone(basket),
+    addManyToCart: async (
+      items: BasketAddition[],
+      options?: {
+        beforeDispatch?: (baseline: Basket) => Promise<void>;
+      },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      basketWrites++;
+      basket = {
+        ...basket,
+        items: items.map(({ productId, quantity }) => ({
+          id: productId,
+          name: `Product ${productId}`,
+          quantity,
+          total: quantity * 5,
+        })),
+        productsPrice: items.reduce((sum, item) => sum + item.quantity * 5, 0),
+        numberOfProducts: items.reduce((sum, item) => sum + item.quantity, 0),
+      };
+      return structuredClone(basket);
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const first = await service.loadShoppingListIntoDirectBasket(
+    owner,
+    source.id,
+  );
+  assert.equal(first.basketMode, "direct-basket");
+  assert.equal(first.shoppingListId, undefined);
+  assert.equal(first.shoppingListName, source.name);
+  assert.deepEqual(
+    first.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [[1, 2]],
+  );
+  const edited = await service.update(owner, {
+    kind: "quantity",
+    product_id: 1,
+    quantity: 3,
+  });
+  const submitted = await service.submitDirectBasket(
+    owner,
+    edited.draftId!,
+    "55555555-5555-4555-8555-555555555555",
+    [{ product_id: 1, quantity: 3 }],
+    undefined,
+    durable.journal,
+  );
+  assert.equal(submitted.result.status, "completed");
+  assert.deepEqual(source.items, [{ productId: 1, quantity: 2 }]);
+  assert.equal(listWrites, 0);
+  assert.equal(basketWrites, 1);
+  const second = await service.loadShoppingListIntoDirectBasket(
+    owner,
+    source.id,
+  );
+  assert.notEqual(second.draftId, first.draftId);
+  assert.deepEqual(
+    second.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [[1, 2]],
+  );
+  assert.equal(listReads, 2);
+  assert.equal(listWrites, 0);
+  assert.equal(basketWrites, 1);
+
+  account = "account-2";
+  await assert.rejects(
+    service.loadShoppingListIntoDirectBasket(owner, source.id),
+    /account changed|connected Nemlig account|Reconnect to the Nemlig account/iu,
+  );
+});
+
+test("an uncertain whole-basket save is fenced across service restart", async () => {
+  const owner = "uncertain-basket-save-owner";
+  const durable = createDurableReviewJournal(owner);
+  let basket: Basket = {
+    items: [{ id: 99, name: "Existing", quantity: 1, total: 5 }],
+    productsPrice: 5,
+    deliveryPrice: 0,
+    numberOfProducts: 1,
+    deliveryTime: undefined,
+  };
+  let basketWrites = 0;
+  let listSaves = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      basketWrites++;
+      basket = {
+        ...basket,
+        items: [
+          ...basket.items,
+          ...items.map(({ productId, quantity }) => ({
+            id: productId,
+            name: `Product ${productId}`,
+            quantity,
+            total: quantity * 2,
+          })),
+        ],
+        productsPrice:
+          basket.productsPrice! +
+          items.reduce((sum, item) => sum + item.quantity * 2, 0),
+        numberOfProducts:
+          basket.numberOfProducts! +
+          items.reduce((sum, item) => sum + item.quantity, 0),
+      };
+      return structuredClone(basket);
+    },
+    createShoppingListFromBasket: async (options: {
+      beforeDispatch?: (baseline: Basket) => Promise<void>;
+    }) => {
+      await options.beforeDispatch?.(structuredClone(basket));
+      listSaves++;
+      throw new Error("response lost after list creation");
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 2 },
+  ]);
+  await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    [{ product_id: 7, quantity: 2 }],
+    undefined,
+    durable.journal,
+  );
+  assert.equal(basketWrites, 1);
+  await assert.rejects(
+    service.saveCurrentBasketAsShoppingList(
+      owner,
+      draft.draftId!,
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      undefined,
+      durable.journal,
+    ),
+    /response lost after list creation/u,
+  );
+  assert.equal(listSaves, 1);
+  const restarted = new ProductReviewService(provider);
+  await assert.rejects(
+    restarted.saveCurrentBasketAsShoppingList(
+      owner,
+      draft.draftId!,
+      "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+      undefined,
+      durable.journal,
+    ),
+    /may have completed|do not retry/u,
+  );
+  assert.equal(listSaves, 1);
+  assert.equal(basketWrites, 1);
+});
+
+test("account changes after direct writes keep their receipts uncertain", async () => {
+  const owner = "account-change-direct-owner";
+  const durable = createDurableReviewJournal(owner);
+  let account = "account-1";
+  let basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  let resolveBasketSave: ((value: Basket) => void) | undefined;
+  let releaseSave: (() => void) | undefined;
+  const saveStarted = new Promise<void>((resolve) => {
+    releaseSave = resolve;
+  });
+  let saveCalls = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => account,
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      basket = {
+        ...basket,
+        items: items.map(({ productId, quantity }) => ({
+          id: productId,
+          name: `Product ${productId}`,
+          quantity,
+          total: quantity,
+        })),
+        productsPrice: items.reduce((sum, item) => sum + item.quantity, 0),
+        numberOfProducts: items.reduce((sum, item) => sum + item.quantity, 0),
+      };
+      return structuredClone(basket);
+    },
+    createShoppingListFromBasket: async (options: {
+      beforeDispatch?: (baseline: Basket) => Promise<void>;
+    }) => {
+      await options.beforeDispatch?.(structuredClone(basket));
+      saveCalls++;
+      releaseSave?.();
+      return new Promise<Basket>((resolve) => {
+        resolveBasketSave = resolve;
+      });
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 2 },
+  ]);
+  await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    [{ product_id: 7, quantity: 2 }],
+    undefined,
+    durable.journal,
+  );
+  account = "account-2";
+  assert.equal(
+    (await durable.journal.read(`direct-basket-submit:${draft.draftId}`))
+      ?.completed,
+    true,
+  );
+  account = "account-1";
+  const saving = service.saveCurrentBasketAsShoppingList(
+    owner,
+    draft.draftId!,
+    "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+    undefined,
+    durable.journal,
+  );
+  await saveStarted;
+  account = "account-2";
+  resolveBasketSave?.(structuredClone(basket));
+  await assert.rejects(
+    saving,
+    /account changed after the basket-to-list request/u,
+  );
+  assert.equal(saveCalls, 1);
+  assert.notEqual(
+    (await durable.journal.read(`direct-basket-save:${draft.draftId}`))
+      ?.completed,
+    true,
+  );
+});
+
+test("account change after bulk dispatch prevents a completed receipt", async () => {
+  const owner = "account-change-bulk-owner";
+  const durable = createDurableReviewJournal(owner);
+  let account = "account-1";
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  let releaseDispatch: (() => void) | undefined;
+  let resolveResponse: ((value: Basket) => void) | undefined;
+  const dispatchStarted = new Promise<void>((resolve) => {
+    releaseDispatch = resolve;
+  });
+  const provider = {
+    ...client,
+    providerIdentity: () => account,
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      _items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      releaseDispatch?.();
+      return new Promise<Basket>((resolve) => {
+        resolveResponse = resolve;
+      });
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 2 },
+  ]);
+  const submission = service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    [{ product_id: 7, quantity: 2 }],
+    undefined,
+    durable.journal,
+  );
+  await dispatchStarted;
+  account = "account-2";
+  resolveResponse?.(structuredClone(basket));
+  await assert.rejects(submission, /account changed after the basket request/u);
+  assert.notEqual(
+    (await durable.journal.read(`direct-basket-submit:${draft.draftId}`))
+      ?.completed,
+    true,
+  );
 });
 
 test("no-journal partial creation reopens its exact list without retrying writes", async () => {
