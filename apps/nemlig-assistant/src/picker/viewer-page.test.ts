@@ -251,6 +251,33 @@ test("a recovered submission fence explains the uncertainty without inventing an
   assert.doesNotMatch(markup, />Submit to Nemlig basket<\/button>/u);
 });
 
+test("draft action recovery keeps the latest products and quantities visible", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.review = {
+    ...pageProps.model.screen.review,
+    draftId: "draft-1",
+    items: pageProps.model.screen.review.items.map((item) => ({
+      ...item,
+      quantity: 3,
+    })),
+  };
+  pageProps.model.presentationDestination = "ready";
+  pageProps.model.message =
+    "The action could not be confirmed. Your draft remains open; review its current products and quantities before continuing.";
+  pageProps.model.recoveryOperation = "draft";
+  pageProps.model.submitErrorOpen = true;
+
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+
+  assert.match(markup, /Draft products/u);
+  assert.match(markup, /Fixture yoghurt/u);
+  assert.match(markup, />3 ×</u);
+  assert.doesNotMatch(markup, /Request cancelled/u);
+});
+
 test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe input on the fallback", () => {
   const localThumbnail = "/assets/milk-carton.svg";
   const withFixture = renderToStaticMarkup(

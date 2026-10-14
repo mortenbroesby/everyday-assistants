@@ -808,6 +808,28 @@ export const SaveRecovery: Story = {
       },
     ),
 };
+export const DraftActionRecovery: Story = {
+  render: () =>
+    page(
+      {
+        kind: "review",
+        review: {
+          ...review,
+          draftId: "storybook-draft",
+          items: review.items.map((item) => ({ ...item, quantity: 2 })),
+        },
+        active: true,
+      },
+      {
+        model: {
+          submitErrorOpen: true,
+          recoveryOperation: "draft",
+          message:
+            "The action could not be confirmed. Your current products and quantities remain visible; review them before continuing. No automatic retry was made.",
+        },
+      },
+    ),
+};
 export const SaveNotSentRecovery: Story = {
   render: () =>
     page(

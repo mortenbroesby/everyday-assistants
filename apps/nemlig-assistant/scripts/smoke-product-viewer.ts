@@ -36,6 +36,9 @@ declare global {
     failNoWriteNext: boolean;
     failGenericNext: boolean;
     failToolErrorNext: boolean;
+    failMalformedNext: boolean;
+    failUnavailableNext: boolean;
+    failProductsNext: boolean;
     failMessageNext?: string;
     deferGenericNext: boolean;
     deferSubmitNext: boolean;
@@ -196,6 +199,9 @@ window.addEventListener('message',event=>{
    if(window.failNext){window.failNext=false;review.submission={submission_id:args.submission_id,status:'uncertain',review:{}};return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:'Write outcome uncertain'}})}
    return post(event,{jsonrpc:'2.0',id:message.id,result:result({...review,submissionAttempted:true,submission:{submission_id:args.submission_id,status:'submitted',review:{}}})});
   }
+  if(name==='update_product_review' && window.failProductsNext){window.failProductsNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{views:[]}}})}
+  if(name==='update_product_review' && window.failUnavailableNext){window.failUnavailableNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{unavailable:true}}})}
+  if(name==='update_product_review' && window.failMalformedNext){window.failMalformedNext=false;return post(event,{jsonrpc:'2.0',id:message.id,result:{structuredContent:{unexpected:true}}})}
   if(name==='update_product_review' && window.failToolErrorNext){window.failToolErrorNext=false;const failure=window.failMessageNext??'Temporary synthetic failure';window.failMessageNext=undefined;return post(event,{jsonrpc:'2.0',id:message.id,result:{isError:true,content:[{type:'text',text:failure}]}})}
   if(name==='update_product_review' && window.failGenericNext){window.failGenericNext=false;if(window.deferGenericNext){window.deferGenericNext=false;deferredGeneric={event,message};return}const failure=window.failMessageNext??'Temporary synthetic failure';window.failMessageNext=undefined;return post(event,{jsonrpc:'2.0',id:message.id,error:{code:-32000,message:failure}})}
   try { const response=name==='update_product_review'?apply(args.action,args):result(review); return post(event,{jsonrpc:'2.0',id:message.id,result:response}); }
@@ -413,6 +419,253 @@ try {
     "Clear is not below the submit control",
   );
   await capture("local-basket");
+
+  // A failed alternatives request must not erase an already-edited draft.
+  for (const failure of [
+    "transport",
+    "tool",
+    "malformed",
+    "unavailable",
+    "products",
+  ] as const) {
+    const draftPage = await context.newPage();
+    await draftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
+    const draftFrame = draftPage.frameLocator('iframe[title="viewer"]');
+    await draftFrame
+      .getByRole("heading", { name: "Draft products", exact: true })
+      .waitFor();
+    const summary = draftFrame.getByRole("button", {
+      name: "Show details for Synthetic milk",
+    });
+    await summary.press("Shift+F10");
+    await draftFrame
+      .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+      .click();
+    await draftPage.waitForFunction(
+      () => window.getReview().items[0]?.quantity === 2,
+    );
+    await draftFrame
+      .getByRole("button", { name: "Find alternatives" })
+      .waitFor({ state: "visible" });
+    await draftPage.evaluate((kind) => {
+      window.failGenericNext = kind === "transport";
+      window.failToolErrorNext = kind === "tool";
+      window.failMalformedNext = kind === "malformed";
+      window.failUnavailableNext = kind === "unavailable";
+      window.failProductsNext = kind === "products";
+    }, failure);
+    await draftFrame.getByRole("button", { name: "Find alternatives" }).click();
+    const recovery = draftFrame.getByRole("dialog", {
+      name: "Draft action needs review",
+    });
+    await recovery.waitFor({ timeout: 5000 });
+    await draftPage.evaluate(() => window.sendPassive());
+    await recovery.getByRole("button", { name: "Return to draft" }).click();
+    await recovery.waitFor({ state: "detached" });
+    await draftFrame
+      .getByRole("heading", { name: "Draft products", exact: true })
+      .waitFor();
+    assert.equal(
+      await draftFrame.getByText("Foreign product", { exact: true }).count(),
+      0,
+      "passive result replaced the edited draft after failure",
+    );
+    await summary.press("Shift+F10");
+    assert.equal(
+      await draftFrame
+        .locator(".product-action-quantity-value")
+        .first()
+        .textContent(),
+      "2",
+      "alternatives failure rolled back an accepted quantity",
+    );
+    await draftFrame.getByRole("button", { name: "Find alternatives" }).click();
+    await draftFrame
+      .getByRole("heading", { name: "Find an alternative", level: 1 })
+      .waitFor();
+    assert.equal(
+      await draftPage.evaluate(
+        () =>
+          window.calls.filter(
+            ({ args }) => args.action?.kind === "alternatives",
+          ).length,
+      ),
+      2,
+      "recovery automatically replayed the failed alternatives action",
+    );
+    await draftPage.evaluate(() => {
+      window.failToolErrorNext = true;
+    });
+    const replace = draftFrame.getByRole("button", {
+      name: "Use Synthetic alternative as the alternative",
+    });
+    await replace.click();
+    await recovery.waitFor();
+    await recovery.getByRole("button", { name: "Return to draft" }).click();
+    await recovery.waitFor({ state: "detached" });
+    await draftFrame
+      .getByRole("heading", { name: "Find an alternative", level: 1 })
+      .waitFor();
+    assert.equal(
+      await draftPage.evaluate(() => window.getReview().items[0]?.product_id),
+      1,
+      "failed replacement removed original product",
+    );
+    await replace.click();
+    await draftFrame
+      .getByRole("heading", { name: "Draft products", exact: true })
+      .waitFor();
+    assert.deepEqual(
+      await draftPage.evaluate(() =>
+        window
+          .getReview()
+          .items.map(({ product_id, quantity }) => [product_id, quantity]),
+      ),
+      [
+        [3, 2],
+        [2, 2],
+      ],
+      "explicit replacement after recovery lost rows or quantity",
+    );
+    assert.equal(
+      await draftPage.evaluate(() => window.submissionAttempts),
+      0,
+      "draft error recovery submitted a real basket",
+    );
+    await draftPage.close();
+  }
+
+  const cancelledDraftPage = await context.newPage();
+  await cancelledDraftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
+  const cancelledDraftFrame = cancelledDraftPage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await cancelledDraftFrame
+    .getByRole("button", { name: "Show details for Synthetic milk" })
+    .press("Shift+F10");
+  await cancelledDraftPage.evaluate(() => {
+    window.failGenericNext = true;
+    window.deferGenericNext = true;
+  });
+  await cancelledDraftFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .click();
+  await cancelledDraftPage.waitForFunction(() =>
+    window.calls.some(({ args }) => args.action?.kind === "quantity"),
+  );
+  await cancelledDraftPage.evaluate(() => window.cancelPendingTool());
+  const cancelledDraftDialog = cancelledDraftFrame.getByRole("dialog", {
+    name: "Draft action needs review",
+  });
+  await cancelledDraftDialog.waitFor();
+  await cancelledDraftPage.evaluate(() => {
+    window.rejectDeferredGeneric();
+    window.sendPassive();
+  });
+  await cancelledDraftDialog
+    .getByRole("button", { name: "Return to draft" })
+    .click();
+  await cancelledDraftDialog.waitFor({ state: "detached" });
+  await cancelledDraftFrame
+    .getByRole("heading", { name: "Draft products", exact: true })
+    .waitFor();
+  assert.equal(
+    await cancelledDraftFrame
+      .locator(".product-action-quantity-value")
+      .first()
+      .textContent(),
+    "2",
+    "cancelled draft action dropped pending quantity",
+  );
+  assert.equal(
+    await cancelledDraftFrame
+      .getByText("Foreign product", { exact: true })
+      .count(),
+    0,
+    "late result replaced cancelled draft",
+  );
+  assert.equal(
+    await cancelledDraftPage.evaluate(
+      () =>
+        window.calls.filter(({ args }) => args.action?.kind === "quantity")
+          .length,
+    ),
+    1,
+    "cancellation automatically replayed quantity change",
+  );
+  await cancelledDraftPage.close();
+
+  const queuedDraftPage = await context.newPage();
+  await queuedDraftPage.goto(`http://127.0.0.1:${address.port}/host-draft`);
+  const queuedDraftFrame = queuedDraftPage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await queuedDraftFrame
+    .getByRole("button", { name: "Show details for Synthetic milk" })
+    .press("Shift+F10");
+  await queuedDraftFrame
+    .getByRole("button", { name: "Increase quantity of Synthetic milk" })
+    .click();
+  await queuedDraftPage.evaluate(() => window.cancelPendingTool());
+  await queuedDraftFrame
+    .getByRole("dialog", { name: "Draft action needs review" })
+    .waitFor();
+  // Wait past the existing debounce to prove cancellation stops queued dispatch.
+  await queuedDraftPage.waitForTimeout(2700);
+  assert.equal(
+    await queuedDraftPage.evaluate(
+      () =>
+        window.calls.filter(({ args }) => args.action?.kind === "quantity")
+          .length,
+    ),
+    0,
+    "a quantity timer dispatched after host cancellation",
+  );
+  await queuedDraftPage.close();
+
+  const cancelledSavePage = await context.newPage();
+  await cancelledSavePage.goto(`http://127.0.0.1:${address.port}/host-draft`);
+  const cancelledSaveFrame = cancelledSavePage.frameLocator(
+    'iframe[title="viewer"]',
+  );
+  await cancelledSaveFrame
+    .getByLabel("Nemlig shopping list name")
+    .fill("Cancelled fixture save");
+  await cancelledSavePage.evaluate(() => {
+    window.failGenericNext = true;
+    window.deferGenericNext = true;
+  });
+  await cancelledSaveFrame
+    .getByRole("button", { name: "Save shopping list" })
+    .click();
+  await cancelledSavePage.waitForFunction(() =>
+    window.calls.some(({ args }) => args.action?.kind === "save"),
+  );
+  await cancelledSavePage.evaluate(() => window.cancelPendingTool());
+  const cancelledSaveDialog = cancelledSaveFrame.getByRole("dialog", {
+    name: "Save was not confirmed",
+  });
+  await cancelledSaveDialog.waitFor();
+  await cancelledSaveDialog
+    .getByText(/check your saved lists before trying again/u)
+    .waitFor();
+  await cancelledSavePage.evaluate(() => window.rejectDeferredGeneric());
+  await cancelledSaveDialog
+    .getByRole("button", { name: "Return to draft" })
+    .click();
+  await cancelledSaveDialog.waitFor({ state: "detached" });
+  await cancelledSaveFrame
+    .getByRole("heading", { name: "Draft products", exact: true })
+    .waitFor();
+  assert.equal(
+    await cancelledSavePage.evaluate(
+      () =>
+        window.calls.filter(({ args }) => args.action?.kind === "save").length,
+    ),
+    1,
+    "cancelled Save automatically retried",
+  );
+  await cancelledSavePage.close();
 
   const basketPage = await context.newPage();
   await basketPage.goto(`http://127.0.0.1:${address.port}/host-picker`);
