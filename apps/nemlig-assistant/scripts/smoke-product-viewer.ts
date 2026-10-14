@@ -428,6 +428,20 @@ try {
           .length,
       kind,
     );
+  const refreshShoppingList = async (targetFrame: FrameLocator) => {
+    const previousShows = await countActionCalls("show");
+    const dialog = targetFrame.getByRole("dialog");
+    await dialog.getByRole("button", { name: "Refresh shopping list" }).click();
+    // Closing the dialog does not mean the asynchronous readback has completed.
+    await page.waitForFunction(
+      (previousCount) =>
+        window.calls.filter(({ args }) => args.action?.kind === "show").length >
+        previousCount,
+      previousShows,
+    );
+    await targetFrame.locator('main:not([aria-busy="true"])').waitFor();
+    await dialog.waitFor({ state: "detached" });
+  };
   const open = async (path: string) => {
     await page.goto(`${base}${path}`, { waitUntil: "domcontentloaded" });
     const targetFrame = page.frameLocator('iframe[title="viewer"]');
@@ -648,11 +662,7 @@ try {
     5,
     "unavailable refresh erased the cached rows",
   );
-  const unavailableDialog = unavailableFrame.getByRole("dialog");
-  await unavailableDialog
-    .getByRole("button", { name: "Refresh shopping list" })
-    .click();
-  await unavailableDialog.waitFor({ state: "detached" });
+  await refreshShoppingList(unavailableFrame);
   assert.equal(
     await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
     44,
@@ -806,10 +816,7 @@ try {
         "post-discard edit changed native-list identity",
       );
     } else {
-      await recoveryDialog
-        .getByRole("button", { name: "Refresh shopping list" })
-        .click();
-      await recoveryDialog.waitFor({ state: "detached" });
+      await refreshShoppingList(recoveryFrame);
       assert.equal(
         await page.evaluate(() => window.calls.at(-1)?.args.shopping_list_id),
         44,
@@ -844,10 +851,7 @@ try {
     1,
     "failed quantity edit was retried before recovery",
   );
-  await failedQuantityDialog
-    .getByRole("button", { name: "Refresh shopping list" })
-    .click();
-  await failedQuantityDialog.waitFor({ state: "detached" });
+  await refreshShoppingList(failedQuantityFrame);
   assert.equal(
     await page.evaluate(() => window.calls.at(-1)?.args.action?.kind),
     "show",
@@ -908,10 +912,7 @@ try {
     window.rejectDeferredGeneric();
     window.sendPassive();
   });
-  await cancelledDialog
-    .getByRole("button", { name: "Refresh shopping list" })
-    .click();
-  await cancelledDialog.waitFor({ state: "detached" });
+  await refreshShoppingList(cancelledFrame);
   assert.equal(
     await countActionCalls("quantity"),
     1,
