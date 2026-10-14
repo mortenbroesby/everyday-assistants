@@ -262,6 +262,7 @@ const baseProps = (
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
+    recoveryKnownNoWrite: false,
     submitErrorOpen: false,
     baskets: screen.kind === "picker" ? screen.baskets : [],
     selectedBasketId: undefined,
@@ -803,6 +804,21 @@ export const SaveRecovery: Story = {
           recoveryOperation: "save",
           message:
             "Nemlig did not confirm saving this draft. Keep the draft and recovery record.",
+        },
+      },
+    ),
+};
+export const SaveNotSentRecovery: Story = {
+  render: () =>
+    page(
+      { kind: "review", review, active: true },
+      {
+        model: {
+          submitErrorOpen: true,
+          recoveryOperation: "save",
+          recoveryKnownNoWrite: true,
+          message:
+            "Could not record this save safely. No Nemlig shopping list was created or changed.",
         },
       },
     ),

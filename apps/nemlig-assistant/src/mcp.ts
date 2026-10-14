@@ -294,6 +294,11 @@ const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
         [draft_id, shopping_list_id].filter((target) => target !== undefined)
           .length <= 1,
       { message: "Target exactly one draft or shopping list." },
+    )
+    .refine(
+      ({ review_context_id, shopping_list_id }) =>
+        review_context_id === undefined || shopping_list_id !== undefined,
+      { message: "review_context_id requires its exact shopping_list_id." },
     );
 const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
   submissionId: Submission,

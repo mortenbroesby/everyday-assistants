@@ -66,6 +66,12 @@ export function isKnownNoWriteFailure(detail: string): boolean {
   );
 }
 
+function isKnownSaveUpdateNoWriteFailure(detail: string): boolean {
+  return /Shopping-list recovery storage is full\. This Save or Update did not reach Nemlig|no products were changed in Nemlig|no Nemlig shopping list was created or changed/iu.test(
+    detail,
+  );
+}
+
 function isReviewItem(value: unknown): value is ReviewItem {
   return (
     isRecord(value) &&
@@ -488,6 +494,7 @@ export function ProductViewer() {
         screen.review.submission?.status === "uncertain"),
   );
   const [submitErrorOpen, setSubmitErrorOpen] = useState(false);
+  const [recoveryKnownNoWrite, setRecoveryKnownNoWrite] = useState(false);
   const [recoveryOperation, setRecoveryOperation] = useState<
     "submit" | "save" | "update" | undefined
   >();
@@ -921,6 +928,7 @@ export function ProductViewer() {
       expectedSelection?.epoch ?? selectionEpoch.current;
     const requestController = new AbortController();
     activeToolController.current = requestController;
+    let explicitToolError = false;
     if (!background) {
       setBusy(true);
       setMessage("Updating…");
@@ -937,6 +945,7 @@ export function ProductViewer() {
         return false;
       }
       if (result.isError) {
+        explicitToolError = true;
         const detail =
           (result.content ?? [])
             .filter((content) => content.type === "text")
@@ -982,10 +991,20 @@ export function ProductViewer() {
         requestSelectionEpoch === selectionEpoch.current
       ) {
         ignorePassivePayloads.current = true;
-        setMessage(
+        const detail = cause instanceof Error ? cause.message : "Update failed";
+        const knownNoWrite =
+          explicitToolError && isKnownSaveUpdateNoWriteFailure(detail);
+        setRecoveryKnownNoWrite(knownNoWrite);
+        const recoveryGuidance =
           actionKind === "save"
             ? "Nemlig did not confirm saving this draft. Keep the draft and check your saved lists before trying again."
-            : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
+            : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.";
+        setMessage(
+          knownNoWrite
+            ? detail
+            : detail === "Update failed"
+              ? recoveryGuidance
+              : `${detail} ${recoveryGuidance}`,
         );
         setRecoveryOperation(actionKind);
         setSubmitErrorOpen(true);
@@ -1376,6 +1395,7 @@ export function ProductViewer() {
         continueSubmitted,
         submitBlocked,
         knownNoWrite: submissionNoWrite.current,
+        recoveryKnownNoWrite,
         submitErrorOpen,
         recoveryOperation,
         baskets,

@@ -90,6 +90,9 @@ changes or uncertain cleanup keep the list and show a warning.
   products confirmed in the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
+- Save/Update errors preserve the server's explanation in a recoverable dialog.
+  Confirmed no-write failures are distinguished from unconfirmed results;
+  returning to the draft or refreshing the exact list never replays the write.
 - Explicitly **Submit** a clean saved list to add it to the actual basket. The
   app rechecks the exact list and basket baseline, transfers once, verifies
   additive basket readback, and keeps a durable no-replay fence. After the
@@ -283,7 +286,9 @@ The MCP surface is organized around household actions:
   The viewer initializes the MCP Apps bridge and reports connection failures.
   It stages draft and native-list edits and calls the protected Submit action
   only for the exact reviewed native list; it never calls Nemlig directly.
-  `update_product_review_conversation show` remains the headless way to recover current state.
+  Use `update_product_review_conversation` with action `show` and the exact
+  `draft_id` or `shopping_list_id` to recover that selection headlessly; include
+  the saved-list card’s `review_context_id` when available.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers

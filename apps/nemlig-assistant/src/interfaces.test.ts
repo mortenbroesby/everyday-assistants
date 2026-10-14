@@ -1807,15 +1807,28 @@ test("native review contexts stay isolated and cross metadata boundaries safely"
           },
         });
         assert.equal(wrongList.isError, true);
-        const unknownHandleWithoutList = await mcp.callTool({
-          name: "update_product_review",
-          arguments: {
-            review_context_id: "00000000-0000-4000-8000-000000000123",
-            action: { kind: "show" },
-          },
-        });
-        assert.equal(unknownHandleWithoutList.isError, true);
-        assert.match(toolText(unknownHandleWithoutList), /review expired/u);
+        for (const name of [
+          "update_product_review",
+          "update_product_review_conversation",
+        ]) {
+          for (const target of [
+            { review_context_id: first.reviewContextId },
+            {
+              draft_id: "00000000-0000-4000-8000-000000000123",
+              review_context_id: first.reviewContextId,
+            },
+          ]) {
+            const invalidTarget = await mcp.callTool({
+              name,
+              arguments: { ...target, action: { kind: "show" } },
+            });
+            assert.equal(invalidTarget.isError, true);
+            assert.match(
+              toolText(invalidTarget),
+              /review_context_id requires its exact shopping_list_id/u,
+            );
+          }
+        }
         const reopenedExpiredList = await mcp.callTool({
           name: "update_product_review",
           arguments: {

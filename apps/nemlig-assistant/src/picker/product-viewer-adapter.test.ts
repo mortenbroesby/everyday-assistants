@@ -29,6 +29,30 @@ test("only an explicit pre-dispatch result is classified as a known no-write", (
   assert.equal(isKnownNoWriteFailure("No transfer was sent."), true);
   assert.equal(
     isKnownNoWriteFailure(
+      "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.",
+    ),
+    false,
+  );
+  assert.equal(
+    isKnownNoWriteFailure(
+      "The update could not be recorded safely. No products were changed in Nemlig; refresh this list before continuing.",
+    ),
+    false,
+  );
+  assert.equal(
+    isKnownNoWriteFailure(
+      "Could not record this save safely. No Nemlig shopping list was created or changed.",
+    ),
+    false,
+  );
+  assert.equal(
+    isKnownNoWriteFailure(
+      "Cannot confirm whether the update did not reach Nemlig.",
+    ),
+    false,
+  );
+  assert.equal(
+    isKnownNoWriteFailure(
       "A previous basket transfer may have completed. Inspect the actual basket; this transfer will not be retried.",
     ),
     false,

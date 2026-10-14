@@ -62,6 +62,7 @@ const props = (thumbnail?: string): ViewerPageProps => ({
     continueSubmitted: false,
     submitBlocked: false,
     knownNoWrite: false,
+    recoveryKnownNoWrite: false,
     submitErrorOpen: false,
     baskets: [],
     selectedBasketId: undefined,

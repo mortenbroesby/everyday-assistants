@@ -124,6 +124,7 @@ export type ViewerPageModel = {
   continueSubmitted: boolean;
   submitBlocked: boolean;
   knownNoWrite: boolean;
+  recoveryKnownNoWrite: boolean;
   submitErrorOpen: boolean;
   recoveryOperation?: "submit" | "save" | "update";
   baskets: BasketSummary[];
@@ -628,6 +629,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     continueSubmitted,
     submitBlocked,
     knownNoWrite,
+    recoveryKnownNoWrite,
     submitErrorOpen,
     recoveryOperation,
     baskets,
@@ -1556,9 +1558,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           >
             <Dialog.Title>
               {recoveryOperation === "save"
-                ? "Save was not confirmed"
+                ? recoveryKnownNoWrite
+                  ? "Save was not sent to Nemlig"
+                  : "Save was not confirmed"
                 : recoveryOperation === "update"
-                  ? "Update was not confirmed"
+                  ? recoveryKnownNoWrite
+                    ? "Update was not sent to Nemlig"
+                    : "Update was not confirmed"
                   : knownNoWrite
                     ? "Submission was not sent"
                     : "Check your Nemlig basket"}
