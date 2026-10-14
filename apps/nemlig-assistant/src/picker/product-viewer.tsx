@@ -472,6 +472,7 @@ export function ProductViewer() {
   );
   const callLock = useRef(false);
   const activeToolController = useRef<AbortController | undefined>(undefined);
+  const activeDraftOperation = useRef<"save" | "update" | undefined>(undefined);
   const cancelledCallPending = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
@@ -496,7 +497,7 @@ export function ProductViewer() {
   const [submitErrorOpen, setSubmitErrorOpen] = useState(false);
   const [recoveryKnownNoWrite, setRecoveryKnownNoWrite] = useState(false);
   const [recoveryOperation, setRecoveryOperation] = useState<
-    "submit" | "save" | "update" | undefined
+    "submit" | "save" | "update" | "draft" | undefined
   >();
   const submitBlockedRef = useRef(
     screen.kind === "review" &&
@@ -513,6 +514,30 @@ export function ProductViewer() {
   const quantityTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
+  const stopQuantityTimer = () => {
+    if (quantityTimer.current) {
+      clearTimeout(quantityTimer.current);
+    }
+    quantityTimer.current = undefined;
+  };
+  const showDraftRecovery = (message: string) => {
+    stopQuantityTimer();
+    ignorePassivePayloads.current = true;
+    setMessage(message);
+    setRecoveryOperation("draft");
+    setSubmitErrorOpen(true);
+  };
+  const showSaveUpdateRecovery = (
+    operation: "save" | "update",
+    message: string,
+  ) => {
+    stopQuantityTimer();
+    ignorePassivePayloads.current = true;
+    setRecoveryKnownNoWrite(false);
+    setMessage(message);
+    setRecoveryOperation(operation);
+    setSubmitErrorOpen(true);
+  };
   const quantityFlush = useRef<Promise<boolean> | undefined>(undefined);
   const callIdleWaiters = useRef<Array<() => void>>([]);
   const resetBasketUi = (preservePresentationDestination = false) => {
@@ -592,6 +617,7 @@ export function ProductViewer() {
       payload: unknown,
       current = false,
       adoptPresentationDestination = false,
+      actionKind?: string,
     ) => {
       if (!current && callLock.current) {
         return true;
@@ -601,6 +627,12 @@ export function ProductViewer() {
         return true;
       }
       if (isRecord(payload) && payload.isError === true) {
+        if (!current && activeReview.current?.review.draftId) {
+          return true;
+        }
+        if (current && activeReview.current?.review.draftId) {
+          return false;
+        }
         deactivateReview();
         setScreen({
           kind: "error",
@@ -610,12 +642,35 @@ export function ProductViewer() {
         return false;
       }
       if (!next) {
+        if (!current && activeReview.current?.review.draftId) {
+          return true;
+        }
+        if (current && activeReview.current?.review.draftId) {
+          return false;
+        }
         deactivateReview();
         setScreen({
           kind: "error",
           message:
             "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.",
         });
+        return false;
+      }
+      const previous = activeReview.current;
+      const activeDraft = Boolean(previous?.active && previous.review.draftId);
+      if (activeDraft && !current && next.kind !== "review") {
+        return true;
+      }
+      if (
+        activeDraft &&
+        current &&
+        next.kind !== "review" &&
+        !(
+          next.kind === "picker" &&
+          (actionKind === "list" || actionKind === "select")
+        ) &&
+        !(next.kind === "empty" && actionKind === "end")
+      ) {
         return false;
       }
       if (
@@ -626,7 +681,6 @@ export function ProductViewer() {
       ) {
         return true;
       }
-      const previous = activeReview.current;
       if (next.kind === "picker") {
         deactivateReview();
         activeReview.current = undefined;
@@ -760,24 +814,67 @@ export function ProductViewer() {
         cancelledCallPending.current = true;
         cancellationEpoch.current++;
         activeToolController.current?.abort();
-        ignorePassivePayloads.current = true;
-        deactivateReview();
-        setScreen({ kind: "cancelled" });
-        setMessage(
-          "Request cancelled. Continue in conversation when you are ready.",
-        );
+        if (activeDraftOperation.current) {
+          const operation = activeDraftOperation.current;
+          showSaveUpdateRecovery(
+            operation,
+            operation === "save"
+              ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
+              : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
+          );
+        } else if (
+          activeReview.current?.active &&
+          activeReview.current.review.draftId
+        ) {
+          showDraftRecovery(
+            "The action was cancelled. Your current products and quantities remain visible; review them before continuing.",
+          );
+        } else {
+          ignorePassivePayloads.current = true;
+          deactivateReview();
+          setScreen({ kind: "cancelled" });
+          setMessage(
+            "Request cancelled. Continue in conversation when you are ready.",
+          );
+        }
       };
       host.onerror = () => {
         if (cancelledCallPending.current) {
           return;
         }
-        ignorePassivePayloads.current = true;
-        deactivateReview();
-        setScreen({
-          kind: "error",
-          message:
-            "The shopping-list connection failed. Refresh the list or continue in conversation.",
-        });
+        if (
+          callLock.current &&
+          (activeDraftOperation.current ||
+            (activeReview.current?.active &&
+              activeReview.current.review.draftId))
+        ) {
+          cancellationEpoch.current++;
+          activeToolController.current?.abort();
+        }
+        if (activeDraftOperation.current) {
+          const operation = activeDraftOperation.current;
+          showSaveUpdateRecovery(
+            operation,
+            operation === "save"
+              ? "Nemlig did not confirm saving this draft. Keep its products and quantities, and check your saved lists before trying again."
+              : "Nemlig did not confirm updating this shopping list. Refresh its current contents before continuing; do not replay an uncertain update.",
+          );
+        } else if (
+          activeReview.current?.active &&
+          activeReview.current.review.draftId
+        ) {
+          showDraftRecovery(
+            "The shopping-list connection failed. Your current products and quantities remain visible; review them before continuing.",
+          );
+        } else {
+          ignorePassivePayloads.current = true;
+          deactivateReview();
+          setScreen({
+            kind: "error",
+            message:
+              "The shopping-list connection failed. Refresh the list or continue in conversation.",
+          });
+        }
       };
     },
   });
@@ -843,11 +940,18 @@ export function ProductViewer() {
   ): Promise<boolean> => {
     if (!connectedApp || !isConnected) {
       if (!background) {
-        setMessage(
+        const detail = error
+          ? "The shopping list could not connect. Your current products and quantities remain visible; review them before continuing."
+          : "Connecting to the current shopping list…";
+        if (
+          activeReview.current?.active &&
+          activeReview.current.review.draftId &&
           error
-            ? "The shopping list could not connect. Continue in conversation or reopen it."
-            : "Connecting to the current shopping list…",
-        );
+        ) {
+          showDraftRecovery(detail);
+        } else {
+          setMessage(detail);
+        }
       }
       return false;
     }
@@ -944,6 +1048,14 @@ export function ProductViewer() {
       expectedSelection?.epoch ?? selectionEpoch.current;
     const requestController = new AbortController();
     activeToolController.current = requestController;
+    const actionKind = isRecord(requestArgs.action)
+      ? requestArgs.action.kind
+      : undefined;
+    activeDraftOperation.current =
+      name === "update_product_review" &&
+      (actionKind === "save" || actionKind === "update")
+        ? actionKind
+        : undefined;
     let explicitToolError = false;
     if (!background) {
       setBusy(true);
@@ -975,7 +1087,14 @@ export function ProductViewer() {
       }
       if (
         !background &&
-        !applyPayload(result, true, adoptPresentationDestination)
+        !applyPayload(
+          result,
+          true,
+          adoptPresentationDestination,
+          isRecord(requestArgs.action)
+            ? String(requestArgs.action.kind ?? "")
+            : undefined,
+        )
       ) {
         throw new Error("Could not confirm the updated shopping list.");
       }
@@ -1027,6 +1146,24 @@ export function ProductViewer() {
         return false;
       }
       if (
+        name === "update_product_review" &&
+        activeReview.current?.active &&
+        activeReview.current.review.draftId &&
+        requestEpoch === cancellationEpoch.current &&
+        requestSelectionEpoch === selectionEpoch.current
+      ) {
+        const detail = cause instanceof Error ? cause.message : "Update failed";
+        const recoveryMessage = /expired|unavailable|no longer exists/iu.test(
+          detail,
+        )
+          ? "Nemlig no longer confirms that this draft is available. Your current products and quantities remain visible; start a new draft in conversation before continuing."
+          : /changed/iu.test(detail)
+            ? "Nemlig reports that this draft changed. Your current products and quantities remain visible; refresh the draft before continuing."
+            : "The action could not be confirmed. Your current products and quantities remain visible; review them before continuing. No automatic retry was made.";
+        showDraftRecovery(recoveryMessage);
+        return false;
+      }
+      if (
         !background &&
         requestEpoch === cancellationEpoch.current &&
         requestSelectionEpoch === selectionEpoch.current
@@ -1044,6 +1181,7 @@ export function ProductViewer() {
     } finally {
       if (activeToolController.current === requestController) {
         activeToolController.current = undefined;
+        activeDraftOperation.current = undefined;
       }
       callLock.current = false;
       if (!background) {

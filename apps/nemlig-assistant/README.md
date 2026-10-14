@@ -90,6 +90,9 @@ changes or uncertain cleanup keep the list and show a warning.
   products confirmed in the saved list.
 - Stage changes to an existing list locally in the viewer. **Update shopping
   list** writes those changes and checks the provider readback.
+- Failed draft edits or alternatives requests keep the current products and
+  quantities visible in a recoverable error dialog. Dismissing it does not
+  replay the action or restore an older host snapshot.
 - Save/Update errors preserve the server's explanation in a recoverable dialog.
   Confirmed no-write failures are distinguished from unconfirmed results;
   returning to the draft or refreshing the exact list never replays the write.

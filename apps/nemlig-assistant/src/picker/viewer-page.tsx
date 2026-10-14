@@ -126,7 +126,7 @@ export type ViewerPageModel = {
   knownNoWrite: boolean;
   recoveryKnownNoWrite: boolean;
   submitErrorOpen: boolean;
-  recoveryOperation?: "submit" | "save" | "update";
+  recoveryOperation?: "submit" | "save" | "update" | "draft";
   baskets: BasketSummary[];
   selectedBasketId?: string;
 };
@@ -1558,30 +1558,34 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             }}
           >
             <Dialog.Title>
-              {recoveryOperation === "save"
-                ? recoveryKnownNoWrite
-                  ? "Save was not sent to Nemlig"
-                  : "Save was not confirmed"
-                : recoveryOperation === "update"
+              {recoveryOperation === "draft"
+                ? "Draft action needs review"
+                : recoveryOperation === "save"
                   ? recoveryKnownNoWrite
-                    ? "Update was not sent to Nemlig"
-                    : "Update was not confirmed"
-                  : knownNoWrite
-                    ? "Submission was not sent"
-                    : "Check your Nemlig basket"}
+                    ? "Save was not sent to Nemlig"
+                    : "Save was not confirmed"
+                  : recoveryOperation === "update"
+                    ? recoveryKnownNoWrite
+                      ? "Update was not sent to Nemlig"
+                      : "Update was not confirmed"
+                    : knownNoWrite
+                      ? "Submission was not sent"
+                      : "Check your Nemlig basket"}
             </Dialog.Title>
             <Dialog.Description id="submission-recovery-description">
               {message ||
-                (recoveryOperation === "save"
-                  ? "The draft is still shown. Keep its products and quantities, then refresh it before trying again."
-                  : recoveryOperation === "update"
-                    ? "Refresh this exact list before continuing. Do not replay an update whose result is uncertain."
-                    : knownNoWrite
-                      ? "No basket write was sent. Review the current list before submitting again."
-                      : "Nemlig did not confirm the basket addition. Do not submit this list again until you inspect the actual basket.")}
+                (recoveryOperation === "draft"
+                  ? "The action could not be confirmed. Your draft remains open; review its current products and quantities before continuing."
+                  : recoveryOperation === "save"
+                    ? "The draft is still shown. Keep its products and quantities, then refresh it before trying again."
+                    : recoveryOperation === "update"
+                      ? "Refresh this exact list before continuing. Do not replay an update whose result is uncertain."
+                      : knownNoWrite
+                        ? "No basket write was sent. Review the current list before submitting again."
+                        : "Nemlig did not confirm the basket addition. Do not submit this list again until you inspect the actual basket.")}
             </Dialog.Description>
             <div className="submission-recovery-actions">
-              {recoveryOperation === "save" ? (
+              {recoveryOperation === "draft" || recoveryOperation === "save" ? (
                 <Dialog.Close asChild>
                   <Button color="primary">Return to draft</Button>
                 </Dialog.Close>
