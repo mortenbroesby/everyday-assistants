@@ -192,11 +192,14 @@ test("shopping-list picker shows native names and product counts without delete"
   assert.equal((markup.match(/<h[1-6]/gu) ?? []).length, 1);
 });
 
-test("an empty picker offers native shopping-list starter actions", () => {
+test("an empty picker offers temporary-draft starter actions", () => {
   const pageProps = props();
   pageProps.model.screen = { kind: "picker", baskets: [] };
   const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Start a Nemlig shopping list/u);
+  assert.match(markup, /Start a grocery draft/u);
+  assert.match(markup, /Chosen products stay in a temporary draft/u);
+  assert.match(markup, /Only an explicit Submit adds the approved/u);
+  assert.match(markup, /draft edits do not change them/u);
   assert.match(markup, /Plan groceries for the week/u);
   assert.match(markup, /Find ingredients for dinner/u);
   assert.match(markup, /Find a product/u);
@@ -212,7 +215,7 @@ test("an empty picker offers native shopping-list starter actions", () => {
     createElement(ViewerPage, pageProps),
   );
   assert.match(expiredMarkup, /That Nemlig shopping list is unavailable/u);
-  assert.match(expiredMarkup, /Start a Nemlig shopping list/u);
+  assert.match(expiredMarkup, /Start a grocery draft/u);
 });
 
 test("only confirmed native shopping lists can be added to the basket", () => {
