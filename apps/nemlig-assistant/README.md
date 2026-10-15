@@ -369,7 +369,7 @@ pnpm nemlig:smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
-For the connected picker walkthrough, run `pnpm exec storybook dev` from this
+For the connected picker walkthrough, run `pnpm storybook` from this
 directory and open **Picker/Visual contract → AppTabWalkthrough**. It renders
 the production `ViewerPage` with clearly labeled simulated host and provider
 responses; **AppTabWalkthroughChecks** runs the companion click-through. These
