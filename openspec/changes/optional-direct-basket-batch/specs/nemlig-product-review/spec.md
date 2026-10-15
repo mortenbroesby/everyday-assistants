@@ -34,6 +34,14 @@ list.
 - THEN the same draft cannot be submitted again and the user is told to inspect
   the actual basket
 
+#### Scenario: Bounded completed receipts cannot reopen an old draft
+
+- GIVEN a completed direct basket receipt has expired from durable storage
+- WHEN a caller retries that old draft ID with the same or a new operation ID
+- THEN the service rejects it without a provider write
+- AND it does not restore the process-local draft after restart
+- AND unresolved or uncertain operation fences remain durable until resolved
+
 ### Requirement: Optional whole-basket list save
 
 After verified basket submission, the viewer SHALL offer a separate explicit

@@ -192,7 +192,7 @@ test("native submission receipt stays durable and only pre-dispatch release remo
   );
 });
 
-test("basket-save receipts survive draft expiry while native save receipts retain their TTL", async () => {
+test("completed basket-save receipts expire while unresolved and native records remain fenced", async () => {
   const storage = new FakeStorage();
   const basketSave: ReviewOperation = {
     operationId: "direct-basket-save:draft-1",
@@ -232,7 +232,7 @@ test("basket-save receipts survive draft expiry while native save receipts retai
     },
     0,
   );
-  const afterThreeHours = 3 * 60 * 60 * 1000;
+  const afterOneHour = 60 * 60 * 1000;
   const receipt = (await mutateOwnerLocalBasketInventory(
     storage,
     "owner-1",
@@ -240,33 +240,22 @@ test("basket-save receipts survive draft expiry while native save receipts retai
       kind: "review-operation-read",
       operationId: basketSave.operationId,
     },
-    afterThreeHours,
+    afterOneHour,
   )) as ReviewOperation;
   assert.equal(receipt.completed, true);
-  await assert.rejects(
-    mutateOwnerLocalBasketInventory(
-      storage,
-      "owner-1",
-      {
-        kind: "review-operation-write",
-        operation: { ...basketSave, generation: "save-attempt-two" },
-      },
-      afterThreeHours,
-    ),
-    /different shopping-list operation/u,
-  );
+  assert.equal(receipt.completedUntil, 2 * 60 * 60 * 1000);
+  const afterThreeHours = 3 * 60 * 60 * 1000;
   assert.equal(
     await mutateOwnerLocalBasketInventory(
       storage,
       "owner-1",
       {
-        kind: "review-operation-claim",
+        kind: "review-operation-read",
         operationId: basketSave.operationId,
-        generation: "save-attempt-two",
       },
       afterThreeHours,
     ),
-    false,
+    undefined,
   );
 
   const nativeSave = {
@@ -301,6 +290,189 @@ test("basket-save receipts survive draft expiry while native save receipts retai
     afterThreeHours,
   );
   assert.equal(expiredNative, undefined);
+
+  const directSubmit: ReviewOperation = {
+    ...basketSave,
+    operationId: "direct-basket-submit:draft-1",
+    generation: "submit-attempt",
+    kind: "submit",
+  };
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    { kind: "review-operation-write", operation: directSubmit },
+    0,
+  );
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-claim",
+      operationId: directSubmit.operationId,
+      generation: directSubmit.generation,
+    },
+    0,
+  );
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-complete",
+      operationId: directSubmit.operationId,
+      generation: directSubmit.generation,
+    },
+    0,
+  );
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(
+      storage,
+      "owner-1",
+      {
+        kind: "review-operation-read",
+        operationId: directSubmit.operationId,
+      },
+      afterThreeHours,
+    ),
+    undefined,
+  );
+
+  const uncertainDirect: ReviewOperation = {
+    ...directSubmit,
+    operationId: "direct-basket-submit:uncertain-draft",
+    generation: "uncertain-submit",
+    completed: undefined,
+  };
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    { kind: "review-operation-write", operation: uncertainDirect },
+    0,
+  );
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-claim",
+      operationId: uncertainDirect.operationId,
+      generation: uncertainDirect.generation,
+    },
+    0,
+  );
+  const retainedUncertainDirect = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-read",
+      operationId: uncertainDirect.operationId,
+    },
+    afterThreeHours,
+  )) as ReviewOperation;
+  assert.equal(retainedUncertainDirect.dispatchAttempted, true);
+  assert.equal(retainedUncertainDirect.completedUntil, undefined);
+
+  const nativeSubmit: ReviewOperation = {
+    ...basketSave,
+    operationId: "native-list-submit:44",
+    generation: "native-submit",
+    kind: "submit",
+    listId: 44,
+  };
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    { kind: "review-operation-write", operation: nativeSubmit },
+    0,
+  );
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-claim",
+      operationId: nativeSubmit.operationId,
+      generation: nativeSubmit.generation,
+    },
+    0,
+  );
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-complete",
+      operationId: nativeSubmit.operationId,
+      generation: nativeSubmit.generation,
+    },
+    0,
+  );
+  const retainedNativeSubmit = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    {
+      kind: "review-operation-read",
+      operationId: nativeSubmit.operationId,
+    },
+    Number.MAX_SAFE_INTEGER - 1,
+  )) as ReviewOperation;
+  assert.equal(retainedNativeSubmit.completed, true);
+  assert.equal(retainedNativeSubmit.completedUntil, undefined);
+});
+
+test("old completed direct receipts are reclaimed during sustained operation volume", async () => {
+  const storage = new FakeStorage();
+  const interval = 10 * 60 * 1000;
+  const count = 300;
+  for (let index = 0; index < count; index++) {
+    const operationId = `direct-basket-save:draft-${index}`;
+    const operation: ReviewOperation = {
+      operationId,
+      generation: `save-${index}`,
+      accountIdentity: "account-1",
+      kind: "basket-save",
+      name: "Save current basket",
+      items: [{ productId: 1, quantity: 1 }],
+      baseline: [{ productId: 1, quantity: 1 }],
+    };
+    const at = index * interval;
+    await mutateOwnerLocalBasketInventory(
+      storage,
+      "owner-1",
+      { kind: "review-operation-write", operation },
+      at,
+    );
+    await mutateOwnerLocalBasketInventory(
+      storage,
+      "owner-1",
+      {
+        kind: "review-operation-claim",
+        operationId,
+        generation: operation.generation,
+      },
+      at,
+    );
+    await mutateOwnerLocalBasketInventory(
+      storage,
+      "owner-1",
+      {
+        kind: "review-operation-complete",
+        operationId,
+        generation: operation.generation,
+      },
+      at,
+    );
+  }
+  const finalAt = count * interval;
+  const index = storage.values.get("owner-review-operation-index") as {
+    operations: ReviewOperation[];
+  };
+  assert.ok(index.operations.length <= 12);
+  const recent = index.operations[0];
+  assert.ok(recent);
+  await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-1",
+    { kind: "review-operation-read", operationId: recent.operationId },
+    finalAt + 3 * 60 * 60 * 1000,
+  );
+  assert.equal(storage.values.has("owner-review-operation-index"), false);
 });
 
 test("stale journal writes cannot release the create claim or erase a native ID", async () => {

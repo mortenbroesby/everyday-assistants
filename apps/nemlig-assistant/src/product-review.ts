@@ -42,11 +42,27 @@ const reviewItemInputs = (items: ShoppingList["items"]) =>
 const reviewOperationItems = (
   items: ReadonlyArray<{ productId: number; quantity: number }>,
 ) => items.map(({ productId, quantity }) => ({ productId, quantity }));
-const basketOperationItems = (basket: Basket) =>
-  basket.items.map((item) => ({
-    productId: item.id!,
-    quantity: item.quantity!,
-  }));
+const basketOperationItems = (basket: Basket) => {
+  const seen = new Set<number>();
+  const items: Array<{ productId: number; quantity: number }> = [];
+  for (const item of basket.items) {
+    if (
+      !validPositive(item.id ?? 0) ||
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity! < 0 ||
+      seen.has(item.id!)
+    ) {
+      throw new NemligError(
+        "The current basket cannot be bound safely to a provider write.",
+      );
+    }
+    seen.add(item.id!);
+    if (item.quantity! > 0) {
+      items.push({ productId: item.id!, quantity: item.quantity! });
+    }
+  }
+  return items;
+};
 const sameQuantities = (
   left: Map<number, number>,
   right: Map<number, number>,
@@ -184,6 +200,7 @@ interface StoredReview {
   nativeFingerprint?: string;
   nativeItems?: Array<{ productId: number; quantity: number }>;
   createAttempted?: boolean;
+  directBasketSaveAttempted?: boolean;
   operationGeneration?: string;
   completedDraftId?: string;
   completedListId?: number;
@@ -674,8 +691,14 @@ export class ProductReviewService {
                 ),
               ));
           if (sameIntent) {
-            this.touch(owner, active);
-            return structuredClone(active.snapshot);
+            const alreadySubmittedDirectDraft =
+              basketMode === "direct-basket" &&
+              active.snapshot.submissionAttempted === true &&
+              active.snapshot.submission?.status === "submitted";
+            if (!alreadySubmittedDirectDraft) {
+              this.touch(owner, active);
+              return structuredClone(active.snapshot);
+            }
           }
           if (
             basketMode !== "direct-basket" ||
@@ -2670,6 +2693,17 @@ export class ProductReviewService {
       );
     }
     const stored = this.lock(owner, expectedDraftId);
+    if (
+      stored.snapshot.basketMode === "direct-basket" &&
+      stored.snapshot.submissionAttempted === true &&
+      stored.snapshot.submission?.status === "submitted" &&
+      action.kind !== "navigate"
+    ) {
+      stored.busy = false;
+      throw new NemligError(
+        "This direct basket draft has already been submitted. Start a new draft before making further changes.",
+      );
+    }
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
     const submissionSelection = (items: ReviewItem[]) =>
@@ -3569,6 +3603,13 @@ export class ProductReviewService {
     const stored = this.lock(owner, draftId);
     let dispatchClaimed = false;
     try {
+      if (stored.snapshot.submissionAttempted) {
+        throw new NativeTransferUnconfirmedError(
+          stored.snapshot.submission?.status === "submitted"
+            ? "This direct basket draft was already submitted. Start a new draft for another deliberate addition."
+            : "A previous direct basket submission may have completed. Inspect the actual basket; do not submit this draft again.",
+        );
+      }
       if (
         stored.snapshot.basketMode !== "direct-basket" ||
         !stored.snapshot.reviewContextId ||
@@ -3721,6 +3762,12 @@ export class ProductReviewService {
       );
     }
     const stored = this.lock(owner, draftId);
+    if (stored.directBasketSaveAttempted) {
+      stored.busy = false;
+      throw new NativeTransferUnconfirmedError(
+        "A basket-to-list save was already attempted for this draft. Inspect saved shopping lists; do not retry.",
+      );
+    }
     if (
       stored.snapshot.basketMode !== "direct-basket" ||
       stored.snapshot.submission?.status !== "submitted" ||
@@ -3741,18 +3788,7 @@ export class ProductReviewService {
               "Nemlig account changed before the save request. No list write was sent.",
             );
           }
-          const items = baseline.items.map((item) => {
-            if (
-              !validPositive(item.id ?? 0) ||
-              !Number.isSafeInteger(item.quantity) ||
-              item.quantity! < 0
-            ) {
-              throw new NemligError(
-                "The current basket cannot be bound safely to a save request.",
-              );
-            }
-            return { productId: item.id!, quantity: item.quantity! };
-          });
+          const items = basketOperationItems(baseline);
           const operation: ReviewOperation = {
             operationId,
             generation: saveId,
@@ -3769,6 +3805,7 @@ export class ProductReviewService {
             );
           }
           dispatchClaimed = true;
+          stored.directBasketSaveAttempted = true;
         },
       });
       if (this.client.providerIdentity() !== accountIdentity) {

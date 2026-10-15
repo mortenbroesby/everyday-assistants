@@ -16,7 +16,9 @@ import {
   ProductReviewService,
   type ReviewOperationJournal,
 } from "./product-review.js";
-import type { ReviewOperation } from "./local-basket.js";
+import type { LocalBasketCommand, ReviewOperation } from "./local-basket.js";
+import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
+import { attachLocalBasketCapability } from "./local-basket-capability.js";
 import {
   mutateOwnerLocalBasketInventory,
   type LocalBasketInventoryStorage,
@@ -66,7 +68,10 @@ const withShoppingList = <
     proposals.prepareAdditions(owner, items, authorization, options),
 });
 
-const createDurableReviewJournal = (ownerId: string) => {
+const createDurableReviewJournal = (
+  ownerId: string,
+  now: () => number = Date.now,
+) => {
   const values = new Map<string, unknown>();
   const storage: LocalBasketInventoryStorage = {
     async get<T>(key: string) {
@@ -89,38 +94,137 @@ const createDurableReviewJournal = (ownerId: string) => {
   return {
     journal: {
       async read(operationId: string) {
-        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
-          kind: "review-operation-read",
-          operationId,
-        })) as Awaited<ReturnType<ReviewOperationJournal["read"]>>;
+        return (await mutateOwnerLocalBasketInventory(
+          storage,
+          ownerId,
+          {
+            kind: "review-operation-read",
+            operationId,
+          },
+          now(),
+        )) as Awaited<ReturnType<ReviewOperationJournal["read"]>>;
       },
       async claim(operationId: string, generation: string) {
-        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
+        return (await mutateOwnerLocalBasketInventory(
+          storage,
+          ownerId,
+          {
+            kind: "review-operation-claim",
+            operationId,
+            generation,
+          },
+          now(),
+        )) as boolean;
+      },
+      async write(operation: ReviewOperation) {
+        await mutateOwnerLocalBasketInventory(
+          storage,
+          ownerId,
+          {
+            kind: "review-operation-write",
+            operation,
+          },
+          now(),
+        );
+      },
+      async complete(operationId: string, generation: string) {
+        return (await mutateOwnerLocalBasketInventory(
+          storage,
+          ownerId,
+          {
+            kind: "review-operation-complete",
+            operationId,
+            generation,
+          },
+          now(),
+        )) as boolean;
+      },
+    } satisfies ReviewOperationJournal,
+    read(operationId: string) {
+      return mutateOwnerLocalBasketInventory(
+        storage,
+        ownerId,
+        {
+          kind: "review-operation-read",
+          operationId,
+        },
+        now(),
+      );
+    },
+  };
+};
+
+const createCallbackReviewJournal = (ownerId: string) => {
+  const durable = createDurableReviewJournal(ownerId);
+  const capability = `capability-${ownerId}`;
+  const call = async (command: LocalBasketCommand): Promise<unknown> => {
+    const response = await handleLocalBasketStateRequest(
+      attachLocalBasketCapability(
+        new Request("http://local-basket-state.internal/inventory", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(command),
+        }),
+        capability,
+      ),
+      {
+        idFromName: (owner) => owner,
+        get: () => ({
+          mutate: async (_owner, parsed) => {
+            switch (parsed.kind) {
+              case "review-operation-read":
+                return durable.read(parsed.operationId);
+              case "review-operation-claim":
+                return durable.journal.claim(
+                  parsed.operationId,
+                  parsed.generation,
+                );
+              case "review-operation-write":
+                await durable.journal.write(parsed.operation);
+                return null;
+              case "review-operation-complete":
+                return durable.journal.complete(
+                  parsed.operationId,
+                  parsed.generation,
+                );
+              case "review-operation-release":
+                return false;
+            }
+          },
+        }),
+      },
+      async (value) => (value === capability ? ownerId : undefined),
+    );
+    if (!response.ok) {
+      throw new Error(await response.text());
+    }
+    return response.json();
+  };
+  return {
+    journal: {
+      async read(operationId: string) {
+        return (await call({ kind: "review-operation-read", operationId })) as
+          ReviewOperation | undefined;
+      },
+      async claim(operationId: string, generation: string) {
+        return (await call({
           kind: "review-operation-claim",
           operationId,
           generation,
         })) as boolean;
       },
       async write(operation: ReviewOperation) {
-        await mutateOwnerLocalBasketInventory(storage, ownerId, {
-          kind: "review-operation-write",
-          operation,
-        });
+        await call({ kind: "review-operation-write", operation });
       },
       async complete(operationId: string, generation: string) {
-        return (await mutateOwnerLocalBasketInventory(storage, ownerId, {
+        return (await call({
           kind: "review-operation-complete",
           operationId,
           generation,
         })) as boolean;
       },
     } satisfies ReviewOperationJournal,
-    read(operationId: string) {
-      return mutateOwnerLocalBasketInventory(storage, ownerId, {
-        kind: "review-operation-read",
-        operationId,
-      });
-    },
+    read: durable.read,
   };
 };
 
@@ -554,6 +658,383 @@ test("direct basket draft submits 37 lines once, saves whole basket once, and ab
   assert.equal(service.active(anotherOwner), undefined);
   assert.equal(writes, 1);
   assert.equal(listCalls, 0);
+});
+
+test("a deliberate same-item request after submission starts a fresh draft", async () => {
+  const owner = "repeat-direct-owner";
+  const durable = createDurableReviewJournal(owner);
+  let writes = 0;
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      _items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      writes++;
+      return structuredClone(basket);
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const requested = [{ product_id: 12, quantity: 2 }];
+  const first = await service.startDirectBasket(owner, requested);
+  const firstSubmissionId = "11111111-1111-4111-8111-111111111111";
+  const submitted = await service.submitDirectBasket(
+    owner,
+    first.draftId!,
+    firstSubmissionId,
+    requested,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(submitted.result.replayed, false);
+  assert.equal(writes, 1);
+  await assert.rejects(
+    service.update(
+      owner,
+      { kind: "quantity", product_id: 12, quantity: 3 },
+      undefined,
+      first.draftId,
+    ),
+    /already been submitted.*Start a new draft/u,
+  );
+
+  const second = await service.startDirectBasket(owner, requested);
+  assert.notEqual(second.draftId, first.draftId);
+  const deliberateRepeat = await service.submitDirectBasket(
+    owner,
+    second.draftId!,
+    "22222222-2222-4222-8222-222222222222",
+    requested,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(deliberateRepeat.result.replayed, false);
+  assert.equal(writes, 2);
+
+  const oldDraftRetry = await service.submitDirectBasket(
+    owner,
+    first.draftId!,
+    firstSubmissionId,
+    requested,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(oldDraftRetry.result.replayed, true);
+  assert.equal(writes, 2);
+});
+
+test("an uncertain direct draft remains protected from a new selection", async () => {
+  const owner = "uncertain-direct-start-owner";
+  const durable = createDurableReviewJournal(owner);
+  let writes = 0;
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  const service = new ProductReviewService({
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      _items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      writes++;
+      throw new Error("provider response lost");
+    },
+  });
+  const requested = [{ product_id: 33, quantity: 1 }];
+  const draft = await service.startDirectBasket(owner, requested);
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "12121212-1212-4212-8212-121212121212",
+      requested,
+      undefined,
+      durable.journal,
+    ),
+    /provider response lost/u,
+  );
+  const sameRequest = await service.startDirectBasket(owner, requested);
+  assert.equal(sameRequest.draftId, draft.draftId);
+  await assert.rejects(
+    service.startDirectBasket(owner, [{ product_id: 34, quantity: 1 }]),
+    /already in progress|pending|unconfirmed/u,
+  );
+  assert.equal(writes, 1);
+});
+
+test("expired direct receipts cannot replay while the old draft stays active", async () => {
+  const owner = "retained-direct-owner";
+  let now = 10_000;
+  const durable = createDurableReviewJournal(owner, () => now);
+  let writes = 0;
+  let listSaves = 0;
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      _items: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      writes++;
+      return structuredClone(basket);
+    },
+    createShoppingListFromBasket: async (options: {
+      beforeDispatch?: (baseline: Basket) => Promise<void>;
+    }) => {
+      await options.beforeDispatch?.(structuredClone(basket));
+      listSaves++;
+      return structuredClone(basket);
+    },
+  };
+  const service = new ProductReviewService(provider, { now: () => now });
+  const requested = [{ product_id: 24, quantity: 1 }];
+  const draft = await service.startDirectBasket(owner, requested);
+  await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "33333333-3333-4333-8333-333333333333",
+    requested,
+    undefined,
+    durable.journal,
+  );
+  await service.saveCurrentBasketAsShoppingList(
+    owner,
+    draft.draftId!,
+    "44444444-4444-4444-8444-444444444444",
+    undefined,
+    durable.journal,
+  );
+  assert.equal(writes, 1);
+  assert.equal(listSaves, 1);
+
+  // Repeated access keeps this submitted draft active beyond the durable
+  // receipt window. Its explicit terminal markers must still fence.
+  for (let hour = 0; hour < 3; hour++) {
+    now += 60 * 60 * 1000;
+    await service.update(
+      owner,
+      { kind: "navigate", destination: "ready" },
+      undefined,
+      draft.draftId,
+    );
+  }
+  await durable.journal.read(`direct-basket-submit:${draft.draftId}`);
+  await durable.journal.read(`direct-basket-save:${draft.draftId}`);
+  assert.equal(
+    await durable.read(`direct-basket-submit:${draft.draftId}`),
+    undefined,
+  );
+  assert.equal(
+    await durable.read(`direct-basket-save:${draft.draftId}`),
+    undefined,
+  );
+  for (const submissionId of [
+    "33333333-3333-4333-8333-333333333333",
+    "55555555-5555-4555-8555-555555555555",
+  ]) {
+    await assert.rejects(
+      service.submitDirectBasket(
+        owner,
+        draft.draftId!,
+        submissionId,
+        requested,
+        undefined,
+        durable.journal,
+      ),
+      /already attempted|already submitted|do not submit this draft again/u,
+    );
+  }
+  for (const saveId of [
+    "44444444-4444-4444-8444-444444444444",
+    "66666666-6666-4666-8666-666666666666",
+  ]) {
+    await assert.rejects(
+      service.saveCurrentBasketAsShoppingList(
+        owner,
+        draft.draftId!,
+        saveId,
+        undefined,
+        durable.journal,
+      ),
+      /already attempted|already fenced|do not retry/u,
+    );
+  }
+  assert.equal(writes, 1);
+  assert.equal(listSaves, 1);
+  const restarted = new ProductReviewService(provider, { now: () => now });
+  await assert.rejects(
+    restarted.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "55555555-5555-4555-8555-555555555555",
+      requested,
+      undefined,
+      durable.journal,
+    ),
+    /Unsaved draft is unavailable/u,
+  );
+  await assert.rejects(
+    restarted.saveCurrentBasketAsShoppingList(
+      owner,
+      draft.draftId!,
+      "66666666-6666-4666-8666-666666666666",
+      undefined,
+      durable.journal,
+    ),
+    /Unsaved draft is unavailable/u,
+  );
+  assert.equal(writes, 1);
+  assert.equal(listSaves, 1);
+  const freshDraft = await service.startDirectBasket(owner, requested);
+  assert.notEqual(freshDraft.draftId, draft.draftId);
+  const freshSubmit = await service.submitDirectBasket(
+    owner,
+    freshDraft.draftId!,
+    "77777777-7777-4777-8777-777777777777",
+    requested,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(freshSubmit.result.replayed, false);
+  assert.equal(writes, 2);
+});
+
+test("direct journal payloads omit zero basket rows and reject invalid baselines", async () => {
+  const owner = "zero-row-direct-owner";
+  const durable = createCallbackReviewJournal(owner);
+  const baseline: Basket = {
+    items: [
+      { id: 90, name: "Empty line", quantity: 0, total: 0 },
+      { id: 91, name: "Existing", quantity: 3, total: 9 },
+    ],
+    productsPrice: 9,
+    deliveryPrice: 0,
+    numberOfProducts: 3,
+    deliveryTime: undefined,
+  };
+  let writes = 0;
+  let listSaves = 0;
+  const provider = {
+    ...client,
+    providerIdentity: () => "account-1",
+    getCart: async () => structuredClone(baseline),
+    addManyToCart: async (
+      _items: BasketAddition[],
+      options?: { beforeDispatch?: (basket: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(baseline));
+      writes++;
+      return structuredClone(baseline);
+    },
+    createShoppingListFromBasket: async (options: {
+      beforeDispatch?: (basket: Basket) => Promise<void>;
+    }) => {
+      await options.beforeDispatch?.(structuredClone(baseline));
+      listSaves++;
+      return structuredClone(baseline);
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const requested = [{ product_id: 7, quantity: 2 }];
+  const draft = await service.startDirectBasket(owner, requested);
+  await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "77777777-7777-4777-8777-777777777777",
+    requested,
+    undefined,
+    durable.journal,
+  );
+  const submit = (await durable.read(
+    `direct-basket-submit:${draft.draftId}`,
+  )) as ReviewOperation;
+  assert.deepEqual(submit.baseline, [{ productId: 91, quantity: 3 }]);
+  await service.saveCurrentBasketAsShoppingList(
+    owner,
+    draft.draftId!,
+    "88888888-8888-4888-8888-888888888888",
+    undefined,
+    durable.journal,
+  );
+  const save = (await durable.read(
+    `direct-basket-save:${draft.draftId}`,
+  )) as ReviewOperation;
+  assert.deepEqual(save.items, [{ productId: 91, quantity: 3 }]);
+  assert.deepEqual(save.baseline, [{ productId: 91, quantity: 3 }]);
+  assert.equal(writes, 1);
+  assert.equal(listSaves, 1);
+
+  for (const [index, invalidItems] of [
+    [
+      { id: 91, name: "Existing", quantity: 3, total: 9 },
+      { id: 91, name: "Duplicate", quantity: 0, total: 0 },
+    ],
+    [{ id: 91, name: "Negative", quantity: -1, total: 0 }],
+    [{ id: 0, name: "Invalid identity", quantity: 1, total: 0 }],
+  ].entries()) {
+    let invalidWrites = 0;
+    const invalidOwner = `invalid-baseline-${index}`;
+    const invalidDurable = createCallbackReviewJournal(invalidOwner);
+    const invalidProvider = {
+      ...provider,
+      getCart: async () => ({ ...baseline, items: invalidItems }),
+      addManyToCart: async (
+        _items: BasketAddition[],
+        options?: { beforeDispatch?: (basket: Basket) => Promise<void> },
+      ) => {
+        await options?.beforeDispatch?.({ ...baseline, items: invalidItems });
+        invalidWrites++;
+        return structuredClone(baseline);
+      },
+    };
+    const invalidService = new ProductReviewService(invalidProvider);
+    const invalidDraft = await invalidService.startDirectBasket(
+      invalidOwner,
+      requested,
+    );
+    await assert.rejects(
+      invalidService.submitDirectBasket(
+        invalidOwner,
+        invalidDraft.draftId!,
+        "99999999-9999-4999-8999-999999999999",
+        requested,
+        undefined,
+        invalidDurable.journal,
+      ),
+      /cannot be bound safely/u,
+    );
+    assert.equal(invalidWrites, 0);
+    assert.equal(
+      await invalidDurable.read(`direct-basket-submit:${invalidDraft.draftId}`),
+      undefined,
+    );
+  }
 });
 
 test("loading a saved list copies rows into a draft without mutating its source", async () => {

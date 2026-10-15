@@ -45,7 +45,7 @@ Once connected, try prompts like:
 - “Find organic milk and show the current detailed results, compared by unit price.”
 - “Review these products before adding them to my basket.”
 - “Show my Nemlig shopping lists.”
-- “Update my Family shopping list with these changes.”
+- “Load my Family shopping list into a temporary draft so I can review changes.”
 - “Show my Nemlig basket.”
 - “Which Nemlig Assistant version and codename are running?”
 
@@ -478,9 +478,9 @@ This README is the user-facing inventory of shipped feature sets:
 - product and department discovery
 - native Nemlig shopping-list discovery
 - temporary drafts and read-only saved-list loading
-- automatic persistence of list edits with verified readback
-- exact-list refresh on card remount and recoverable error modals
-- owner-scoped durable recovery journal for interrupted list operations
+- local draft edits that leave saved shopping lists unchanged
+- owner-scoped durable no-replay fences for uncertain direct writes, with
+  bounded retention for completed receipts
 - shared product presentation with tap-to-open details, press-and-hold actions, and alternatives
 - read-only actual Nemlig basket inspection
 - one-request additive basket Submit with readback and durable no-replay
@@ -508,7 +508,8 @@ src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
 src/product-discovery.ts      Request-scoped detailed product hydration
 src/product-presentation.ts  Shared factual product projection
-src/product-review.ts        Native list editing, recovery, and basket review
+src/product-review.ts        Temporary drafts, read-only list loading, basket
+                              review
 src/product-viewer.ts         Packaged product viewer and headless fallback
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy
