@@ -369,6 +369,12 @@ pnpm nemlig:smoke:package
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
 
+For the connected picker walkthrough, run `pnpm exec storybook dev` from this
+directory and open **Picker/Visual contract → AppTabWalkthrough**. It renders
+the production `ViewerPage` with clearly labeled simulated host and provider
+responses; **AppTabWalkthroughChecks** runs the companion click-through. These
+fixtures demonstrate UI behavior only and do not verify live Nemlig responses.
+
 The MCP resource uses the permanent `ui://nemlig/shell.html` identity. Its
 small HTML shell fetches `/ui/nemlig/manifest.json` without credentials or
 cache, validates the manifest and fixed-origin content-addressed JS/CSS with

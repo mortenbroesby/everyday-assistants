@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
 import { type Dispatch, type SetStateAction, useState } from "react";
+import { expect, fireEvent, userEvent, waitFor, within } from "storybook/test";
 import { appTab, embeddedConversation } from "../../../.storybook/preview.js";
 import type { ProductView } from "../../product-presentation.js";
 import type {
@@ -649,13 +650,663 @@ function ShoppingListWalkthroughStory({
   );
 }
 
+const savedSourceItems = [review.items[0]!, review.items[3]!];
+const existingBasketItems = [{ item: review.items[4]!, quantity: 2 }];
+
+type SimulatedBasketLine = (typeof existingBasketItems)[number];
+
+function addSimulatedBasketRows(
+  previous: SimulatedBasketLine[],
+  additions: Review["items"],
+): SimulatedBasketLine[] {
+  const next = new Map(
+    previous.map(({ item, quantity }) => [item.product_id, { item, quantity }]),
+  );
+  for (const item of additions) {
+    const existing = next.get(item.product_id);
+    next.set(item.product_id, {
+      item,
+      quantity: (existing?.quantity ?? 0) + item.quantity,
+    });
+  }
+  return [...next.values()];
+}
+
+function starterProductIds(prompt: string): number[] {
+  const normalized = prompt.toLocaleLowerCase("en-US");
+  if (normalized.includes("groceries for the week")) {
+    return [1, 2, 3, 4, 5];
+  }
+  if (normalized.includes("ingredients for dinner")) {
+    return [2, 4, 5];
+  }
+  return [1];
+}
+
+function toggleFactDisclosure(
+  previous: ViewerPageModel["reviewDisclosures"],
+  productId: number,
+  factKey: string,
+  expanded: boolean,
+): ViewerPageModel["reviewDisclosures"] {
+  const next = new Map(previous);
+  const facts = new Set(previous.get(productId));
+  if (expanded) {
+    facts.add(factKey);
+  } else {
+    facts.delete(factKey);
+  }
+  next.set(productId, facts);
+  return next;
+}
+
+function findWalkthroughAlternatives(productId: number, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase("da-DK");
+  return (walkthroughAlternatives.get(productId) ?? []).filter(
+    (candidate) =>
+      candidate.status === "complete" &&
+      (candidate.product.name ?? "")
+        .toLocaleLowerCase("da-DK")
+        .includes(normalizedQuery),
+  );
+}
+
+function walkthroughProductName(item: Review["items"][number]): string {
+  return item.view.status === "complete"
+    ? (item.view.product.name ?? "Product")
+    : "Product";
+}
+
+function walkthroughProgressMessage(busy: boolean, review: Review): string {
+  if (!busy) {
+    return "";
+  }
+  return review.submissionAttempted
+    ? "Saving the whole basket in the simulated provider…"
+    : "Adding the reviewed products in the simulated provider…";
+}
+
+function walkthroughReviewScreen(
+  screen: ViewerScreen,
+  review: Review,
+): ViewerScreen {
+  if (screen.kind !== "review") {
+    return screen;
+  }
+  return { kind: "review", review, active: true };
+}
+
+function canAddOatMilk(
+  busy: boolean,
+  screen: ViewerScreen,
+  review: Review,
+): boolean {
+  return (
+    !busy &&
+    screen.kind === "review" &&
+    !review.submissionAttempted &&
+    !review.items.some((item) => item.product_id === 3)
+  );
+}
+
+type SimulatedHostPanelProps = {
+  busy: boolean;
+  hostMessage: string;
+  currentReview: Review;
+  canSelectOatMilk: boolean;
+  oatMilkActionLabel: string;
+  onLoadSavedLists: () => void;
+  onStartEmptyDraft: () => void;
+  onAddOatMilk: () => void;
+  submitCount: number;
+  saveCount: number;
+  submitRequest?: Array<{ product_id: number; quantity: number }>;
+  basketItems: SimulatedBasketLine[];
+  savedBasketCopies: Record<string, Review["items"]>;
+};
+
+function SimulatedHostPanel({
+  busy,
+  hostMessage,
+  currentReview,
+  canSelectOatMilk,
+  oatMilkActionLabel,
+  onLoadSavedLists,
+  onStartEmptyDraft,
+  onAddOatMilk,
+  submitCount,
+  saveCount,
+  submitRequest,
+  basketItems,
+  savedBasketCopies,
+}: SimulatedHostPanelProps) {
+  const payload = JSON.stringify({
+    addToExisting: true,
+    Products: (submitRequest ?? []).map(({ product_id, quantity }) => ({
+      ProductId: String(product_id),
+      Quantity: quantity,
+    })),
+  });
+
+  return (
+    <section
+      aria-label="Simulated host conversation and provider"
+      style={{ border: "1px solid #d9d9d9", borderRadius: 12, padding: 12 }}
+    >
+      <h2 style={{ marginTop: 0 }}>Simulated host conversation</h2>
+      <p>
+        These controls model ChatGPT tool replies and provider responses. No
+        tools or live Nemlig endpoints are called.
+      </p>
+      <p role="status">{hostMessage}</p>
+      <div>
+        <button type="button" disabled={busy} onClick={onLoadSavedLists}>
+          Load saved shopping lists
+        </button>
+        <button type="button" disabled={busy} onClick={onStartEmptyDraft}>
+          Start a new temporary draft
+        </button>
+      </div>
+      <button type="button" disabled={!canSelectOatMilk} onClick={onAddOatMilk}>
+        {oatMilkActionLabel}
+      </button>
+      <details>
+        <summary>Simulation evidence and provider boundary</summary>
+        <p data-testid="simulated-submit-count">
+          Bulk basket submissions: {submitCount}
+        </p>
+        <p data-testid="simulated-save-count">
+          Whole-basket list saves: {saveCount}
+        </p>
+        <p data-testid="simulated-draft-id">
+          Current draft: {currentReview.draftId}
+        </p>
+        <strong>Existing basket before new submissions</strong>
+        <ul aria-label="Pre-existing basket rows">
+          {existingBasketItems.map(({ item, quantity }) => (
+            <li key={item.product_id}>
+              {quantity} × {walkthroughProductName(item)}
+            </li>
+          ))}
+        </ul>
+        <strong>Original saved source (read-only)</strong>
+        <ul
+          aria-label="Original saved source rows"
+          data-testid="saved-source-snapshot"
+        >
+          {savedSourceItems.map((item) => (
+            <li key={item.product_id}>
+              {item.quantity} × {walkthroughProductName(item)}
+            </li>
+          ))}
+        </ul>
+        <pre data-testid="simulated-submit-payload">{payload}</pre>
+        <ul
+          aria-label="Current simulated basket rows"
+          data-testid="current-basket-rows"
+        >
+          {basketItems.map(({ item, quantity }) => (
+            <li key={item.product_id}>
+              {quantity} × {walkthroughProductName(item)}
+            </li>
+          ))}
+        </ul>
+        {Object.entries(savedBasketCopies).map(([basketId, items]) => (
+          <ul
+            key={basketId}
+            aria-label={`Saved whole-basket snapshot ${basketId}`}
+            data-testid={`saved-basket-snapshot-${basketId}`}
+          >
+            {items.map((item) => (
+              <li key={item.product_id}>
+                {item.quantity} × {walkthroughProductName(item)}
+              </li>
+            ))}
+          </ul>
+        ))}
+      </details>
+    </section>
+  );
+}
+
+function useWalkthroughViewState() {
+  const [screen, setScreen] = useState<ViewerScreen>({ kind: "loading" });
+  const [currentReview, setCurrentReview] = useState(() => directDraft([], 1));
+  const [generation, setGeneration] = useState(1);
+  const [connectionMessage, setConnectionMessage] = useState(
+    "Waiting for a simulated host action…",
+  );
+  const [hostMessage, setHostMessage] = useState(
+    "Synthetic walkthrough only. No MCP tools or live Nemlig requests are used.",
+  );
+  const [destination, setDestination] =
+    useState<Review["destination"]>("ready");
+  const [reviewDisclosures, setReviewDisclosures] = useState<
+    ViewerPageModel["reviewDisclosures"]
+  >(new Map());
+
+  const showReview = (value: Review) => {
+    setCurrentReview(value);
+    setScreen({ kind: "review", review: value, active: true });
+  };
+  const startEmptyDraft = () => {
+    const nextGeneration = generation + 1;
+    setGeneration(nextGeneration);
+    setDestination("ready");
+    showReview(directDraft([], nextGeneration));
+    setHostMessage("Simulated host started a new empty temporary draft.");
+  };
+
+  return {
+    screen,
+    setScreen,
+    currentReview,
+    setCurrentReview,
+    generation,
+    setGeneration,
+    connectionMessage,
+    setConnectionMessage,
+    hostMessage,
+    setHostMessage,
+    destination,
+    setDestination,
+    reviewDisclosures,
+    setReviewDisclosures,
+    showReview,
+    startEmptyDraft,
+  };
+}
+
+type WalkthroughViewState = ReturnType<typeof useWalkthroughViewState>;
+
+function useWalkthroughListState(
+  view: WalkthroughViewState,
+  setBusy: Dispatch<SetStateAction<boolean>>,
+) {
+  const [savedBasketCopies, setSavedBasketCopies] = useState<
+    Record<string, Review["items"]>
+  >({ "44": savedSourceItems });
+  const [savedLists, setSavedLists] = useState([
+    {
+      basketId: "44",
+      nativeShoppingList: true as const,
+      shoppingListName: "Synthetic weekly shop",
+      productCount: savedSourceItems.length,
+      submissionAttempted: false,
+    },
+  ]);
+
+  const loadSavedLists = () => {
+    setBusy(true);
+    view.setConnectionMessage(
+      "Simulated host is loading saved shopping lists…",
+    );
+    view.setScreen({ kind: "loading" });
+    setTimeout(() => {
+      setBusy(false);
+      view.setScreen({ kind: "picker", baskets: savedLists });
+      view.setHostMessage("Simulated provider returned the saved-list picker.");
+    }, 180);
+  };
+  const selectSavedList = (basketId: string) => {
+    const selectedList = savedLists.find((list) => list.basketId === basketId);
+    if (!selectedList) {
+      return;
+    }
+    const sourceItems = savedBasketCopies[basketId] ?? [];
+    setBusy(true);
+    view.setConnectionMessage(
+      `Loading ${selectedList.shoppingListName} into a temporary draft…`,
+    );
+    view.setScreen({ kind: "loading" });
+    setTimeout(() => {
+      const nextGeneration = view.generation + 1;
+      view.setGeneration(nextGeneration);
+      view.setDestination("ready");
+      view.showReview(directDraft(sourceItems, nextGeneration));
+      setBusy(false);
+      view.setHostMessage(
+        `Simulated host copied ${selectedList.shoppingListName} into a temporary draft. The saved source remains unchanged.`,
+      );
+    }, 180);
+  };
+  const saveBasketSnapshot = (items: Review["items"]) => {
+    const basketId = String(44 + savedLists.length);
+    setSavedBasketCopies((snapshots) => ({
+      ...snapshots,
+      [basketId]: items,
+    }));
+    setSavedLists((previous) => [
+      ...previous,
+      {
+        basketId,
+        nativeShoppingList: true as const,
+        shoppingListName: `Synthetic basket snapshot ${basketId}`,
+        productCount: items.length,
+        submissionAttempted: false,
+      },
+    ]);
+  };
+
+  return {
+    savedBasketCopies,
+    savedLists,
+    loadSavedLists,
+    selectSavedList,
+    saveBasketSnapshot,
+  };
+}
+
+function useWalkthroughProviderState(
+  view: WalkthroughViewState,
+  busy: boolean,
+  setBusy: Dispatch<SetStateAction<boolean>>,
+  saveBasketSnapshot: (items: Review["items"]) => void,
+) {
+  const [submitRequest, setSubmitRequest] = useState<
+    Array<{ product_id: number; quantity: number }> | undefined
+  >();
+  const [submitCount, setSubmitCount] = useState(0);
+  const [saveCount, setSaveCount] = useState(0);
+  const [basketItems, setBasketItems] = useState(existingBasketItems);
+
+  const submitReview = () => {
+    if (busy || view.currentReview.submissionAttempted) {
+      return;
+    }
+    const additions = view.currentReview.items.map(
+      ({ product_id, quantity }) => ({ product_id, quantity }),
+    );
+    setSubmitCount((count) => count + 1);
+    setSubmitRequest(additions);
+    setBusy(true);
+    view.setHostMessage(
+      `Simulated AddManyToBasket request #${submitCount + 1}; addToExisting is true.`,
+    );
+    setTimeout(() => {
+      view.showReview(submittedDraft(view.currentReview));
+      setBasketItems((previous) =>
+        addSimulatedBasketRows(previous, view.currentReview.items),
+      );
+      setBusy(false);
+    }, 250);
+  };
+  const saveCurrentBasket = () => {
+    if (busy || view.currentReview.submission?.status !== "submitted") {
+      return;
+    }
+    const wholeBasket = basketItems.map(({ item, quantity }) => ({
+      ...item,
+      quantity,
+    }));
+    setBusy(true);
+    setSaveCount((count) => count + 1);
+    view.setHostMessage(
+      `Simulated CreateShoppingListFromBasket request #${saveCount + 1}; empty request body; entire current basket included.`,
+    );
+    setTimeout(() => {
+      saveBasketSnapshot(wholeBasket);
+      const savedReview: Review = {
+        ...view.currentReview,
+        actionNotice:
+          "Basket save acknowledged by simulated provider. The original saved source was left unchanged.",
+      };
+      view.setCurrentReview(savedReview);
+      view.setScreen({ kind: "review", review: savedReview, active: true });
+      setBusy(false);
+    }, 250);
+  };
+
+  return {
+    submitRequest,
+    submitCount,
+    saveCount,
+    basketItems,
+    submitReview,
+    saveCurrentBasket,
+  };
+}
+
+function directDraft(items: Review["items"], generation: number): Review {
+  return {
+    basketMode: "direct-basket",
+    draftId: `storybook-draft-${generation}`,
+    reviewContextId: `12345678-1234-4234-8234-${String(generation).padStart(12, "0")}`,
+    destination: "ready",
+    items: structuredClone(items),
+  };
+}
+
+function submittedDraft(value: Review): Review {
+  const prepared = prepareReview(value);
+  if (!prepared?.submission) {
+    return value;
+  }
+  return {
+    ...prepared,
+    submissionAttempted: true,
+    submission: {
+      ...prepared.submission,
+      status: "submitted",
+      verified_additions: prepared.submission.review.lines?.length,
+    },
+  };
+}
+
+/** The host and provider replies are visible fixtures; only ViewerPage controls are production UI. */
+function DirectBasketWalkthrough() {
+  const view = useWalkthroughViewState();
+  const [busy, setBusy] = useState(false);
+  const lists = useWalkthroughListState(view, setBusy);
+  const provider = useWalkthroughProviderState(
+    view,
+    busy,
+    setBusy,
+    lists.saveBasketSnapshot,
+  );
+  const {
+    screen,
+    setScreen,
+    currentReview,
+    setCurrentReview,
+    connectionMessage,
+    setConnectionMessage,
+    hostMessage,
+    setHostMessage,
+    destination,
+    setDestination,
+    reviewDisclosures,
+    setReviewDisclosures,
+    startEmptyDraft,
+  } = view;
+  const {
+    submitRequest,
+    submitCount,
+    saveCount,
+    basketItems,
+    submitReview,
+    saveCurrentBasket,
+  } = provider;
+  const { savedLists, savedBasketCopies, loadSavedLists, selectSavedList } =
+    lists;
+  const addOatMilk = () => {
+    setCurrentReview((previous) => {
+      if (previous.items.some(({ product_id }) => product_id === 3)) {
+        return previous;
+      }
+      return {
+        ...previous,
+        items: [
+          ...previous.items,
+          { product_id: 3, quantity: 1, state: "ready", view: oatMilk },
+        ],
+      };
+    });
+    setHostMessage(
+      "Simulated conversation selected 1 × Havredrik øko. for the current draft.",
+    );
+  };
+  const chooseStarterProducts = (prompt: string) => {
+    const chosenIds = starterProductIds(prompt);
+    const chosenItems = review.items
+      .filter((item) => chosenIds.includes(item.product_id))
+      .map((item) => ({ ...item, quantity: 1, state: "ready" as const }));
+    setBusy(true);
+    setConnectionMessage("Simulated host is searching and comparing products…");
+    setScreen({ kind: "loading" });
+    setHostMessage(
+      "Simulated conversation requested product search and comparison.",
+    );
+    setTimeout(() => {
+      setCurrentReview((previous) => {
+        const selectedIds = new Set(
+          previous.items.map((item) => item.product_id),
+        );
+        return {
+          ...previous,
+          items: [
+            ...previous.items,
+            ...chosenItems.filter((item) => !selectedIds.has(item.product_id)),
+          ],
+        };
+      });
+      setScreen({ kind: "review", review: currentReview, active: true });
+      setBusy(false);
+      setHostMessage(
+        `Simulated host selected ${chosenItems.length} product${chosenItems.length === 1 ? "" : "s"} into the temporary draft. No provider write was made.`,
+      );
+    }, 180);
+  };
+  const submit = submitReview;
+  const openPicker = () => {
+    setScreen({ kind: "picker", baskets: savedLists });
+    setHostMessage("Simulated app opened saved shopping lists.");
+  };
+  const onContinueSubmitted = openPicker;
+  const currentScreen = walkthroughReviewScreen(screen, currentReview);
+  const controls = baseProps(currentScreen, {
+    model: {
+      busy,
+      connectionMessage,
+      presentationDestination: destination,
+      message: walkthroughProgressMessage(busy, currentReview),
+      maxWidth: 375,
+      baskets: savedLists,
+      selectedBasketId: undefined,
+      reviewDisclosures,
+      thumbnails: new Map([
+        [milk, dairyMilk],
+        [pasta, lasagneSheets],
+        [oatMilk, oatMilkCarton],
+        [butter, butterPackage],
+        [tomatoes, tomatoesCan],
+      ]),
+    },
+    actions: {
+      onNavigate: setDestination,
+      onFactExpandedChange: (productId, factKey, expanded) =>
+        setReviewDisclosures((previous) =>
+          toggleFactDisclosure(previous, productId, factKey, expanded),
+        ),
+      onRefresh: () =>
+        setHostMessage("Simulated host refreshed the current draft."),
+      onOpenPicker: openPicker,
+      onAbandonDraft: () => {
+        setHostMessage(
+          "Discarded the temporary draft; the basket is unchanged.",
+        );
+        openPicker();
+      },
+      onSaveCurrentBasketAsShoppingList: saveCurrentBasket,
+      onSelectBasket: selectSavedList,
+      onQuantity: (item, quantity) =>
+        setCurrentReview((previous) =>
+          updateQuantity(previous, item.product_id, quantity),
+        ),
+      onRemove: (item) =>
+        setCurrentReview((previous) => removeItem(previous, item.product_id)),
+      onOpenAlternatives: (item, query) => {
+        setCurrentReview((previous) =>
+          alternativesFor(
+            previous,
+            item.product_id,
+            query,
+            walkthroughAlternatives.get(item.product_id) ?? [],
+          ),
+        );
+        setDestination("alternatives");
+      },
+      onSearchAlternatives: (productId, query) =>
+        setCurrentReview((previous) =>
+          alternativesFor(
+            previous,
+            productId,
+            query,
+            findWalkthroughAlternatives(productId, query),
+          ),
+        ),
+      onReplace: (productId, replacementId) => {
+        setCurrentReview((previous) =>
+          replaceWithAlternative(previous, productId, replacementId),
+        );
+        setDestination("ready");
+      },
+      onDiscardPendingUpdate: noop,
+      onUseConfirmedProducts: noop,
+      onSubmit: submit,
+      onConfirmSubmit: submit,
+      onContinueSubmitted,
+      onInspectBasket: () =>
+        setHostMessage("Simulated host opened the existing basket view."),
+      onDismissSubmitError: noop,
+      onSendFollowUp: chooseStarterProducts,
+    },
+  });
+  controls.model.screen = currentScreen;
+
+  return (
+    <div
+      style={{
+        display: "grid",
+        gap: 12,
+        margin: "0 auto",
+        maxWidth: 620,
+        padding: 16,
+      }}
+    >
+      <SimulatedHostPanel
+        busy={busy}
+        hostMessage={hostMessage}
+        currentReview={currentReview}
+        canSelectOatMilk={canAddOatMilk(busy, screen, currentReview)}
+        oatMilkActionLabel={
+          currentReview.items.some((item) => item.product_id === 3)
+            ? "Havredrik øko. is already in this draft"
+            : "Simulate conversation selection: add Havredrik øko."
+        }
+        onLoadSavedLists={loadSavedLists}
+        onStartEmptyDraft={startEmptyDraft}
+        onAddOatMilk={addOatMilk}
+        submitCount={submitCount}
+        saveCount={saveCount}
+        submitRequest={submitRequest}
+        basketItems={basketItems}
+        savedBasketCopies={savedBasketCopies}
+      />
+      <section aria-label="Simulated Nemlig app tab">
+        <ViewerPage {...controls} />
+      </section>
+    </div>
+  );
+}
+
 const meta = {
   title: "Picker/Visual contract",
   parameters: {
     docs: {
       description: {
         component:
-          "AppTabWalkthrough, Alternatives, FactualDetails, submission, and empty-state walkthroughs are interactive local fixtures. The remaining state stories are visual snapshots. None initialize MCP, call tools, or contact Nemlig.",
+          "AppTabWalkthrough is the primary simulated host-to-viewer journey. It uses the production ViewerPage with local host/provider fixtures and never initializes MCP, calls tools, or contacts Nemlig. Other stories are focused local interactions or visual snapshots.",
       },
     },
   },
@@ -683,7 +1334,201 @@ type Story = StoryObj<typeof meta>;
 
 export const AppTabWalkthrough: Story = {
   decorators: [appTab],
-  render: () => <ShoppingListWalkthroughStory />,
+  render: () => <DirectBasketWalkthrough />,
+  parameters: {
+    docs: {
+      description: {
+        story:
+          "Manual local journey: load a saved source into a temporary draft, simulate a host product selection, edit through ViewerPage, explicitly submit, save the whole simulated basket, then open the unchanged source as a fresh draft.",
+      },
+    },
+  },
+};
+export const AppTabWalkthroughChecks: Story = {
+  decorators: [appTab],
+  render: () => <DirectBasketWalkthrough />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Load saved shopping lists" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Open shopping list Synthetic weekly shop",
+      }),
+    );
+    await canvas.findByRole("heading", { name: "Temporary basket draft" });
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Simulate conversation selection: add Havredrik øko.",
+      }),
+    );
+
+    const milkRow = canvas.getByRole("group", { name: "Arla ØKO Minimælk" });
+    await userEvent.click(
+      within(milkRow).getByRole("button", {
+        name: "Show details for Arla ØKO Minimælk",
+      }),
+    );
+    const documentCanvas = within(canvasElement.ownerDocument.body);
+    const milkDetails = await documentCanvas.findByRole("dialog");
+    await userEvent.click(
+      within(milkDetails).getByRole("button", {
+        name: "Increase quantity of Arla ØKO Minimælk",
+      }),
+    );
+    await userEvent.click(
+      within(milkDetails).getByRole("button", {
+        name: "Back to shopping list",
+      }),
+    );
+
+    const butterSummary = canvas.getByRole("button", {
+      name: "Show details for Lurpak Smørbar",
+    });
+    await fireEvent.keyDown(butterSummary, { key: "F10", shiftKey: true });
+    const butterActions = await canvas.findByRole("group", {
+      name: "Actions for Lurpak Smørbar",
+    });
+    await userEvent.click(
+      within(butterActions).getByRole("button", { name: "Remove product" }),
+    );
+
+    const milkSummary = canvas.getByRole("button", {
+      name: "Show details for Arla ØKO Minimælk",
+    });
+    await fireEvent.keyDown(milkSummary, { key: "F10", shiftKey: true });
+    const milkActions = await canvas.findByRole("group", {
+      name: "Actions for Arla ØKO Minimælk",
+    });
+    await userEvent.click(
+      within(milkActions).getByRole("button", { name: "Find alternatives" }),
+    );
+    await canvas.findByRole("heading", { name: "Find an alternative" });
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Use Lasagneplader øko. as the alternative",
+      }),
+    );
+    await canvas.findByRole("group", { name: "Lasagneplader øko." });
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Add to Nemlig basket" }),
+    );
+    await canvas.findByRole("heading", {
+      name: "Nemlig confirmed the addition",
+    });
+    await userEvent.click(
+      canvas.getByText("Simulation evidence and provider boundary"),
+    );
+    expect(canvas.getByTestId("simulated-submit-count").textContent).toContain(
+      "1",
+    );
+    expect(
+      canvas.getByTestId("simulated-submit-payload").textContent,
+    ).toContain('"addToExisting":true');
+    expect(canvas.getByTestId("current-basket-rows").textContent).toContain(
+      "Hakkede tomater",
+    );
+
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Save current basket as shopping list",
+      }),
+    );
+    await canvas.findByText(/Basket save acknowledged by simulated provider/u);
+    expect(canvas.getByTestId("simulated-save-count").textContent).toContain(
+      "1",
+    );
+    expect(
+      canvas.getByTestId("saved-basket-snapshot-45").textContent,
+    ).toContain("Hakkede tomater");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Choose saved shopping lists" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Open shopping list Synthetic weekly shop",
+      }),
+    );
+    await canvas.findByRole("heading", { name: "Temporary basket draft" });
+    expect(canvas.getByTestId("simulated-draft-id").textContent).toContain(
+      "storybook-draft-3",
+    );
+    expect(
+      canvas.getByRole("group", { name: "Arla ØKO Minimælk" }),
+    ).toBeTruthy();
+    expect(canvas.getByRole("group", { name: "Lurpak Smørbar" })).toBeTruthy();
+    expect(canvas.queryByRole("group", { name: "Havredrik øko." })).toBeNull();
+    expect(canvas.getByTestId("simulated-submit-count").textContent).toContain(
+      "1",
+    );
+    await waitFor(() =>
+      expect(canvas.getByTestId("saved-source-snapshot").textContent).toContain(
+        "Lurpak Smørbar",
+      ),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Start a new temporary draft" }),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Simulate conversation selection: add Havredrik øko.",
+      }),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Add to Nemlig basket" }),
+    );
+    await canvas.findByRole("heading", {
+      name: "Nemlig confirmed the addition",
+    });
+    expect(canvas.getByTestId("simulated-submit-count").textContent).toContain(
+      "2",
+    );
+    const finalBasketRows = canvas.getByTestId(
+      "current-basket-rows",
+    ).textContent;
+    expect(finalBasketRows).toContain("Hakkede tomater");
+    expect(finalBasketRows).toContain("Lasagneplader øko.");
+    expect(finalBasketRows).toContain("Havredrik øko.");
+
+    await userEvent.click(
+      canvas.getByRole("button", {
+        name: "Save current basket as shopping list",
+      }),
+    );
+    await canvas.findByText(/Basket save acknowledged by simulated provider/u);
+    expect(canvas.getByTestId("simulated-save-count").textContent).toContain(
+      "2",
+    );
+    expect(
+      canvas.getByTestId("saved-basket-snapshot-46").textContent,
+    ).toContain("Lasagneplader øko.");
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Choose saved shopping lists" }),
+    );
+    await userEvent.click(
+      await canvas.findByRole("button", {
+        name: "Open shopping list Synthetic basket snapshot 46",
+      }),
+    );
+    await canvas.findByRole("group", { name: "Hakkede tomater" });
+    await canvas.findByRole("group", { name: "Lasagneplader øko." });
+
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Start a new temporary draft" }),
+    );
+    await userEvent.click(
+      canvas.getByRole("button", { name: "Plan groceries for the week" }),
+    );
+    await canvas.findByRole("group", { name: "Arla ØKO Minimælk" });
+    await canvas.findByRole("group", { name: "Lasagneplader øko." });
+    expect(canvas.getByTestId("simulated-submit-count").textContent).toContain(
+      "2",
+    );
+  },
 };
 export const ShoppingListWalkthrough: Story = {
   decorators: [embeddedConversation],
