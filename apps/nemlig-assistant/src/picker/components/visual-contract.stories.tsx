@@ -1375,6 +1375,16 @@ export const AppTabWalkthroughChecks: Story = {
   render: () => <DirectBasketWalkthrough />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const waitForConfirmedAddition = () =>
+      waitFor(
+        () =>
+          expect(
+            canvas.getByRole("heading", {
+              name: "Nemlig confirmed the addition",
+            }),
+          ).toBeTruthy(),
+        { timeout: 3000, interval: 50 },
+      );
     const fiveProductRequest = canvas.getByRole("button", {
       name: "Simulate asking ChatGPT for five products",
     });
@@ -1474,9 +1484,7 @@ export const AppTabWalkthroughChecks: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Add to Nemlig basket" }),
     );
-    await canvas.findByRole("heading", {
-      name: "Nemlig confirmed the addition",
-    });
+    await waitForConfirmedAddition();
     await userEvent.click(
       canvas.getByText("Simulation evidence and provider boundary"),
     );
@@ -1539,9 +1547,7 @@ export const AppTabWalkthroughChecks: Story = {
     await userEvent.click(
       canvas.getByRole("button", { name: "Add to Nemlig basket" }),
     );
-    await canvas.findByRole("heading", {
-      name: "Nemlig confirmed the addition",
-    });
+    await waitForConfirmedAddition();
     expect(canvas.getByTestId("simulated-submit-count").textContent).toContain(
       "2",
     );
