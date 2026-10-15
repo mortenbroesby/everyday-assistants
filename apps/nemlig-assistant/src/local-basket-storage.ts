@@ -6,8 +6,42 @@ import {
 
 const REVIEW_OPERATION_INDEX_KEY = "owner-review-operation-index";
 const REVIEW_OPERATION_RETENTION_MS = 2 * 60 * 60 * 1000;
+// Direct drafts are process-local: active drafts keep their own terminal guard,
+// and a restarted service cannot rehydrate an old draft after this receipt expires.
+const DIRECT_SUBMIT_PREFIX = "direct-basket-submit:";
 const PENDING_SAVE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const MAX_DURABLE_VALUE_BYTES = 1024 * 1024;
+
+const isBoundedDirectReceipt = (operation: ReviewOperation): boolean =>
+  operation.kind === "basket-save" ||
+  (operation.kind === "submit" &&
+    operation.operationId.startsWith(DIRECT_SUBMIT_PREFIX));
+
+const normalizeReviewOperation = (
+  operation: ReviewOperation,
+  now: number,
+): ReviewOperation => {
+  if (
+    isBoundedDirectReceipt(operation) &&
+    operation.completed === true &&
+    operation.completedUntil === undefined
+  ) {
+    return {
+      ...operation,
+      completedUntil:
+        (operation.createdAt ?? now) + REVIEW_OPERATION_RETENTION_MS,
+    };
+  }
+  if (
+    operation.kind === "save" &&
+    !operation.createAttempted &&
+    operation.listId === undefined &&
+    operation.createdAt === undefined
+  ) {
+    operation = { ...operation, createdAt: now };
+  }
+  return operation;
+};
 
 export interface LocalBasketStorageAccess {
   get<T>(key: string): Promise<T | undefined>;
@@ -69,14 +103,7 @@ export const mutateOwnerLocalBasketInventory = async (
       throw new Error("Review operation is unavailable.");
     }
     const operations = (index?.operations ?? [])
-      .map((operation) =>
-        operation.kind === "save" &&
-        !operation.createAttempted &&
-        operation.listId === undefined &&
-        operation.createdAt === undefined
-          ? { ...operation, createdAt: now }
-          : operation,
-      )
+      .map((operation) => normalizeReviewOperation(operation, now))
       .filter((operation) => {
         if (operation.completedUntil !== undefined) {
           return operation.completedUntil > now;
@@ -170,8 +197,13 @@ export const mutateOwnerLocalBasketInventory = async (
         return false;
       }
       if (current) {
-        const completed =
-          current.kind === "submit"
+        const completed = isBoundedDirectReceipt(current)
+          ? {
+              ...current,
+              completed: true,
+              completedUntil: now + REVIEW_OPERATION_RETENTION_MS,
+            }
+          : current.kind === "submit"
             ? { ...current, completed: true }
             : {
                 ...current,
@@ -206,10 +238,15 @@ export const mutateOwnerLocalBasketInventory = async (
       current.accountIdentity === operation.accountIdentity &&
       current.listId === operation.listId &&
       sameReviewItems(current.items, operation.items);
+    const completedBasketSave =
+      current?.kind === "basket-save" &&
+      current.completed === true &&
+      operation.kind === "basket-save";
     const replaceCompleted =
       (current?.completed === true ||
         current?.completedUntil !== undefined ||
         (current?.kind === "submit" && !current.dispatchAttempted)) &&
+      !completedBasketSave &&
       operation.generation !== current.generation &&
       !sameCompletedSubmission;
     if (

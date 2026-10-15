@@ -51,12 +51,12 @@ export function ShoppingListStarters({
   onChoose: (prompt: string) => void;
 }) {
   return (
-    <OutcomeSurface title="Start a Nemlig shopping list">
+    <OutcomeSurface title="Start a grocery draft">
       <p>
-        Search and compare products without changing Nemlig. When you choose
-        products, they are added to a named Nemlig shopping list and edits save
-        as you make them. Adding that list to the actual Nemlig basket is a
-        separate action.
+        Search and compare products without changing Nemlig. Chosen products
+        stay in a temporary draft. Only an explicit Submit adds the approved
+        quantities to your existing basket in one request. Saved shopping lists
+        can be loaded as read-only sources; draft edits do not change them.
       </p>
       {message && <p role="status">{message}</p>}
       <Actions>
@@ -64,7 +64,7 @@ export function ShoppingListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me plan groceries for the week. Search and compare products first. When I choose products, create a named Nemlig shopping list and save my edits there automatically. Do not add anything to the actual basket.",
+              "Help me plan groceries for the week. Search and compare products first. Keep my choices in a temporary draft. When I explicitly submit, add the approved quantities to my existing Nemlig basket in one request. Do not create or edit a shopping list.",
             )
           }
         >
@@ -74,7 +74,7 @@ export function ShoppingListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find ingredients for dinner. Search and compare products first. When I choose products, create a named Nemlig shopping list and save my edits there automatically. Do not add anything to the actual basket.",
+              "Help me find ingredients for dinner. Search and compare products first. When I choose products, prepare a temporary draft that I can edit before explicitly adding it to my basket.",
             )
           }
         >
@@ -84,7 +84,7 @@ export function ShoppingListStarters({
           color="secondary"
           onClick={() =>
             onChoose(
-              "Help me find a product. Search and compare options first. When I choose a product, create a Nemlig shopping list and save edits there automatically. Do not add anything to the actual basket.",
+              "Help me find a product. Search and compare options first. When I choose a product, prepare a temporary draft that I can edit before explicitly adding it to my basket.",
             )
           }
         >

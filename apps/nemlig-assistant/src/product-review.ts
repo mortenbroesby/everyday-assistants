@@ -10,6 +10,7 @@ import {
   ProductNotFoundError,
   shoppingListFingerprint,
   type Basket,
+  type BasketAddition,
   type ShoppingList,
   type ShoppingListOverview,
   type ShoppingListClient,
@@ -38,6 +39,30 @@ const reviewItemInputs = (items: ShoppingList["items"]) =>
     product_id: productId,
     quantity,
   }));
+const reviewOperationItems = (
+  items: ReadonlyArray<{ productId: number; quantity: number }>,
+) => items.map(({ productId, quantity }) => ({ productId, quantity }));
+const basketOperationItems = (basket: Basket) => {
+  const seen = new Set<number>();
+  const items: Array<{ productId: number; quantity: number }> = [];
+  for (const item of basket.items) {
+    if (
+      !validPositive(item.id ?? 0) ||
+      !Number.isSafeInteger(item.quantity) ||
+      item.quantity! < 0 ||
+      seen.has(item.id!)
+    ) {
+      throw new NemligError(
+        "The current basket cannot be bound safely to a provider write.",
+      );
+    }
+    seen.add(item.id!);
+    if (item.quantity! > 0) {
+      items.push({ productId: item.id!, quantity: item.quantity! });
+    }
+  }
+  return items;
+};
 const sameQuantities = (
   left: Map<number, number>,
   right: Map<number, number>,
@@ -121,6 +146,7 @@ interface ReviewItem {
   view: ProductView;
 }
 export interface ProductReviewSnapshot {
+  basketMode?: "native-list" | "direct-basket";
   draftId?: string;
   draftExpiresAt?: number;
   shoppingListId?: number;
@@ -174,6 +200,7 @@ interface StoredReview {
   nativeFingerprint?: string;
   nativeItems?: Array<{ productId: number; quantity: number }>;
   createAttempted?: boolean;
+  directBasketSaveAttempted?: boolean;
   operationGeneration?: string;
   completedDraftId?: string;
   completedListId?: number;
@@ -181,6 +208,21 @@ interface StoredReview {
   snapshot: ProductReviewSnapshot;
   proposalId?: string;
 }
+const markReviewSubmissionUncertain = (
+  stored: StoredReview,
+  submissionId: string,
+  expiresAt: string,
+  notice: string,
+): void => {
+  stored.snapshot.submission = {
+    submission_id: submissionId,
+    status: "uncertain",
+    expires_at: expiresAt,
+    review: {},
+  };
+  stored.snapshot.submissionAttempted = true;
+  stored.snapshot.actionNotice = notice;
+};
 type ShoppingListCreationIntent = {
   id: string;
   accountIdentity: string;
@@ -204,7 +246,13 @@ type ReviewProposals = Pick<
     >
   >;
 type ReviewClient = ProductDiscoveryClient &
-  Partial<ShoppingListClient & Pick<ShoppingClient, "getCart">>;
+  Partial<
+    ShoppingListClient &
+      Pick<
+        ShoppingClient,
+        "getCart" | "addManyToCart" | "createShoppingListFromBasket"
+      >
+  >;
 export type ReviewJournalCommand = Extract<
   LocalBasketCommand,
   { kind: `review-operation-${string}` }
@@ -243,7 +291,8 @@ const completeReviewOperation = async (
   const completed = await journal.read(operation.operationId);
   if (
     completed?.generation !== operation.generation ||
-    completed.completedUntil === undefined
+    (completed.completedUntil === undefined &&
+      !(operation.kind === "basket-save" && completed.completed === true))
   ) {
     throw new NemligError(failureMessage);
   }
@@ -295,6 +344,27 @@ const failNativeSubmission = (
 };
 const validPositive = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
+
+const directDraftItemsFromShoppingList = (
+  items: ShoppingList["items"],
+): Array<{ product_id: number; quantity: number }> => {
+  const draftItems = reviewItemInputs(items);
+  if (
+    !draftItems.length ||
+    draftItems.length > MAX_DRAFT_PRODUCTS ||
+    new Set(draftItems.map(({ product_id }) => product_id)).size !==
+      draftItems.length ||
+    draftItems.some(
+      ({ product_id, quantity }) =>
+        !validPositive(product_id) || !validPositive(quantity),
+    )
+  ) {
+    throw new NemligError(
+      "The selected shopping list has invalid or unsupported product rows and was not loaded.",
+    );
+  }
+  return draftItems;
+};
 const available = (view: ProductView): boolean =>
   view.status === "complete" && view.product.available === true;
 /** Private, bounded, temporary state. Local edits cannot call a provider mutation. */
@@ -307,11 +377,16 @@ export class ProductReviewService {
 
   constructor(
     private readonly client: ReviewClient,
-    options: { now?: () => number; proposals?: ReviewProposals } = {},
+    options: {
+      now?: () => number;
+      proposals?: ReviewProposals;
+    } = {},
   ) {
     this.proposals = options.proposals;
     this.now = options.now ?? Date.now;
   }
+
+  readonly directBasketMode = true;
 
   private touch(owner: string, stored: StoredReview): void {
     this.drafts.delete(owner);
@@ -520,17 +595,23 @@ export class ProductReviewService {
   reviewContextOwner(reviewContextId: string):
     | {
         owner: string;
-        shoppingListId: number;
+        shoppingListId?: number;
+        draftId?: string;
       }
     | undefined {
     this.pruneExpiredReviews();
     for (const [owner, stored] of this.drafts) {
-      const shoppingListId = stored.snapshot.shoppingListId;
+      const { shoppingListId, draftId } = stored.snapshot;
       if (
         stored.snapshot.reviewContextId === reviewContextId &&
-        shoppingListId !== undefined
+        (shoppingListId !== undefined ||
+          (stored.snapshot.basketMode === "direct-basket" && draftId))
       ) {
-        return { owner, shoppingListId };
+        return {
+          owner,
+          ...(shoppingListId === undefined ? {} : { shoppingListId }),
+          ...(draftId === undefined ? {} : { draftId }),
+        };
       }
     }
     return undefined;
@@ -548,6 +629,7 @@ export class ProductReviewService {
     owner: string,
     items: Array<{ product_id: number; quantity: number }>,
     signal?: AbortSignal,
+    basketMode: ProductReviewSnapshot["basketMode"] = "native-list",
   ): Promise<ProductReviewSnapshot> {
     if (!items.length) {
       throw new NemligError(
@@ -585,31 +667,57 @@ export class ProductReviewService {
         this.expireDraft(owner, active);
         active = undefined;
       } else {
-        if (active.snapshot.draftId) {
+        if (active?.snapshot.draftId) {
+          if (active.snapshot.basketMode !== basketMode) {
+            throw new NemligError(
+              "This review belongs to a different basket mode. Refresh before continuing.",
+            );
+          }
           const activeIds = active.snapshot.items
             .map(({ product_id }) => product_id)
             .sort((a, b) => a - b);
           const requestedIds = items
             .map(({ product_id }) => product_id)
             .sort((a, b) => a - b);
+          const sameIntent =
+            activeIds.length === requestedIds.length &&
+            activeIds.every((id, index) => id === requestedIds[index]) &&
+            (basketMode !== "direct-basket" ||
+              items.every((item) =>
+                active?.snapshot.items.some(
+                  (current) =>
+                    current.product_id === item.product_id &&
+                    current.quantity === item.quantity,
+                ),
+              ));
+          if (sameIntent) {
+            const alreadySubmittedDirectDraft =
+              basketMode === "direct-basket" &&
+              active.snapshot.submissionAttempted === true &&
+              active.snapshot.submission?.status === "submitted";
+            if (!alreadySubmittedDirectDraft) {
+              this.touch(owner, active);
+              return structuredClone(active.snapshot);
+            }
+          }
           if (
-            activeIds.length !== requestedIds.length ||
-            activeIds.some((id, index) => id !== requestedIds[index])
+            basketMode !== "direct-basket" ||
+            active.snapshot.basketMode !== "direct-basket" ||
+            this.isProtected(active)
           ) {
             throw new NemligError(
               "A shopping-list creation is already in progress for this selection. Resolve it before starting another list.",
             );
           }
-          this.touch(owner, active);
-          return structuredClone(active.snapshot);
         }
         if (
-          active.snapshot.shoppingListDirty ||
-          active.snapshot.updateStatus !== undefined ||
-          active.snapshot.saveStatus !== "saved" ||
-          active.snapshot.submission?.status === "uncertain" ||
-          active.snapshot.submission?.status === "partial" ||
-          active.snapshot.submission?.status === "prepared"
+          active.snapshot.basketMode !== "direct-basket" &&
+          (active.snapshot.shoppingListDirty ||
+            active.snapshot.updateStatus !== undefined ||
+            active.snapshot.saveStatus !== "saved" ||
+            active.snapshot.submission?.status === "uncertain" ||
+            active.snapshot.submission?.status === "partial" ||
+            active.snapshot.submission?.status === "prepared")
         ) {
           throw new NemligError(
             "The saved shopping list has pending or unconfirmed changes. Reopen it and resolve them before starting a different draft.",
@@ -627,6 +735,7 @@ export class ProductReviewService {
       const rows = await this.readItems(items, signal);
       const createdAt = this.now();
       const snapshot: ProductReviewSnapshot = {
+        basketMode,
         draftId: randomUUID(),
         draftExpiresAt: createdAt + DRAFT_IDLE_TIMEOUT_MS,
         destination: "ready",
@@ -646,6 +755,100 @@ export class ProductReviewService {
     } finally {
       this.startingOwners.delete(owner);
     }
+  }
+
+  async startDirectBasket(
+    owner: string,
+    items: Array<{ product_id: number; quantity: number }>,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    if (!this.directBasketMode) {
+      throw new NemligError("Direct basket mode is disabled.");
+    }
+    if (!this.client.providerIdentity) {
+      throw new NemligError("Direct basket identity is unavailable.");
+    }
+    const accountIdentity = this.client.providerIdentity();
+    const current = this.drafts.get(owner);
+    if (
+      current?.snapshot.basketMode === "direct-basket" &&
+      current.accountIdentity !== accountIdentity &&
+      this.active(owner)
+    ) {
+      throw new NemligError(
+        "Reconnect to the Nemlig account that owns this direct basket draft.",
+      );
+    }
+    const snapshot = await this.start(owner, items, signal, "direct-basket");
+    const stored = this.get(owner, snapshot.draftId);
+    if (
+      stored.accountIdentity !== undefined &&
+      stored.accountIdentity !== accountIdentity
+    ) {
+      throw new NemligError(
+        "Nemlig account changed while preparing the direct basket draft.",
+      );
+    }
+    stored.accountIdentity = accountIdentity;
+    stored.snapshot.reviewContextId ??= randomUUID();
+    this.touch(owner, stored);
+    return structuredClone(stored.snapshot);
+  }
+
+  async loadShoppingListIntoDirectBasket(
+    owner: string,
+    shoppingListId: number,
+    signal?: AbortSignal,
+  ): Promise<ProductReviewSnapshot> {
+    const { source, accountIdentity } = await this.readSavedListSource(
+      shoppingListId,
+      signal,
+    );
+    const items = directDraftItemsFromShoppingList(source.items);
+    const current = this.active(owner);
+    if (
+      current?.basketMode === "direct-basket" &&
+      current.submission?.status === "submitted"
+    ) {
+      this.end(owner, current.draftId);
+    }
+    const draft = await this.startDirectBasket(owner, items, signal);
+    if (this.client.providerIdentity!() !== accountIdentity) {
+      this.end(owner, draft.draftId);
+      throw new NemligError(
+        "Nemlig account changed while binding the loaded list to a temporary draft.",
+      );
+    }
+    const stored = this.get(owner, draft.draftId);
+    stored.snapshot.shoppingListName = source.name;
+    stored.snapshot.actionNotice = `Loaded ${source.name} into a temporary draft. The saved shopping list remains unchanged.`;
+    this.touch(owner, stored);
+    return structuredClone(stored.snapshot);
+  }
+
+  private async readSavedListSource(
+    shoppingListId: number,
+    signal?: AbortSignal,
+  ): Promise<{ source: ShoppingList; accountIdentity: string }> {
+    if (!validPositive(shoppingListId) || !this.client.getShoppingList) {
+      throw new NemligError("The selected shopping list cannot be loaded.");
+    }
+    if (!this.client.providerIdentity) {
+      throw new NemligError("Nemlig account identity is unavailable.");
+    }
+    const accountIdentity = this.client.providerIdentity();
+    const source = await this.client.getShoppingList(shoppingListId, signal);
+    if (this.client.providerIdentity() !== accountIdentity) {
+      throw new NemligError(
+        "Nemlig account changed while loading the saved shopping list.",
+      );
+    }
+    if (source.id !== shoppingListId) {
+      throw new NemligError(
+        "Nemlig returned a different shopping list than the selected source.",
+      );
+    }
+    return { source, accountIdentity };
   }
 
   // Account, busy, and replay checks surround asynchronous reads. Keep that order
@@ -825,7 +1028,7 @@ export class ProductReviewService {
       }
       this.drafts.delete(owner);
     }
-    await this.start(owner, items, signal);
+    await this.start(owner, items, signal, "native-list");
     const stored = this.get(owner);
     if (!stored.snapshot.draftId) {
       throw new NemligError(
@@ -2473,6 +2676,14 @@ export class ProductReviewService {
     expectedDraftId?: string,
     journal?: ReviewOperationJournal,
   ): Promise<ProductReviewSnapshot> {
+    if (
+      this.active(owner, expectedDraftId)?.basketMode === "direct-basket" &&
+      (action.kind === "save" || action.kind === "update")
+    ) {
+      throw new NemligError(
+        "Direct basket drafts are temporary and cannot be saved as a list.",
+      );
+    }
     if (action.kind === "save") {
       return this.save(owner, action.name, expectedDraftId, signal, journal);
     }
@@ -2482,6 +2693,17 @@ export class ProductReviewService {
       );
     }
     const stored = this.lock(owner, expectedDraftId);
+    if (
+      stored.snapshot.basketMode === "direct-basket" &&
+      stored.snapshot.submissionAttempted === true &&
+      stored.snapshot.submission?.status === "submitted" &&
+      action.kind !== "navigate"
+    ) {
+      stored.busy = false;
+      throw new NemligError(
+        "This direct basket draft has already been submitted. Start a new draft before making further changes.",
+      );
+    }
     // Commit only after all validation and reads succeed, so bulk actions are atomic.
     const draft = structuredClone(stored.snapshot);
     const submissionSelection = (items: ReviewItem[]) =>
@@ -3034,14 +3256,8 @@ export class ProductReviewService {
         cleanupStatus: "pending",
         name: list.name,
         listId,
-        items: list.items.map(({ productId, quantity }) => ({
-          productId,
-          quantity,
-        })),
-        baseline: baseline.items.map((item) => ({
-          productId: item.id!,
-          quantity: item.quantity!,
-        })),
+        items: reviewOperationItems(list.items),
+        baseline: basketOperationItems(baseline),
       },
     };
   }
@@ -3065,18 +3281,17 @@ export class ProductReviewService {
     if (pending?.generation !== submissionId || !pending.dispatchAttempted) {
       throw error;
     }
-    stored.snapshot.submission = {
-      submission_id: submissionId,
-      status: "uncertain",
-      expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
-      review: {},
-    };
-    stored.snapshot.submissionAttempted = true;
-    stored.snapshot.actionNotice =
+    const notice =
       error instanceof NativeTransferUnconfirmedError
         ? error.message
         : "Basket transfer may have completed. Inspect the actual Nemlig basket; do not submit again.";
-    throw new NemligError(stored.snapshot.actionNotice);
+    markReviewSubmissionUncertain(
+      stored,
+      submissionId,
+      new Date(this.now() + 15 * 60 * 1000).toISOString(),
+      notice,
+    );
+    throw new NemligError(notice);
   }
 
   // The destructive cleanup decision depends on ordered readback and receipt checks.
@@ -3309,6 +3524,312 @@ export class ProductReviewService {
       return failNativeSubmission(stage, error);
     } finally {
       if (stored) {
+        stored.busy = false;
+      }
+    }
+  }
+
+  // Keep review binding, dispatch claim, account check, receipt, and uncertainty
+  // transition together so no caller can accidentally split the no-replay flow.
+  // fallow-ignore-next-line complexity
+  async submitDirectBasket(
+    owner: string,
+    draftId: string,
+    submissionId: string,
+    reviewedItems: Array<{ product_id: number; quantity: number }>,
+    signal: AbortSignal | undefined,
+    journal: ReviewOperationJournal | undefined,
+  ): Promise<{ review?: ProductReviewSnapshot; result: ApplyResult }> {
+    if (!this.directBasketMode || !isUuid(draftId) || !isUuid(submissionId)) {
+      throw new NemligError("Direct basket submission target is invalid.");
+    }
+    if (
+      !journal ||
+      !this.client.getCart ||
+      !this.client.providerIdentity ||
+      !this.client.addManyToCart
+    ) {
+      throw new NemligError("Direct basket submission service unavailable.");
+    }
+    const operationId = `direct-basket-submit:${draftId}`;
+    if (
+      !reviewedItems.length ||
+      reviewedItems.some(
+        ({ product_id, quantity }) =>
+          !validPositive(product_id) || !validPositive(quantity),
+      ) ||
+      new Set(reviewedItems.map(({ product_id }) => product_id)).size !==
+        reviewedItems.length
+    ) {
+      throw new NemligError("The reviewed direct basket payload is invalid.");
+    }
+    const prior = await journal.read(operationId);
+    if (prior) {
+      if (
+        prior.accountIdentity !== this.client.providerIdentity() ||
+        !sameShoppingListItems(
+          prior.items,
+          reviewedItems.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+        )
+      ) {
+        throw new NemligError(
+          "This direct basket receipt does not match the connected account and exact reviewed products.",
+        );
+      }
+      if (prior.completed) {
+        const basket = await this.client.getCart(signal);
+        return {
+          result: {
+            status: "completed",
+            operation: "additions",
+            replayed: true,
+            basket: {
+              items: basket.items,
+              products_price: basket.productsPrice,
+              delivery_price: basket.deliveryPrice,
+              number_of_products: basket.numberOfProducts,
+              delivery_time: basket.deliveryTime,
+            },
+          },
+        };
+      }
+      throw new NativeTransferUnconfirmedError(
+        "A previous direct basket submission may have completed. Inspect the actual basket; this draft will not be submitted again.",
+      );
+    }
+    const stored = this.lock(owner, draftId);
+    let dispatchClaimed = false;
+    try {
+      if (stored.snapshot.submissionAttempted) {
+        throw new NativeTransferUnconfirmedError(
+          stored.snapshot.submission?.status === "submitted"
+            ? "This direct basket draft was already submitted. Start a new draft for another deliberate addition."
+            : "A previous direct basket submission may have completed. Inspect the actual basket; do not submit this draft again.",
+        );
+      }
+      if (
+        stored.snapshot.basketMode !== "direct-basket" ||
+        !stored.snapshot.reviewContextId ||
+        !sameShoppingListItems(
+          stored.snapshot.items.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+          reviewedItems.map(({ product_id, quantity }) => ({
+            productId: product_id,
+            quantity,
+          })),
+        ) ||
+        reviewedItems.length !== stored.snapshot.items.length
+      ) {
+        throw new NemligError(
+          "The direct basket draft changed after review. Refresh and review its exact products and quantities before submitting.",
+        );
+      }
+      const accountIdentity = this.client.providerIdentity();
+      if (stored.accountIdentity !== accountIdentity) {
+        throw new NemligError(
+          "Nemlig account changed while this draft was open. Refresh before submitting.",
+        );
+      }
+      const additions: BasketAddition[] = reviewedItems.map(
+        ({ product_id, quantity }) => ({ productId: product_id, quantity }),
+      );
+      const basket = await this.client.addManyToCart(additions, {
+        signal,
+        beforeDispatch: async (baseline) => {
+          if (this.client.providerIdentity!() !== accountIdentity) {
+            throw new NemligError(
+              "Nemlig account changed before direct basket submission. No basket write was sent.",
+            );
+          }
+          const operation: ReviewOperation = {
+            operationId,
+            generation: submissionId,
+            accountIdentity,
+            kind: "submit",
+            name: "Direct basket draft",
+            items: reviewOperationItems(additions),
+            baseline: basketOperationItems(baseline),
+          };
+          await journal.write(operation);
+          if (!(await journal.claim(operationId, submissionId))) {
+            throw new NativeTransferUnconfirmedError(
+              "This direct basket submission is already fenced. Inspect the basket; do not retry.",
+            );
+          }
+          dispatchClaimed = true;
+        },
+      });
+      if (this.client.providerIdentity() !== accountIdentity) {
+        throw new NativeTransferUnconfirmedError(
+          "Nemlig account changed after the basket request. Its outcome is unconfirmed; inspect the original account and do not retry.",
+        );
+      }
+      await journal.complete(operationId, submissionId);
+      const receipt = await journal.read(operationId);
+      if (receipt?.generation !== submissionId || !receipt.completed) {
+        throw new NativeTransferUnconfirmedError(
+          "Basket addition was verified, but its no-replay receipt could not be confirmed. Inspect the basket; do not retry.",
+        );
+      }
+      stored.snapshot.submission = {
+        submission_id: submissionId,
+        status: "submitted",
+        verified_additions: additions.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        ),
+        expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
+        review: {},
+      };
+      stored.snapshot.submissionAttempted = true;
+      stored.snapshot.actionNotice =
+        "Nemlig confirmed the direct basket addition. This draft cannot be submitted again.";
+      return {
+        review: structuredClone(stored.snapshot),
+        result: {
+          status: "completed",
+          operation: "additions",
+          replayed: false,
+          basket: {
+            items: basket.items,
+            products_price: basket.productsPrice,
+            delivery_price: basket.deliveryPrice,
+            number_of_products: basket.numberOfProducts,
+            delivery_time: basket.deliveryTime,
+          },
+        },
+      };
+    } catch (error) {
+      if (dispatchClaimed) {
+        markReviewSubmissionUncertain(
+          stored,
+          submissionId,
+          new Date(this.now() + 15 * 60 * 1000).toISOString(),
+          "Direct basket submission may have completed. Inspect the actual basket; do not submit this draft again.",
+        );
+      }
+      throw error;
+    } finally {
+      stored.busy = false;
+    }
+  }
+
+  // Keep the whole-basket save receipt and uncertain outcome adjacent to dispatch.
+  // fallow-ignore-next-line complexity
+  async saveCurrentBasketAsShoppingList(
+    owner: string,
+    draftId: string,
+    saveId: string,
+    signal: AbortSignal | undefined,
+    journal: ReviewOperationJournal | undefined,
+  ): Promise<{
+    basket: Awaited<ReturnType<NonNullable<ShoppingClient["getCart"]>>>;
+    replayed: boolean;
+  }> {
+    if (!isUuid(draftId) || !isUuid(saveId)) {
+      throw new NemligError("The basket-to-list save target is invalid.");
+    }
+    if (
+      !journal ||
+      !this.client.providerIdentity ||
+      !this.client.getCart ||
+      !this.client.createShoppingListFromBasket
+    ) {
+      throw new NemligError("Basket-to-list saving is unavailable.");
+    }
+    const operationId = `direct-basket-save:${draftId}`;
+    const accountIdentity = this.client.providerIdentity();
+    const prior = await journal.read(operationId);
+    if (prior) {
+      if (
+        prior.accountIdentity !== accountIdentity ||
+        prior.kind !== "basket-save"
+      ) {
+        throw new NemligError(
+          "This basket-to-list receipt does not match the connected account.",
+        );
+      }
+      if (prior.completed === true) {
+        return { basket: await this.client.getCart(signal), replayed: true };
+      }
+      throw new NativeTransferUnconfirmedError(
+        "A previous basket-to-list save may have completed. Inspect saved shopping lists; do not retry.",
+      );
+    }
+    const stored = this.lock(owner, draftId);
+    if (stored.directBasketSaveAttempted) {
+      stored.busy = false;
+      throw new NativeTransferUnconfirmedError(
+        "A basket-to-list save was already attempted for this draft. Inspect saved shopping lists; do not retry.",
+      );
+    }
+    if (
+      stored.snapshot.basketMode !== "direct-basket" ||
+      stored.snapshot.submission?.status !== "submitted" ||
+      stored.accountIdentity !== accountIdentity
+    ) {
+      stored.busy = false;
+      throw new NemligError(
+        "Save the current basket as a list only after this draft's basket addition is verified.",
+      );
+    }
+    let dispatchClaimed = false;
+    try {
+      const basket = await this.client.createShoppingListFromBasket({
+        signal,
+        beforeDispatch: async (baseline) => {
+          if (this.client.providerIdentity!() !== accountIdentity) {
+            throw new NemligError(
+              "Nemlig account changed before the save request. No list write was sent.",
+            );
+          }
+          const items = basketOperationItems(baseline);
+          const operation: ReviewOperation = {
+            operationId,
+            generation: saveId,
+            accountIdentity,
+            kind: "basket-save",
+            name: "Save current Nemlig basket as a shopping list",
+            items,
+            baseline: [...items],
+          };
+          await journal.write(operation);
+          if (!(await journal.claim(operationId, saveId))) {
+            throw new NativeTransferUnconfirmedError(
+              "This basket-to-list save is already fenced. Inspect saved lists; do not retry.",
+            );
+          }
+          dispatchClaimed = true;
+          stored.directBasketSaveAttempted = true;
+        },
+      });
+      if (this.client.providerIdentity() !== accountIdentity) {
+        throw new NativeTransferUnconfirmedError(
+          "Nemlig account changed after the basket-to-list request. Its outcome is unconfirmed; inspect saved lists and do not retry.",
+        );
+      }
+      if (!(await journal.complete(operationId, saveId))) {
+        throw new NativeTransferUnconfirmedError(
+          "The basket-to-list request was acknowledged, but its no-replay receipt is unconfirmed. Inspect saved lists; do not retry.",
+        );
+      }
+      stored.snapshot.actionNotice =
+        "Basket save acknowledged. The entire current basket was preserved; find the new list in the shopping-list picker to review it.";
+      this.touch(owner, stored);
+      return { basket, replayed: false };
+    } catch (error) {
+      if (dispatchClaimed) {
+        stored.snapshot.actionNotice =
+          "Basket save may have completed. Inspect saved shopping lists; this request will not be retried.";
+      }
+      throw error;
+    } finally {
+      if (this.drafts.get(owner) === stored) {
         stored.busy = false;
       }
     }

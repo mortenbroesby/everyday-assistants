@@ -4,6 +4,7 @@ import {
   LONG_OPERATION_TIMEOUT_MS,
   isBasketId,
   isKnownNoWriteFailure,
+  progressMessage,
   viewerToolCallOptions,
 } from "./product-viewer.js";
 
@@ -17,6 +18,29 @@ test("viewer actions allow long native-list work and retain cancellation", () =>
     maxTotalTimeout: LONG_OPERATION_TIMEOUT_MS,
   });
   assert.equal(options.timeout, 660_000);
+});
+
+test("viewer progress describes temporary drafts and separate provider actions", () => {
+  assert.equal(
+    progressMessage("start_product_review", {
+      items: [{ product_id: 7, quantity: 2 }],
+    }),
+    "Preparing a temporary basket draft…",
+  );
+  assert.equal(
+    progressMessage("update_product_review_conversation", {
+      action: { kind: "quantity", product_id: 7, quantity: 3 },
+    }),
+    "Updating your temporary basket draft…",
+  );
+  assert.equal(
+    progressMessage("submit_product_review_conversation", {}),
+    "Adding the reviewed products to your Nemlig basket…",
+  );
+  assert.equal(
+    progressMessage("save_basket_as_shopping_list", {}),
+    "Saving the entire current Nemlig basket as a shopping list…",
+  );
 });
 
 test("only an explicit pre-dispatch result is classified as a known no-write", () => {

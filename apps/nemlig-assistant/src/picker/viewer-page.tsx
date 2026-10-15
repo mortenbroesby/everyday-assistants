@@ -38,6 +38,8 @@ export type ReviewItem = {
   view: ProductView;
 };
 export type Review = {
+  basketMode?: "native-list" | "direct-basket";
+  draftId?: string;
   shoppingListId?: number;
   reviewContextId?: string;
   shoppingListName?: string;
@@ -136,6 +138,8 @@ export type ViewerPageActions = {
   ) => void;
   onRefresh: () => void;
   onOpenPicker: () => void;
+  onAbandonDraft: () => void;
+  onSaveCurrentBasketAsShoppingList: () => void;
   onSelectBasket: (basketId: string) => void;
   onQuantity: (item: ReviewItem, quantity: number) => void;
   onRemove: (item: ReviewItem) => void;
@@ -665,7 +669,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const safeTitle =
     destination === "alternatives"
       ? "Find an alternative"
-      : (review?.shoppingListName ?? "Shopping list");
+      : review?.basketMode === "direct-basket"
+        ? "Temporary basket draft"
+        : (review?.shoppingListName ?? "Shopping list");
   const visibleProductCount = review?.items.length ?? 0;
   const preparedProductCount =
     review?.submission?.review.lines?.reduce(
@@ -683,10 +689,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       : view.product.available === false,
   );
   const canSubmitList = Boolean(
-    review?.shoppingListId !== undefined &&
-    review.saveStatus === "saved" &&
-    !review.shoppingListDirty &&
-    review.updateStatus === undefined,
+    (review?.basketMode === "direct-basket"
+      ? review.draftId !== undefined && review.reviewContextId !== undefined
+      : review?.shoppingListId !== undefined &&
+        review.saveStatus === "saved" &&
+        !review.shoppingListDirty) && review?.updateStatus === undefined,
   );
   const alternatives = review?.alternatives;
   const showingAlternatives = Boolean(
@@ -735,7 +742,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   const editsBlocked =
     busy ||
     !active ||
-    review?.shoppingListId === undefined ||
+    (review?.shoppingListId === undefined &&
+      !(review?.basketMode === "direct-basket" && review.draftId)) ||
     review?.saveStatus === "partial" ||
     review?.saveStatus === "uncertain" ||
     review?.updateStatus === "partial" ||
@@ -765,18 +773,36 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           role="menu"
           aria-label="Shopping list actions"
         >
-          <p>Shopping list</p>
-          <Button
-            color="secondary"
-            role="menuitem"
-            onClick={() => {
-              setBasketMenuOpen(false);
-              actions.onOpenPicker();
-            }}
-          >
-            <Layers3 aria-hidden="true" size={16} />
-            Choose another shopping list
-          </Button>
+          <p>
+            {review.basketMode === "direct-basket"
+              ? "Temporary basket draft"
+              : "Shopping list"}
+          </p>
+          {review.basketMode !== "direct-basket" && (
+            <Button
+              color="secondary"
+              role="menuitem"
+              onClick={() => {
+                setBasketMenuOpen(false);
+                actions.onOpenPicker();
+              }}
+            >
+              <Layers3 aria-hidden="true" size={16} />
+              Choose another shopping list
+            </Button>
+          )}
+          {review.basketMode === "direct-basket" && (
+            <Button
+              color="secondary"
+              role="menuitem"
+              onClick={() => {
+                setBasketMenuOpen(false);
+                actions.onAbandonDraft();
+              }}
+            >
+              Discard temporary draft
+            </Button>
+          )}
         </div>
       )}
     </div>
@@ -812,7 +838,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         ? "Start a shopping list in conversation."
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
-          : "Changes save to this Nemlig shopping list automatically. Tap a product for details, or press and hold for actions."
+          : review.basketMode === "direct-basket"
+            ? "Edits stay in this temporary draft until you explicitly submit. Drafts expire after two hours and cannot be recovered after restart."
+            : "Changes save to this Nemlig shopping list automatically. Tap a product for details, or press and hold for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
         : screen.kind === "picker"
@@ -1007,7 +1035,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                 onClick={() => actions.onNavigate("ready")}
               >
                 <ArrowLeft aria-hidden="true" size={18} />
-                Back to shopping list
+                {review.basketMode === "direct-basket"
+                  ? "Back to draft"
+                  : "Back to shopping list"}
               </Button>
               <section
                 className="alternatives-current"
@@ -1195,14 +1225,28 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             {review.submission.cleanup_warning && (
               <p role="status">{review.submission.cleanup_warning}</p>
             )}
+            {review.actionNotice && <p role="status">{review.actionNotice}</p>}
+            {review.basketMode === "direct-basket" &&
+              !review.actionNotice?.startsWith("Basket save acknowledged") &&
+              !review.actionNotice?.startsWith(
+                "Basket save may have completed",
+              ) && (
+                <Button
+                  color="secondary"
+                  disabled={busy}
+                  onClick={actions.onSaveCurrentBasketAsShoppingList}
+                >
+                  Save current basket as shopping list
+                </Button>
+              )}
             <Button
               color="secondary"
               disabled={busy}
               onClick={actions.onContinueSubmitted}
             >
               {review.submissionAttempted
-                ? "Choose another shopping list"
-                : "Continue with shopping list"}
+                ? "Choose saved shopping lists"
+                : "Continue shopping"}
             </Button>
           </OutcomeSurface>
         )}
@@ -1294,9 +1338,10 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               </OutcomeSurface>
             )}
             {review.saveProgress && review.saveStatus === "saving" && (
-              <p className="status" role="status">
-                Creating list: {review.saveProgress.completed} of{" "}
-                {review.saveProgress.total} products.
+              <p className="status" role="status" aria-live="polite">
+                {review.basketMode === "direct-basket"
+                  ? "Saving the entire current basket as a shopping list…"
+                  : `Creating list: ${review.saveProgress.completed} of ${review.saveProgress.total} products.`}
               </p>
             )}
             {review.saveStatus === "partial" &&
@@ -1340,8 +1385,8 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               )}
               {review.shoppingListId === undefined && (
                 <p className="status" role="status">
-                  Choose products in conversation to create a Nemlig shopping
-                  list.
+                  Choose products in conversation to add to this temporary
+                  basket draft.
                 </p>
               )}
               {hasUnreadyItem && review.submission?.status !== "prepared" && (

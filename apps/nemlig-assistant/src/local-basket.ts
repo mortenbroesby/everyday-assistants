@@ -31,7 +31,7 @@ export interface ReviewOperation {
   operationId: string;
   generation: string;
   accountIdentity: string;
-  kind: "save" | "update" | "submit";
+  kind: "save" | "update" | "submit" | "basket-save";
   name: string;
   createAttempted?: boolean;
   dispatchAttempted?: boolean;

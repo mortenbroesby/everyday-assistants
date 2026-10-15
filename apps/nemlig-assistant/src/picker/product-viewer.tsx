@@ -31,24 +31,56 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
-function progressMessage(name: string, args: Record<string, unknown>) {
-  if (name === "submit_product_review") {
-    return "Adding this shopping list to your Nemlig basket…";
-  }
+const startReviewProgress = (args: Record<string, unknown>) =>
+  typeof args.shopping_list_id === "number"
+    ? "Loading this saved list into a temporary basket draft…"
+    : Array.isArray(args.items)
+      ? "Preparing a temporary basket draft…"
+      : "Loading your saved shopping lists…";
+
+const directUpdateProgress = (args: Record<string, unknown>) => {
   const action = isRecord(args.action) ? args.action : {};
   const messages: Record<string, string> = {
-    list: "Loading your Nemlig shopping lists…",
-    show: "Refreshing this Nemlig shopping list…",
-    select: "Refreshing this Nemlig shopping list…",
     alternatives: "Searching for alternatives…",
-    replace: "Saving replacement to your Nemlig shopping list…",
-    quantity: "Saving quantity change to your Nemlig shopping list…",
-    remove: "Removing products from your Nemlig shopping list…",
-    add: "Adding products to your Nemlig shopping list…",
+    select: "Loading the selected saved list into a temporary draft…",
+    list: "Loading your saved shopping lists…",
   };
   return (
     (typeof action.kind === "string" && messages[action.kind]) ||
-    "Updating your Nemlig shopping list…"
+    "Updating your temporary basket draft…"
+  );
+};
+
+export function progressMessage(name: string, args: Record<string, unknown>) {
+  if (
+    name === "submit_product_review" ||
+    name === "submit_product_review_conversation"
+  ) {
+    return "Adding the reviewed products to your Nemlig basket…";
+  }
+  if (name === "save_basket_as_shopping_list") {
+    return "Saving the entire current Nemlig basket as a shopping list…";
+  }
+  if (name === "start_product_review") {
+    return startReviewProgress(args);
+  }
+  if (name === "update_product_review_conversation") {
+    return directUpdateProgress(args);
+  }
+  const action = isRecord(args.action) ? args.action : {};
+  const messages: Record<string, string> = {
+    list: "Loading your saved shopping lists…",
+    show: "Refreshing your temporary basket draft…",
+    select: "Loading the selected saved list into a temporary draft…",
+    alternatives: "Searching for alternatives…",
+    replace: "Updating your temporary basket draft…",
+    quantity: "Updating your temporary basket draft…",
+    remove: "Updating your temporary basket draft…",
+    add: "Updating your temporary basket draft…",
+  };
+  return (
+    (typeof action.kind === "string" && messages[action.kind]) ||
+    "Updating your temporary basket draft…"
   );
 }
 
@@ -111,6 +143,16 @@ function isReview(value: unknown): value is Review {
     return false;
   }
   if (!value.items.every(isReviewItem)) {
+    return false;
+  }
+  if (
+    (value.basketMode !== undefined &&
+      value.basketMode !== "native-list" &&
+      value.basketMode !== "direct-basket") ||
+    (value.draftId !== undefined && !isDraftId(value.draftId)) ||
+    (value.basketMode === "direct-basket" &&
+      (!isDraftId(value.draftId) || value.shoppingListId !== undefined))
+  ) {
     return false;
   }
   if (
@@ -237,11 +279,22 @@ function isDraftId(value: unknown): value is string {
   );
 }
 function reviewTargetId(review: Review): string | undefined {
+  if (review.basketMode === "direct-basket") {
+    return review.draftId;
+  }
   return review.shoppingListId === undefined
     ? undefined
     : String(review.shoppingListId);
 }
 function reviewTargetArgs(review: Review): Record<string, unknown> {
+  if (review.basketMode === "direct-basket" && review.draftId) {
+    return {
+      draft_id: review.draftId,
+      ...(review.reviewContextId
+        ? { review_context_id: review.reviewContextId }
+        : {}),
+    };
+  }
   if (review.shoppingListId !== undefined) {
     return {
       shopping_list_id: review.shoppingListId,
@@ -426,7 +479,7 @@ function readPayload(value: unknown): ViewerScreen | undefined {
   if (envelope.ended === true) {
     return {
       kind: "empty",
-      message: "The shopping-list selection ended.",
+      message: "The selection ended.",
     };
   }
   const candidate = Array.isArray(envelope.views)
@@ -790,9 +843,11 @@ export function ProductViewer() {
           setScreen({ kind: "review", ...inactive });
           showRecovery(
             cachedReview.shoppingListId === undefined ? "list" : "update",
-            cachedReview.shoppingListId === undefined
-              ? "The selected shopping-list creation could not be confirmed. Review its status before continuing."
-              : "Could not refresh this exact Nemlig shopping list. Its last confirmed rows remain visible; retry the same list or choose another explicitly.",
+            cachedReview.basketMode === "direct-basket"
+              ? "This temporary draft expired or the service restarted. Load a saved shopping list or start a new draft; no basket change was made."
+              : cachedReview.shoppingListId === undefined
+                ? "The selected shopping-list creation could not be confirmed. Review its status before continuing."
+                : "Could not refresh this exact Nemlig shopping list. Its last confirmed rows remain visible; retry the same list or choose another explicitly.",
           );
         } else {
           activeReview.current = undefined;
@@ -929,7 +984,7 @@ export function ProductViewer() {
     uncertainOnFailure = false,
     background = false,
     expectedSelection?: { basketId?: string; epoch: number },
-    preserveReviewOnFailure = false,
+    preserveReviewOnFailure: boolean | string = false,
     acknowledgePartialList = false,
   ): Promise<boolean> => {
     if (!connectedApp || !isConnected) {
@@ -991,9 +1046,12 @@ export function ProductViewer() {
         const explicitTarget = kind === "select" || kind === "show";
         const targetReview = activeReview.current?.review;
         const targetArgs = explicitTarget
-          ? requestArgs.shopping_list_id !== undefined
+          ? requestArgs.shopping_list_id !== undefined ||
+            requestArgs.draft_id !== undefined
             ? {
-                shopping_list_id: requestArgs.shopping_list_id,
+                ...(requestArgs.shopping_list_id !== undefined
+                  ? { shopping_list_id: requestArgs.shopping_list_id }
+                  : { draft_id: requestArgs.draft_id }),
                 ...(requestArgs.review_context_id !== undefined
                   ? { review_context_id: requestArgs.review_context_id }
                   : {}),
@@ -1003,15 +1061,18 @@ export function ProductViewer() {
             ? reviewTargetArgs(targetReview)
             : {};
         const targetId =
-          targetArgs.shopping_list_id === undefined
-            ? undefined
-            : String(targetArgs.shopping_list_id);
+          targetArgs.draft_id !== undefined
+            ? String(targetArgs.draft_id)
+            : targetArgs.shopping_list_id === undefined
+              ? undefined
+              : String(targetArgs.shopping_list_id);
         if (!isBasketId(targetId)) {
           setMessage("Choose a shopping list before continuing.");
           setScreen({ kind: "picker", baskets, selectedBasketId });
           return false;
         }
         delete requestArgs.shopping_list_id;
+        delete requestArgs.draft_id;
         delete requestArgs.review_context_id;
         Object.assign(requestArgs, targetArgs);
       }
@@ -1024,10 +1085,20 @@ export function ProductViewer() {
         return false;
       }
       const targetArgs = reviewTargetArgs(targetReview);
-      if (!isBasketId(String(targetArgs.shopping_list_id))) {
+      const targetId = targetArgs.draft_id ?? targetArgs.shopping_list_id;
+      if (!isBasketId(String(targetId))) {
         setMessage("Choose a shopping list before continuing.");
         setScreen({ kind: "picker", baskets, selectedBasketId });
         return false;
+      }
+      if (targetReview.basketMode === "direct-basket") {
+        requestArgs.reviewed_list = {
+          name: "Temporary basket draft",
+          items: targetReview.items.map(({ product_id, quantity }) => ({
+            product_id,
+            quantity,
+          })),
+        };
       }
       Object.assign(requestArgs, targetArgs);
     }
@@ -1128,6 +1199,25 @@ export function ProductViewer() {
       ) {
         if (preserveReviewOnFailure) {
           ignorePassivePayloads.current = true;
+          if (typeof preserveReviewOnFailure === "string") {
+            const failureMessage =
+              cause instanceof Error ? cause.message : "The request failed.";
+            const knownNotSent =
+              /no provider write was sent|account changed before the save request/iu.test(
+                failureMessage,
+              );
+            activeReview.current = {
+              ...activeReview.current!,
+              review: {
+                ...activeReview.current!.review,
+                actionNotice: knownNotSent
+                  ? `Basket save was not sent. ${failureMessage}`
+                  : preserveReviewOnFailure,
+              },
+            };
+            setScreen({ kind: "review", ...activeReview.current });
+            return false;
+          }
           activeReview.current = { ...activeReview.current!, active: false };
           setScreen({ kind: "review", ...activeReview.current });
           showRecovery(
@@ -1305,7 +1395,7 @@ export function ProductViewer() {
   const sendFollowUp = async (text: string) => {
     if (!connectedApp || !isConnected) {
       setMessage(
-        "Continue in conversation to inspect or create a Nemlig shopping list.",
+        "Continue in conversation to review or edit your temporary basket draft.",
       );
       return;
     }
@@ -1320,7 +1410,7 @@ export function ProductViewer() {
       setMessage("Follow-up sent to conversation.");
     } catch {
       setMessage(
-        "Continue in conversation to inspect or create a Nemlig shopping list.",
+        "Continue in conversation to review or edit your temporary basket draft.",
       );
     }
   };
@@ -1350,6 +1440,55 @@ export function ProductViewer() {
       false,
       false,
       expected,
+    );
+  };
+  const abandonDirectDraft = async () => {
+    const review = activeReview.current?.review;
+    if (
+      busy ||
+      review?.basketMode !== "direct-basket" ||
+      !review.draftId ||
+      !review.reviewContextId
+    ) {
+      return;
+    }
+    const expected = selectionContext();
+    await call(
+      "update_product_review",
+      {
+        action: { kind: "abandon_draft" },
+        ...reviewTargetArgs(review),
+      },
+      false,
+      false,
+      false,
+      false,
+      expected,
+    );
+  };
+  const saveCurrentBasketAsShoppingList = async () => {
+    const review = activeReview.current?.review;
+    if (
+      busy ||
+      review?.basketMode !== "direct-basket" ||
+      review.submission?.status !== "submitted" ||
+      !review.draftId ||
+      !review.reviewContextId
+    ) {
+      return;
+    }
+    await call(
+      "save_basket_as_shopping_list",
+      {
+        ...reviewTargetArgs(review),
+        save_id: globalThis.crypto.randomUUID(),
+      },
+      false,
+      false,
+      false,
+      false,
+      selectionContext(),
+      "Basket save may have completed. Inspect saved shopping lists; this action cannot be retried.",
     );
   };
   const selectBasket = async (basketId: string) => {
@@ -1393,6 +1532,19 @@ export function ProductViewer() {
       }
       await waitForCallIdle();
       clearPendingQuantities();
+      if (knownReview.basketMode === "direct-basket") {
+        await call(
+          "update_product_review",
+          { action: { kind: "show" }, ...reviewTargetArgs(knownReview) },
+          true,
+          false,
+          false,
+          false,
+          selectionContext(),
+          true,
+        );
+        return;
+      }
       const listId = knownReview.shoppingListId;
       if (listId === undefined) {
         await call(
@@ -1449,17 +1601,24 @@ export function ProductViewer() {
       return;
     }
     const listId = screen.review.shoppingListId;
-    if (listId === undefined) {
+    const directDraftId =
+      screen.review.basketMode === "direct-basket"
+        ? screen.review.draftId
+        : undefined;
+    if (listId === undefined && directDraftId === undefined) {
       return;
     }
-    const key = String(listId);
+    const key = directDraftId ?? String(listId);
     if (autoRefreshListId.current === key) {
       return;
     }
     autoRefreshListId.current = key;
     void call(
       "update_product_review",
-      { action: { kind: "show" }, shopping_list_id: listId },
+      {
+        action: { kind: "show" },
+        ...reviewTargetArgs(screen.review),
+      },
       true,
       false,
       false,
@@ -1468,8 +1627,7 @@ export function ProductViewer() {
       true,
     );
   }, [connectedApp, isConnected, screen]);
-  // Submit the exact saved list in one action; provider checks remain server-side.
-  // One user action flushes edits, binds the selected list, and fences duplicate calls.
+  // Submit the exact reviewed selection once; provider checks remain server-side.
   // fallow-ignore-next-line complexity
   const submitCurrentBasket = async () => {
     const expected = selectionContext();
@@ -1488,16 +1646,21 @@ export function ProductViewer() {
       setMessage("The shopping list changed. Refresh it before submitting.");
       return;
     }
+    const direct = review.basketMode === "direct-basket";
     if (
-      review.shoppingListId === undefined ||
-      !review.shoppingListName ||
-      review.saveStatus !== "saved" ||
-      review.shoppingListDirty ||
-      review.updateStatus !== undefined ||
+      (direct
+        ? !review.draftId || !review.reviewContextId
+        : review.shoppingListId === undefined ||
+          !review.shoppingListName ||
+          review.saveStatus !== "saved" ||
+          review.shoppingListDirty ||
+          review.updateStatus !== undefined) ||
       reviewTargetId(review) !== selectedBasketIdRef.current
     ) {
       setMessage(
-        "Refresh and review the current Nemlig shopping list before adding it to the basket.",
+        direct
+          ? "Refresh and review the exact temporary draft before adding it to the basket."
+          : "Refresh and review the current Nemlig shopping list before adding it to the basket.",
       );
       return;
     }
@@ -1512,7 +1675,7 @@ export function ProductViewer() {
         submission_id: globalThis.crypto.randomUUID(),
         ...reviewTargetArgs(review),
         reviewed_list: {
-          name: review.shoppingListName,
+          name: review.shoppingListName ?? "Temporary basket draft",
           items: review.items.map(({ product_id, quantity }) => ({
             product_id,
             quantity,
@@ -1589,6 +1752,9 @@ export function ProductViewer() {
         onNavigate: navigate,
         onRefresh: () => void refreshCurrentDraftList(),
         onOpenPicker: () => void openPicker(),
+        onAbandonDraft: () => void abandonDirectDraft(),
+        onSaveCurrentBasketAsShoppingList: () =>
+          void saveCurrentBasketAsShoppingList(),
         onSelectBasket: (basketId) => void selectBasket(basketId),
         onFactExpandedChange: (productId, factKey, expanded) =>
           setReviewDisclosures((previous) => {

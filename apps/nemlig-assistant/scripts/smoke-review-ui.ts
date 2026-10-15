@@ -32,7 +32,8 @@ let basketReads = 0,
   directWrites = 0,
   nativeTransfers = 0;
 let shoppingListCreates = 0,
-  shoppingListUpdates = 0;
+  shoppingListUpdates = 0,
+  nativeListWrites = 0;
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
@@ -112,8 +113,43 @@ const catalogue = {
     return structuredClone(currentBasket);
   },
   addToCart: denied,
+  addManyToCart: async (
+    additions: Array<{ productId: number; quantity: number }>,
+    options: { beforeDispatch: (baseline: Basket) => Promise<void> },
+  ) => {
+    const baseline = structuredClone(currentBasket);
+    await options.beforeDispatch(baseline);
+    directWrites++;
+    const addedItems = additions.map(({ productId, quantity }) => {
+      const view = product(productId);
+      return {
+        id: productId,
+        name: view.name,
+        quantity,
+        total: quantity * (view.price ?? 0),
+      };
+    });
+    currentBasket = {
+      ...baseline,
+      items: [...baseline.items, ...addedItems],
+      numberOfProducts: [...baseline.items, ...addedItems].reduce(
+        (total, item) => total + (item.quantity ?? 0),
+        0,
+      ),
+    };
+    return structuredClone(currentBasket);
+  },
+  createShoppingListFromBasket: async (options: {
+    beforeDispatch: (baseline: Basket) => Promise<void>;
+  }) => {
+    const baseline = structuredClone(currentBasket);
+    await options.beforeDispatch(baseline);
+    shoppingListCreates++;
+    return structuredClone(currentBasket);
+  },
   createShoppingList: async (name: string) => {
     shoppingListCreates++;
+    nativeListWrites++;
     const id = nextShoppingListId++;
     shoppingLists.set(id, { id, name, items: new Map() });
     return id;
@@ -124,6 +160,7 @@ const catalogue = {
     quantity: number,
   ) => {
     shoppingListUpdates++;
+    nativeListWrites++;
     const list = shoppingLists.get(listId);
     if (!list) {
       throw new Error("Synthetic shopping list is missing");
@@ -156,6 +193,7 @@ const catalogue = {
     };
   },
   deleteShoppingList: async (listId: number) => {
+    nativeListWrites++;
     shoppingLists.delete(listId);
   },
   addShoppingListToCart: async (listId: number) => {
@@ -164,6 +202,7 @@ const catalogue = {
       throw new Error("Synthetic shopping list is missing");
     }
     nativeTransfers++;
+    nativeListWrites++;
     const items = [...list.items].map(([id, quantity]) => {
       const view = product(id);
       return {
@@ -306,114 +345,64 @@ document.getElementById('run').onclick = async () => {
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
-  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
-  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; transcript=undefined; initialized=false;
-  const loaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.src='/viewer'; await loaded; await wait(()=>initialized);
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2},{product_id:3,quantity:1},{product_id:4,quantity:1},{product_id:5,quantity:1}],creation_id:'00000000-0000-4000-8000-000000000003'}}); publish();
-  const listName=transcript.structuredContent.review.shoppingListName;
-  await wait(()=>title()===listName&&doc().querySelectorAll('.product-list article').length===5);
-  check(doc().querySelectorAll('input[type=checkbox]').length===0,'Unified list rendered checkbox selection');
-  check(!buttons().some(b=>b.textContent.includes('To decide')||b.textContent.includes('Ready (')),'Unified list rendered destination tabs');
-  check(transcript.structuredContent.review.shoppingListId>0,'Selection did not create a native Nemlig list');
-  check(transcript.structuredContent.review.items.every(item=>item.state==='ready'),'Fresh native-list rows are not all Ready');
-  const beforeReload=widgetCalls.length; const reloaded=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloaded;
-  await wait(()=>widgetCalls.slice(beforeReload).some(c=>c.name==='update_product_review'&&c.arguments.action?.kind==='show'));
-  await wait(()=>{const fresh=widgetResults.slice(beforeReload).findLast(result=>result.name==='update_product_review'&&result.structuredContent.review.shoppingListId===transcript.structuredContent.review.shoppingListId);const add=button('Add to Nemlig basket');return fresh?.structuredContent.review.items.length===5&&title()===listName&&doc().querySelectorAll('.product-list article').length===5&&add&&!add.disabled;});
-  check(widgetCalls.slice(beforeReload).every(c=>c.arguments.shopping_list_id===transcript.structuredContent.review.shoppingListId),'Remount refresh did not target the exact native list');
-  const rowFor=id=>[...doc().querySelectorAll('.product-action-row')].find(row=>row.getAttribute('data-product-id')===String(id));
-  const openRowActions=async id=>{const row=rowFor(id);const summary=row?.querySelector('[data-viewer-component="product-summary"]');check(summary,'Product summary missing');await wait(()=>!summary.disabled&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);summary.focus();const Keyboard=doc().defaultView.KeyboardEvent;summary.dispatchEvent(new Keyboard('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));await wait(()=>row.querySelector('.product-inline-actions'));return row;};
-  await openRowActions(1);
-  await wait(()=>doc().querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type'));
-  const quantity=doc().querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type'); check(quantity,'Quantity controls missing'); quantity.click();
-  doc().querySelector('.product-inline-actions [aria-label="Close product actions"]')?.click();
-  await wait(()=>widgetCalls.some(c=>c.arguments.action?.kind==='quantity'));
-  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.find(item=>item.product_id===1)?.quantity===2));
-  const removedRow=rowFor(5); check(removedRow,'Product 5 row missing'); await openRowActions(5);
-  await wait(()=>removedRow.querySelector('.product-inline-actions'));
-  removedRow.querySelector('[aria-label="Remove product"]')?.click();
-  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.length===4));
-  const replaceRow=rowFor(4); check(replaceRow,'Product 4 row missing'); await openRowActions(4);
-  await wait(()=>replaceRow.querySelector('.product-inline-actions'));
-  replaceRow.querySelector('[aria-label="Find alternatives"]')?.click();
-  await wait(()=>title()==='Find an alternative');
-  const alternativeQuery=doc().querySelector('#alternative-query'); check(alternativeQuery,'Alternative search missing');
-  Object.getOwnPropertyDescriptor(doc().defaultView.HTMLInputElement.prototype,'value').set.call(alternativeQuery,'oats'); alternativeQuery.dispatchEvent(new Event('input',{bubbles:true})); alternativeQuery.form.requestSubmit();
-  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.alternatives?.query==='oats'));
-  const selectedAlternative = doc().querySelector(
-    'button[aria-label="Use Smoke product 6 as the alternative"]',
-  );
-  check(
-    selectedAlternative && !selectedAlternative.disabled,
-    'Enabled replacement action missing for Smoke product 6',
-  );
-  selectedAlternative.click();
-  await wait(()=>title()===listName&&widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===6)));
-  const edited=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
-  check(JSON.stringify(edited.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,2],[2,2],[3,1],[6,1]]),'Quantity, removal, or replacement did not persist to the native list');
-  const beforeRemount=widgetCalls.length; const reloadedAfterEdits=new Promise(resolve=>frame.addEventListener('load',resolve,{once:true})); frame.contentWindow.location.reload(); await reloadedAfterEdits;
-  await wait(()=>widgetCalls.slice(beforeRemount).some(c=>c.name==='update_product_review'&&c.arguments.action?.kind==='show'));
-  await wait(()=>doc().querySelectorAll('.product-list article').length===4&&title()===listName);
-  check(JSON.stringify(widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,2],[2,2],[3,1],[6,1]]),'Remount using the original five-product host snapshot rolled back confirmed native edits');
-  await wait(()=>title()===listName);
-  const savedReview=widgetResults.at(-1).structuredContent.review;
-  check(!button('Add to Nemlig basket').disabled,'Native-list Submit was unavailable');
-  await fetch('/change-list',{method:'POST'});
-  click('Add to Nemlig basket');
-  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.isError));
-  const staleResult=widgetResults.findLast(result=>result.name==='submit_product_review');
-  check(staleResult.text.includes('Nemlig changed this list'),'Stale list rejection did not explain the refresh requirement');
-  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===0,'Changed list reached the basket transfer boundary');
+  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
+  transcript=await call({name:'start_product_review',arguments:{shopping_list_id:77}});
+  frame.src='/viewer'; await wait(()=>initialized); publish();
+  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
+  await wait(()=>doc().querySelectorAll('.product-action-row').length===2);
+  const review=transcript.structuredContent.review;
+  check(review.basketMode==='direct-basket'&&review.draftId,'Saved list was not copied into a temporary direct draft');
+  check(JSON.stringify(review.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,1],[2,2]]),'Loaded source contents changed');
+  const stats=await fetch('/stats').then(r=>r.json());
+  check(stats.nativeListWrites===0&&stats.nativeTransfers===0&&stats.basketWrites===0,'Loading a saved list wrote to Nemlig');
+  check(JSON.stringify(stats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Read-only source list changed during draft load');
+  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3]]),'Source loading changed existing basket rows');
+  const row=[...doc().querySelectorAll('.product-action-row')].find(item=>item.textContent.includes('Smoke product 2'));
+  const summary=row?.querySelector('[data-viewer-component="product-summary"]');
+  check(summary,'Loaded source product row missing');
+  summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
+  await wait(()=>row.querySelector('.product-inline-actions'));
+  const plus=row.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type');
+  check(plus,'Draft quantity controls missing'); plus.click();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===2&&item.quantity===3)));
-  const refreshed=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
-  check(JSON.stringify(refreshed.items.map(item=>[item.product_id,item.quantity]))===JSON.stringify([[1,2],[2,3],[3,1],[6,1]]),'Refreshing did not show the current native-list contents');
-  await wait(()=>text().includes('Nemlig changed this list'));
-  check(!button('Add to Nemlig basket').disabled,'Refreshed native list was unavailable for deliberate submission');
-  click('Add to Nemlig basket');
-  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
-  const submitted=widgetResults.findLast(result=>result.name==='submit_product_review');
-  check(submitted.structuredContent.review.submission?.status==='submitted','Native-list transfer receipt was not returned');
-  const submittedStats=await waitForStats(stats=>stats.nativeTransfers===1);
-  check(submittedStats.shoppingListCount===0,'Verified submission kept its source list');
-  check(submittedStats.basketReads>=3&&submittedStats.basketWrites===0,'Transfer skipped basket readback or used a direct basket write');
-  check(JSON.stringify(submittedStats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,2],[2,3],[3,1],[6,1]]),'Basket readback did not contain the exact refreshed quantities');
-  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
-  const stats=await fetch('/stats').then(r=>r.json()); check(stats.shoppingListCount===0&&stats.shoppingListCreates===1&&stats.shoppingListUpdates>=8,'Review did not persist edits and remove the verified source list'); check(stats.nativeTransfers===1&&stats.basketWrites===0,'Submit did not use one native-list transfer');
-  check(widgetCalls.every(c=>!('representation' in c.arguments)),'Viewer sent a representation selector');
-  await fetch('/restart',{method:'POST'});
-  const recovered=await call({name:'start_product_review',arguments:{shopping_list_id:savedReview.shoppingListId}});
-  check(recovered.structuredContent.selectedShoppingListId===null&&recovered.structuredContent.shoppingLists.length===0,'Restart did not return to the picker after verified source deletion');
-  const stale=await call({name:'submit_product_review',arguments:{shopping_list_id:savedReview.shoppingListId,submission_id:'00000000-0000-4000-8000-000000000000'}});
-  check(stale.isError===true,'Restart accepted a submission without prepared authority');
-  check((await fetch('/stats').then(r=>r.json())).nativeTransfers===1,'Restart recovery replayed a completed transfer');
-  transcript=recovered; initialized=false; frame.src='/viewer';
-  await wait(()=>initialized&&text().includes('Start a Nemlig shopping list'));
-  status.textContent='PASS: native list edited immediately, remount refreshed its exact contents, basket readback matched, and replay was blocked';
- } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | widget calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,shopping_list_id:call.arguments.shopping_list_id,product_id:call.arguments.product_id})))+' | widget results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,alternativesQuery:result.structuredContent?.review?.alternatives?.query,itemIds:result.structuredContent?.review?.items?.map(item=>item.product_id)})));} finally {run.disabled=false;}
+  transcript.structuredContent.review=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
+  const editedStats=await fetch('/stats').then(r=>r.json());
+  check(editedStats.nativeListWrites===0&&JSON.stringify(editedStats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Draft edit changed its read-only source');
+  status.textContent='PASS: saved-list rows loaded and edited in a temporary draft; source and basket unchanged';
+ } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | rows: '+JSON.stringify([...doc().querySelectorAll('.product-list .product-card')].map(row=>row.outerHTML.slice(0,250)))+' | widget calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,draft_id:call.arguments.draft_id,shopping_list_id:call.arguments.shopping_list_id})));} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
  const run=document.getElementById('flow'); run.disabled=true;
+ status.textContent='Checking direct bulk submission and optional save';
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
- const text=()=>doc()?.body?.textContent||'';
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
-  status.textContent='Checking submission with an unknown price'; widgetCalls.length=0; widgetResults.length=0;
-  await fetch('/reset',{method:'POST'}); await fetch('/unknown-price',{method:'POST'});
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}],creation_id:'00000000-0000-4000-8000-000000000004'}});
-  initialized=false; frame.src='/viewer'; await wait(()=>initialized);
-  await wait(()=>title()===transcript.structuredContent.review.shoppingListName&&doc().querySelectorAll('.product-list article').length===2);
-  await wait(()=>text().includes('Unknown price'));
-  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.shoppingListId===transcript.structuredContent.review.shoppingListId&&result.structuredContent.review.saveStatus==='saved')&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);
+  check(transcript?.structuredContent?.review?.draftId,'Run source-load smoke first');
+  const draft=transcript.structuredContent.review;
+  const before=await fetch('/stats').then(r=>r.json());
   click('Add to Nemlig basket');
-  const stats=await waitForStats(value=>value.nativeTransfers===1);
-  check(stats.shoppingListCount===0&&stats.shoppingListCreates===1&&stats.shoppingListUpdates===2,'Unknown-price transfer did not delete its verified source list');
-  check(stats.basketReads>=3&&stats.basketWrites===0&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[1,1],[2,2]]),'Unknown-price transfer did not complete with exact basket readback');
-  check(!widgetCalls.some(c=>c.arguments.action?.kind==='prepare_submission'),'Submit used an extra preparation action');
-  status.textContent='PASS: immediately created unknown-price list submitted once, verified, and deleted with no duplicate list';
- } catch(error){status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | transcript: '+JSON.stringify({shoppingListId:transcript?.structuredContent?.review?.shoppingListId,submission:transcript?.structuredContent?.review?.submission,items:transcript?.structuredContent?.review?.items?.map(item=>({product_id:item.product_id,quantity:item.quantity}))})+' | widget calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,shopping_list_id:call.arguments.shopping_list_id})))+' | widget results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,submission:result.structuredContent?.review?.submission,items:result.structuredContent?.review?.items?.map(item=>item.product_id)})));} finally{run.disabled=false;}
+  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
+  const submission=widgetResults.findLast(result=>result.name==='submit_product_review');
+  check(submission.structuredContent.review.submission?.status==='submitted','Bulk basket acknowledgement was not returned');
+  let stats=await waitForStats(value=>value.basketWrites===1);
+  check(stats.nativeListWrites===0&&stats.nativeTransfers===0,'Submit mutated a saved shopping list');
+  check(stats.shoppingListCreates===0,'Submit implicitly created a shopping list');
+  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Single bulk submit did not preserve old basket rows and add the exact reviewed rows');
+  check(before.basketWrites===0&&stats.basketWrites===1,'Submit did not use exactly one bulk mutation');
+  const save=button('Save current basket as shopping list');
+  check(save&&!save.disabled,'Verified submit did not offer an explicit separate basket save');
+  save.click();
+  await wait(()=>widgetResults.some(result=>result.name==='save_basket_as_shopping_list'&&!result.isError));
+  stats=await fetch('/stats').then(r=>r.json());
+  check(stats.shoppingListCreates===1&&stats.nativeListWrites===0,'Explicit save did not call only the basket-to-list endpoint');
+  check(stats.basketWrites===1&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Saving the whole basket changed or cleared its contents');
+  check(JSON.stringify(stats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Submission or save changed the loaded source list');
+  status.textContent='PASS: one additive bulk submit preserved the basket; separate save preserved it again';
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.body?.innerText||'unavailable')+' | calls: '+JSON.stringify(widgetCalls.map(call=>call.name))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text,review:result.structuredContent?.review?.submission})));} finally{run.disabled=false;}
 };
 document.getElementById('alternatives').onclick = async () => {
  const run=document.getElementById('alternatives'); run.disabled=true;
@@ -425,23 +414,24 @@ document.getElementById('alternatives').onclick = async () => {
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}],creation_id:'00000000-0000-4000-8000-000000000005'}}); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
-  await wait(()=>title()===transcript.structuredContent.review.shoppingListName&&doc().querySelectorAll('.product-list article').length===2);
-  const listId=transcript.structuredContent.review.shoppingListId;
-  const before=await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'},shopping_list_id:listId}});
-  const target=[...doc().querySelectorAll('.product-list article')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}}); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
+  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
+  const draft=transcript.structuredContent.review;
+  const targetArgs={draft_id:draft.draftId,review_context_id:draft.reviewContextId};
+  const before=await call({name:'update_product_review',arguments:{...targetArgs,action:{kind:'show'}}});
+  const target=[...doc().querySelectorAll('.product-list .product-card')].find(row=>row.textContent.includes('Smoke product 1')); check(target,'Product missing');
   const row=target.closest('.product-action-row'); check(row,'Product row missing'); const trigger=row.querySelector('[data-viewer-component="product-summary"]'); check(trigger,'Product summary missing'); trigger.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true})); await wait(()=>doc().querySelector('.product-inline-actions'));
   const beforeMenu=widgetCalls.length; const find=[...doc().querySelectorAll('.product-inline-actions button')].find(item=>item.getAttribute('aria-label')==='Find alternatives'); check(find,'Find alternative action missing'); find.click(); await wait(()=>title()==='Find an alternative');
   check(widgetCalls.length===beforeMenu+1&&widgetCalls.at(-1).arguments.action.kind==='alternatives','Alternative view did not use the read-only search action');
-  const unchanged=(await call({name:'update_product_review_conversation',arguments:{action:{kind:'show'},shopping_list_id:listId}})).structuredContent.review;
-  check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the native shopping list');
+  const unchanged=(await call({name:'update_product_review',arguments:{...targetArgs,action:{kind:'show'}}})).structuredContent.review;
+  check(JSON.stringify(unchanged.items.map(i=>[i.product_id,i.quantity,i.state]))===JSON.stringify(before.structuredContent.review.items.map(i=>[i.product_id,i.quantity,i.state])),'Opening alternatives changed the temporary draft');
   const query=doc().querySelector('#alternative-query'); check(query,'Alternative search missing');
   Object.getOwnPropertyDescriptor(doc().defaultView.HTMLInputElement.prototype,'value').set.call(query,'unavailable');
   query.dispatchEvent(new Event('input',{bubbles:true})); query.form.requestSubmit();
   await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
-  const back=button('Back to shopping list'); check(back,'Back control missing'); back.click(); await wait(()=>title()===transcript.structuredContent.review.shoppingListName);
+  const back=button('Back to draft'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Temporary basket draft');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');
-  status.textContent='PASS: alternative search/navigation leaves the native shopping list unchanged; provider basket writes 0';
+  status.textContent='PASS: alternative search/navigation leaves the temporary draft unchanged; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
 };
 </script></body></html>`;
@@ -486,16 +476,27 @@ const server = createServer((req, res) => {
       nativeTransfers = 0;
       shoppingListCreates = 0;
       shoppingListUpdates = 0;
+      nativeListWrites = 0;
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
       nextShoppingListId = 1;
       shoppingLists.clear();
+      shoppingLists.set(77, {
+        id: 77,
+        name: "Read-only source",
+        items: new Map([
+          [1, 1],
+          [2, 2],
+        ]),
+      });
       currentBasket = {
-        items: [],
-        productsPrice: 0,
+        items: [
+          { id: 90, name: "Existing basket item", quantity: 3, total: 30 },
+        ],
+        productsPrice: 30,
         deliveryPrice: 0,
-        numberOfProducts: 0,
+        numberOfProducts: 3,
         deliveryTime: "smoke",
       };
       res.end("reset");
@@ -529,9 +530,11 @@ const server = createServer((req, res) => {
           basketWrites: directWrites,
           nativeTransfers,
           basketItems: currentBasket.items,
+          sourceItems: [...(shoppingLists.get(77)?.items ?? [])],
           shoppingListCount: shoppingLists.size,
           shoppingListCreates,
           shoppingListUpdates,
+          nativeListWrites,
           simulatedSubmissions,
         }),
       );
@@ -556,6 +559,7 @@ const server = createServer((req, res) => {
           "submit_product_review",
           "update_product_review_conversation",
           "submit_product_review_conversation",
+          "save_basket_as_shopping_list",
         ].includes(input.name)
       ) {
         throw new Error("Unexpected tool call in this smoke");
@@ -589,6 +593,14 @@ try {
   });
   await installViewerAssetFixture(browserContext, viewerGeneration);
   const browserPage = await browserContext.newPage();
+  browserPage.on("pageerror", (error) =>
+    console.error("browser page error", error),
+  );
+  browserPage.on("console", (message) => {
+    if (message.type() === "error") {
+      console.error("browser console error", message.text());
+    }
+  });
   browserPage.setDefaultTimeout(10_000);
   browserPage.setDefaultNavigationTimeout(10_000);
   await browserPage.goto(origin, { waitUntil: "domcontentloaded" });
@@ -609,7 +621,7 @@ try {
     console.log(`${phase}: ${result}`);
   };
   await browserPage.locator("#run").click();
-  await waitForResult("MCP adapter recovery flow");
+  await waitForResult("MCP adapter saved-list load flow");
   await browserPage.locator("#flow").click();
   await waitForResult("MCP adapter continuous flow");
   await browserPage.locator("#alternatives").click();
@@ -635,5 +647,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: saved-list transfer, basket readback, verified source cleanup, restart replay guard, alternatives, and zero direct basket writes.",
+  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, and alternatives.",
 );

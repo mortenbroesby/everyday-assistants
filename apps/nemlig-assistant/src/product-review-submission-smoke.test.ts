@@ -93,7 +93,7 @@ const withMcpClient = async <T>(
   }
 };
 
-test("MCP persists exact native list edits and submits once with durable basket readback", async () => {
+test("MCP submits one exact direct draft and never changes a saved list", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
   const products = new Map([
@@ -108,10 +108,11 @@ test("MCP persists exact native list edits and submits once with durable basket 
     deliveryTime: "Tomorrow",
   };
   let providerWrites = 0;
-  let listUpdates = 0;
+  const listUpdates = 0;
   const providerEvents: string[] = [];
-  let shoppingListName = "";
-  const shoppingLists = new Map<number, Map<number, number>>();
+  let submittedDraftId = "";
+  let submittedContextId = "";
+  let submittedItems: Array<{ product_id: number; quantity: number }> = [];
   const provider: ShoppingClient & ShoppingListClient = {
     providerIdentity: () => "account-1",
     isLoggedIn: () => true,
@@ -130,54 +131,22 @@ test("MCP persists exact native list edits and submits once with durable basket 
       return structuredClone(basket);
     },
     addToCart: async () => {
-      throw new Error("Direct basket writes must not be used.");
+      throw new Error("Single-item mutations must not be used.");
     },
-    listShoppingLists: async () =>
-      [...shoppingLists.keys()].map((id) => ({
-        id,
-        name: shoppingListName,
-        productCount: shoppingLists.get(id)?.size ?? 0,
-      })),
-    createShoppingList: async (name) => {
-      shoppingListName = name;
-      shoppingLists.set(1, new Map());
-      return 1;
-    },
-    updateShoppingListProduct: async (listId, id, quantity) => {
-      listUpdates++;
-      if (quantity === 0) {
-        shoppingLists.get(listId)?.delete(id);
-      } else {
-        shoppingLists.get(listId)?.set(id, quantity);
-      }
-    },
-    getShoppingList: async (listId) => ({
-      id: listId,
-      name: shoppingListName,
-      items: [...(shoppingLists.get(listId) ?? [])].map(
-        ([productId, quantity]) => ({ productId, quantity }),
-      ),
-    }),
-    deleteShoppingList: async (listId) => {
-      providerEvents.push("delete-list");
-      shoppingLists.delete(listId);
-      throw new Error("Cleanup was not confirmed.");
-    },
-    addShoppingListToCart: async (listId) => {
-      providerEvents.push("transfer");
+    addManyToCart: async (items, options) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      providerEvents.push("bulk-add");
       providerWrites++;
-      const additions = [...(shoppingLists.get(listId) ?? [])].map(
-        ([id, quantity]) => {
-          const productValue = products.get(id);
-          assert.ok(productValue, `Unexpected product mutation: ${id}`);
-          return item(
-            id,
-            productValue.name ?? `Product ${id}`,
-            quantity,
-            productValue.price ?? 0,
-          );
-        },
-      );
+      const additions = items.map(({ productId, quantity }) => {
+        const productValue = products.get(productId);
+        assert.ok(productValue, `Unexpected product mutation: ${productId}`);
+        return item(
+          productId,
+          productValue.name!,
+          quantity,
+          productValue.price!,
+        );
+      });
       basket = {
         ...basket,
         items: [...basket.items, ...additions],
@@ -188,6 +157,23 @@ test("MCP persists exact native list edits and submits once with durable basket 
           (basket.numberOfProducts ?? 0) +
           additions.reduce((total, line) => total + (line.quantity ?? 0), 0),
       };
+      return structuredClone(basket);
+    },
+    listShoppingLists: async () => [],
+    getShoppingList: async () => {
+      throw new Error("Direct drafts do not read shopping lists.");
+    },
+    createShoppingList: async () => {
+      throw new Error("Direct drafts do not create shopping lists.");
+    },
+    updateShoppingListProduct: async () => {
+      throw new Error("Direct drafts do not edit shopping lists.");
+    },
+    deleteShoppingList: async () => {
+      throw new Error("Direct drafts do not delete shopping lists.");
+    },
+    addShoppingListToCart: async () => {
+      throw new Error("Direct drafts do not transfer shopping lists.");
     },
   };
   const credentials = async () => ({
@@ -274,10 +260,7 @@ test("MCP persists exact native list edits and submits once with durable basket 
           productReviewTool.description ?? "",
           /submission .* disabled/u,
         );
-        assert.match(
-          productReviewTool.description ?? "",
-          /saved list.*Submit|Submit.*saved list/u,
-        );
+        assert.match(productReviewTool.description ?? "", /temporary/u);
 
         const started = await mcp.callTool({
           name: "start_product_review",
@@ -286,7 +269,6 @@ test("MCP persists exact native list edits and submits once with durable basket 
               { product_id: 7, quantity: 3 },
               { product_id: 8, quantity: 2 },
             ],
-            creation_id: randomUUID(),
           },
         });
         assert.equal(started.isError, undefined);
@@ -304,25 +286,17 @@ test("MCP persists exact native list edits and submits once with durable basket 
             [8, 2, "ready"],
           ],
         );
-        assert.equal(review.saveStatus, "saved");
-        assert.ok(review.shoppingListId);
+        assert.equal(review.basketMode, "direct-basket");
+        assert.ok(review.draftId);
         assert.ok(review.reviewContextId);
-        assert.deepEqual((await provider.getShoppingList(1)).items, [
-          { productId: 7, quantity: 3 },
-          { productId: 8, quantity: 2 },
-        ]);
-        assert.equal(listUpdates, 2, "creation writes the selected rows");
-        assert.equal(
-          providerWrites,
-          0,
-          "list creation does not touch the basket",
-        );
+        assert.equal(listUpdates, 0, "draft creation does not write a list");
+        assert.equal(providerWrites, 0, "draft creation does not write basket");
 
         const edited = await mcp.callTool({
           name: "update_product_review_conversation",
           arguments: {
             action: { kind: "quantity", product_id: 7, quantity: 4 },
-            shopping_list_id: 1,
+            draft_id: review.draftId,
             review_context_id: review.reviewContextId,
           },
         });
@@ -330,17 +304,26 @@ test("MCP persists exact native list edits and submits once with durable basket 
         const editedReview = (
           edited.structuredContent as { review: ProductReviewSnapshot }
         ).review;
-        assert.deepEqual((await provider.getShoppingList(1)).items, [
-          { productId: 7, quantity: 4 },
-          { productId: 8, quantity: 2 },
-        ]);
-        assert.equal(listUpdates, 3, "quantity edits persist immediately");
+        submittedDraftId = editedReview.draftId!;
+        submittedContextId = editedReview.reviewContextId!;
+        submittedItems = editedReview.items.map(({ product_id, quantity }) => ({
+          product_id,
+          quantity,
+        }));
+        assert.equal(listUpdates, 0, "draft edits do not write a list");
         const submitted = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {
-            shopping_list_id: 1,
+            draft_id: editedReview.draftId,
             review_context_id: editedReview.reviewContextId,
             submission_id: randomUUID(),
+            reviewed_list: {
+              name: "Reviewed draft",
+              items: editedReview.items.map(({ product_id, quantity }) => ({
+                product_id,
+                quantity,
+              })),
+            },
           },
         });
         assert.equal(
@@ -351,16 +334,13 @@ test("MCP persists exact native list edits and submits once with durable basket 
         assert.equal(
           providerWrites,
           1,
-          "the explicit submit transfers the updated native list once",
+          "the explicit submit bulk-adds the draft once",
         );
-        assert.deepEqual(providerEvents, [
-          "basket-readback",
-          "basket-readback",
-          "transfer",
-          "basket-readback",
-          "delete-list",
-        ]);
-        assert.deepEqual(await provider.listShoppingLists(), []);
+        assert.equal(
+          providerEvents.filter((event) => event === "bulk-add").length,
+          1,
+        );
+        assert.equal(listUpdates, 0);
         assert.deepEqual(
           basket.items.map(({ id, quantity }) => [id, quantity]),
           [
@@ -372,15 +352,28 @@ test("MCP persists exact native list edits and submits once with durable basket 
         const replay = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {
-            shopping_list_id: 1,
+            draft_id: editedReview.draftId,
+            review_context_id: editedReview.reviewContextId,
             submission_id: randomUUID(),
+            reviewed_list: {
+              name: "Reviewed draft",
+              items: editedReview.items.map(({ product_id, quantity }) => ({
+                product_id,
+                quantity,
+              })),
+            },
           },
         });
-        assert.equal(replay.isError, true);
+        assert.equal(replay.isError, undefined, JSON.stringify(replay.content));
+        assert.equal(
+          (replay.structuredContent as { result: { replayed: boolean } }).result
+            .replayed,
+          true,
+        );
         assert.equal(
           providerWrites,
           1,
-          "a fresh ID cannot replay the same list snapshot",
+          "a fresh ID cannot replay a direct draft submission",
         );
       },
     );
@@ -394,24 +387,23 @@ test("MCP persists exact native list edits and submits once with durable basket 
       ),
       async (restarted) => {
         const reopened = await restarted.callTool({
-          name: "start_product_review",
-          arguments: { shopping_list_id: 1 },
+          name: "submit_product_review_conversation",
+          arguments: {
+            draft_id: submittedDraftId,
+            review_context_id: submittedContextId,
+            submission_id: randomUUID(),
+            reviewed_list: {
+              name: "Reviewed draft",
+              items: submittedItems,
+            },
+          },
         });
         assert.equal(reopened.isError, undefined);
         assert.equal(
-          (reopened.structuredContent as { selectedShoppingListId: null })
-            .selectedShoppingListId,
-          null,
-          "the deleted source returns to the list picker",
+          (reopened.structuredContent as { result: { replayed: boolean } })
+            .result.replayed,
+          true,
         );
-        const replay = await restarted.callTool({
-          name: "submit_product_review_conversation",
-          arguments: {
-            shopping_list_id: 1,
-            submission_id: randomUUID(),
-          },
-        });
-        assert.equal(replay.isError, true);
         assert.equal(
           providerWrites,
           1,

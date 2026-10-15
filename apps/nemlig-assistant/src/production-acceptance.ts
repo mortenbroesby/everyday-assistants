@@ -31,7 +31,11 @@ export const productionToolInventory = {
     "update_product_review_conversation",
     "submit_product_review_conversation",
   ],
-  appActions: ["update_product_review", "submit_product_review"],
+  appActions: [
+    "update_product_review",
+    "submit_product_review",
+    "save_basket_as_shopping_list",
+  ],
 } as const;
 
 export const productionResourceInventory = [

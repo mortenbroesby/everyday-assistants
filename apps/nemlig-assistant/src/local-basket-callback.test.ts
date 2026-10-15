@@ -3,6 +3,11 @@ import test from "node:test";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import { attachLocalBasketCapability } from "./local-basket-capability.js";
 import type { LocalBasketCommand } from "./local-basket.js";
+import {
+  mutateOwnerLocalBasketInventory,
+  type LocalBasketInventoryStorage,
+  type LocalBasketStorageAccess,
+} from "./local-basket-storage.js";
 
 const principalKey = "a".repeat(32);
 const capability = "container-owned-capability";
@@ -102,6 +107,62 @@ test("callback accepts all five journal commands and keeps long native names", a
     assert.equal(commandResponse.status, 200, command.kind);
   }
   assert.deepEqual(seen, ["id:" + principalKey, "review-operation-write"]);
+});
+
+test("callback persists normalized direct receipts through owner storage", async () => {
+  const values = new Map<string, unknown>();
+  const storage: LocalBasketInventoryStorage = {
+    async get<T>(key: string) {
+      return values.get(key) as T | undefined;
+    },
+    async put<T>(key: string, value: T) {
+      values.set(key, structuredClone(value));
+    },
+    async delete(key: string) {
+      values.delete(key);
+    },
+    async setAlarm() {},
+    async deleteAlarm() {},
+    async transaction<T>(
+      action: (access: LocalBasketStorageAccess) => Promise<T>,
+    ) {
+      return action(storage);
+    },
+  };
+  const owner = `direct-owner-${principalKey}`;
+  const operation = {
+    operationId: "direct-basket-save:draft-1",
+    generation: "save-attempt-1",
+    accountIdentity: "account-1",
+    kind: "basket-save",
+    name: "Save current Nemlig basket as a shopping list",
+    items: [{ productId: 91, quantity: 3 }],
+    baseline: [{ productId: 91, quantity: 3 }],
+  };
+  const response = await handleLocalBasketStateRequest(
+    request({ kind: "review-operation-write", operation }),
+    {
+      idFromName: () => owner,
+      get: () => ({
+        mutate: async (authenticatedOwner, command) =>
+          mutateOwnerLocalBasketInventory(storage, authenticatedOwner, command),
+      }),
+    },
+    async (value) => (value === capability ? owner : undefined),
+  );
+  assert.equal(response.status, 200);
+  const stored = await mutateOwnerLocalBasketInventory(storage, owner, {
+    kind: "review-operation-read",
+    operationId: operation.operationId,
+  });
+  assert.deepEqual(
+    stored && (stored as typeof operation).items,
+    operation.items,
+  );
+  assert.deepEqual(
+    stored && (stored as typeof operation).baseline,
+    operation.baseline,
+  );
 });
 
 test("journal callbacks remain separated by capability-derived owner", async () => {

@@ -5,9 +5,8 @@
 </p>
 
 <p align="center">
-  Search and compare in conversation, save native Nemlig shopping lists, and
-  inspect the actual basket. Explicit list-to-basket submission verifies the
-  basket addition before removing an unchanged source list.
+  Search and compare in conversation, review a temporary draft, add approved
+  products to the basket in one request, and optionally save the whole basket.
 </p>
 
 <p align="center">
@@ -27,12 +26,12 @@
 ## Your grocery copilot, with you still in charge
 
 Nemlig Assistant is an unofficial Node.js and TypeScript assistant for
-nemlig.com. It helps you find current products and edit shopping lists owned by
-Nemlig, with changes saved automatically.
+nemlig.com. It helps you find current products, prepare temporary drafts, and make
+explicit additive changes to the actual basket.
 
 Use it from a terminal or connect its MCP server to an AI client such as
 ChatGPT. The assistant can do useful read-only work immediately. Basket writes
-require an explicit Submit action on a saved list.
+require an explicit Submit action on the reviewed draft.
 
 It has no recipe, order, payment, or checkout capability. It is not affiliated
 with or endorsed by nemlig.com or OpenAI.
@@ -44,18 +43,18 @@ with or endorsed by nemlig.com or OpenAI.
 Once connected, try prompts like:
 
 - “Find organic milk and show the current detailed results, compared by unit price.”
-- “Create a shopping list with these products.”
+- “Review these products before adding them to my basket.”
 - “Show my Nemlig shopping lists.”
-- “Update my Family shopping list with these changes.”
+- “Load my Family shopping list into a temporary draft so I can review changes.”
 - “Show my Nemlig basket.”
 - “Which Nemlig Assistant version and codename are running?”
 
-Product search and Nemlig basket reads are read-only. Choosing products for a
-shopping list creates it in Nemlig immediately; product edits save automatically.
-**Add to Nemlig basket** transfers the separately authorized list,
-verifies the additive basket readback, and removes the source if its final
-contents check still matches. An edit can race that last check; observed
-changes or uncertain cleanup keep the list and show a warning.
+Product search and Nemlig basket reads are read-only. Choosing products opens a
+temporary draft; edits stay local until **Add to Nemlig basket** explicitly
+submits every reviewed line in one additive request. Existing saved lists can
+be loaded as read-only sources into a new draft. After a verified addition, the
+viewer offers a separate action to save the entire current basket as a list;
+this includes existing basket rows and does not clear the basket.
 
 <a id="what-you-can-do"></a>
 
@@ -81,27 +80,26 @@ changes or uncertain cleanup keep the list and show a warning.
 ### Work with shopping lists and the basket
 
 - Inspect the current basket without changing it.
-- Discover native Nemlig shopping lists and reopen them in the shared product
-  viewer.
-- Create a native shopping list from selected products and quantities. Add,
-  remove, replace, and change quantities directly, without separate Save/Update.
-- Show a loading indicator with the current operation while reading, editing,
-  or transferring a list; keep products visible while waiting.
-- Reopen the exact list after a restart or card reload. The viewer reads its
-  current Nemlig contents before enabling edits.
-- Failed edits or alternatives requests keep visible products and quantities,
-  explain the error in a recoverable modal, and offer an exact-list refresh.
-  Dismissing an error does not replay a write or restore an older host snapshot.
+- Discover saved Nemlig shopping lists and load an exact list into a new
+  temporary draft. The source list remains unchanged.
+- Add, remove, replace, and change quantities in the temporary draft; these
+  edits do not write to Nemlig.
+- Submit once to add the exact reviewed rows to the actual basket. The request
+  preserves existing rows and the assistant never retries an uncertain write.
+- After verified submission, optionally save the whole current basket as a
+  shopping list. This integration does not establish or return a verified
+  new-list ID, so find it in the saved-list picker. This action never clears
+  the basket.
+- Failed draft edits or alternatives requests keep visible products and
+  quantities. Dismissing an error does not replay a provider write.
+- Show the current operation while loading a saved list, editing the draft,
+  submitting additions, or saving the basket; keep products visible while
+  waiting.
+- After an error, keep the exact draft and quantities visible and offer a
+  targeted recovery. Dismissing an error does not replay a write or restore an
+  older host snapshot.
 - Partial or uncertain operations distinguish confirmed provider contents from
   unresolved changes. Missing lists never redirect to unrelated lists.
-- Choose **Add to Nemlig basket** for a confirmed list to add it to the actual basket. The
-  app rechecks the exact list and basket baseline, transfers once, verifies
-  additive basket readback, and keeps a durable no-replay fence. After the
-  readback, the app checks the source again and deletes it only if its identity
-  and contents still match. An edit can race the final check; observed changes
-  or uncertain cleanup keep the list with a warning. Submit errors distinguish
-  a stopped preflight from an unconfirmed transfer; an uncertain transfer still
-  requires basket inspection before another attempt.
 - Use the actual basket view to inspect Nemlig's basket.
 
 ### Use the interface that fits
@@ -138,27 +136,23 @@ or unavailable detail reads explicitly. Provider descriptions and declarations
 are converted from HTML to bounded plain text; scripts, styles, images, and link
 destinations are omitted.
 
-The shared product viewer edits native shopping lists with product details,
-alternatives, quantities, removal, and accessible touch/keyboard controls.
-Choosing products creates one list; each edit persists to its exact native ID.
-Plain search and alternative browsing remain read-only. A card refresh reads
-current provider contents before enabling edits, so cached host output cannot
-restore old quantities or removed products.
+The shared product viewer edits temporary, process-local drafts with product
+details, alternatives, quantities, removal, and accessible touch/keyboard
+controls. Choosing products does not write to Nemlig. A user may load an exact
+saved list as a read-only source; its contents are copied into a new draft, and
+later edits or basket submission never update or delete that source.
 
-Creation and edits use the existing owner-scoped operation journal to inspect
-interrupted writes without blindly replaying them. Creation IDs identify an
-intentional new list, not its product set; a deliberate later identical list
-gets a new ID. Recovery storage is bounded and preserves unresolved evidence.
-Local stdio without the hosted journal does not promise restart idempotence.
-Editing is serialized within a card's context; separate cards or direct Nemlig
-changes can still race provider operations.
+Explicit Submit sends all reviewed rows in one additive basket request and
+verifies the resulting basket independently. Drafts expire after two hours and
+cannot be recovered after restart. Uncertain basket writes retain a durable
+no-replay receipt. After a verified addition, the viewer offers a separate
+optional action to save the entire current basket. It preserves the basket and
+does not establish or return a verified saved-list ID, so the user can find the
+new list in the picker. Uncertain saves are not retried.
 
-Retired draft/Local Basket IDs and manual Save/Update actions are rejected; they
-never select an unrelated list. Existing native lists remain available by exact
-ID. The old storage namespace is unchanged. Basket transfer retains one native
-request, additive readback, a durable no-replay receipt, and a final source-list
-check before cleanup. The provider has no conditional delete, so an edit can
-race that check.
+The provider endpoint shape was observed in Nemlig's first-party website bundle.
+Live acceptance, atomicity, and provider limits remain unverified. The browser
+smoke uses synthetic provider responses and does not write to a Nemlig account.
 
 Run `pnpm nemlig:smoke:review-ui` and `pnpm nemlig:build:storybook` from the
 repository root for synthetic viewer coverage. These checks use fixtures and do
@@ -168,25 +162,25 @@ production acceptance.
 ## 🛡️ How basket changes work
 
 ```text
-Search → choose products → automatically saved Nemlig shopping list → explicit basket addition
+Search or load a saved list → edit temporary draft → explicit one-request basket addition
+                                                    → optional save of whole current basket
 ```
 
-- Product search and actual Nemlig basket inspection are read-only.
-- Selected products create a native list; subsequent edits persist to that list.
-  Initial population writes one product at a time and verifies complete list
-  readback. An incomplete result reports what was confirmed, not success for
-  the entire selection.
-- Creating/editing a list does not authorize a basket addition. Submission uses
-  the reviewed list only after explicit authorization, then verifies the actual
-  basket. It compares the reviewed name and quantities with fresh provider
-  contents; submission does not require the original card/context to survive.
-- Interrupted or uncertain writes are inspected through their recovery records.
-  Refresh does not repeat them. If recovery storage is full, operations fail
-  closed and retain existing evidence.
-- Old Local Basket identifiers do not identify native lists. Historical cards
-  using retired fields or actions are rejected; they do not open discovery or
-  target a saved list. The legacy Local Basket data and namespace have not been
-  deleted by this change.
+- Product search, saved-list discovery, and actual basket inspection are
+  read-only. Loading a saved list copies its exact rows into a temporary draft;
+  the source remains unchanged.
+- Draft selection and edits write only to process-local state. Explicit Submit
+  sends every reviewed product ID and additional quantity in one additive
+  request, then validates basket readback and preserves prior rows.
+- An uncertain or partial addition is never retried automatically. Inspect the
+  actual basket before deciding what to do.
+- Saving the current basket as a shopping list is a separate explicit action
+  offered only after verified Submit. It includes all current basket items,
+  preserves the basket, and does not provide a verified new-list ID.
+- The observed request builders do not establish live acceptance, provider
+  atomicity, or provider limits. Nemlig changes can race the independent
+  baseline and readback checks.
+
 - The assistant never removes basket items, checks out, places an order, or pays.
 
 Repository work, choosing products, or review preparation never authorizes a
@@ -226,6 +220,19 @@ The CLI has no provider-basket remove or clear command. `add` means add this
 many units to the existing Nemlig line; it does not set the line to that
 quantity.
 
+For a reviewed set of products, `add-many` sends all positive quantity deltas
+in one additive basket request and then independently reads the basket back:
+
+```sh
+pnpm nemlig add-many 701015:2 2301138:1
+```
+
+Each argument is an exact numeric product ID followed by the additional
+quantity. IDs must be unique. An uncertain request or mismatched readback must
+be resolved by inspecting the basket; the command never retries. The provider
+request builder is based on Nemlig's public website bundle. Provider-side
+atomicity, limits, and live acceptance have not been verified.
+
 ### Local MCP server
 
 ```sh
@@ -240,43 +247,33 @@ The MCP surface is organized around household actions:
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
 - See the actual Nemlig basket: `show_my_basket`.
-- Create or open a shopping list: `start_product_review`. Exact `items` plus a
-  caller-generated `creation_id` UUID create one native list; use a user-supplied
-  `shopping_list_name` when available. Repeat that creation ID only to inspect
-  its outcome, never automatically generate another after an uncertain result.
-  Omit items to discover lists, or pass `shopping_list_id` to open that exact list.
-- Edit, add, remove, or find alternatives with
-  `update_product_review_conversation`. Mutating actions save immediately;
-  alternatives search stays read-only. Carry `shopping_list_id` and the returned
-  `review_context_id`. Use `show`/`select` with the exact native ID to rebuild an
-  expired context. An untargeted show never guesses another conversation's list;
-  use `list` for discovery. Native lists survive editor expiry; hosted operation
-  records preserve unresolved writes. Tool success alone does not prove the
-  client rendered the viewer.
-- Submit the exact saved native shopping list only after the user's explicit
-  Submit action: `submit_product_review_conversation`. The tool re-reads and
-  compares the reviewed list before one additive transfer, verifies basket
-  readback, and never retries an uncertain transfer.
-- Nemlig Assistant is strictly add-only for the real
-  basket: it cannot remove, decrease, replace, swap, or clear products. If two
-  units are already present and two more are authorized, the resulting line is
-  four units. The provider accepts an absolute quantity, so the assistant
-  re-reads the basket and sets the resulting positive quantity; stale or
-  incomplete state fails closed. Nemlig does not expose an atomic increment or
-  compare-and-set here, so an edit made simultaneously on Nemlig.com can race
-  that read/set boundary. Manage removals and clearing directly on Nemlig.com.
+- Create a temporary draft or load a saved-list source with
+  `start_product_review`. Exact `items` and positive quantities create a local
+  draft without creating a Nemlig list. Pass `shopping_list_id` to load that
+  exact saved list as a read-only source into a new draft; omit both to discover
+  saved lists.
+- Edit or find alternatives with `update_product_review_conversation`. Carry
+  the exact `draft_id` and `review_context_id` from the card. Edits are local;
+  `list` and `select` inspect saved lists or copy one into a fresh draft.
+- Submit only after explicit authorization with
+  `submit_product_review_conversation`. It sends the reviewed quantities in
+  one additive request, verifies basket readback, preserves existing rows, and
+  never retries an uncertain write.
+- After verified Submit, the viewer offers `save_basket_as_shopping_list` as a
+  separate optional action. It saves the whole current basket, including
+  existing rows, and preserves the basket. The endpoint response has no
+  verified saved-list ID; use the picker to find it. Uncertain saves are never
+  retried.
+- The actual Nemlig basket is add-only. The assistant cannot remove, decrease,
+  replace, swap, clear, check out, pay, order, or select delivery slots. The
+  provider offers no established atomicity guarantee; concurrent Nemlig changes
+  may race the independent baseline and readback checks.
 - Search and conversation-side edits return structured and text results without
-  mounting a widget for every tool call. `start_product_review` is the explicit
-  render action: it opens the current products immediately. Use it once while a
-  current card is usable; repeat it to reopen the current list when asked.
-  Cards carry the exact shopping_list_id and a transient review_context_id.
-  Retired draft fields/actions fail validation; select a native list instead.
-  Model-side text actions use the `_conversation` tool names. The MCP server
-  serves one stable viewer URI; retired resources remain inert.
-  The viewer uses the MCP Apps bridge, saves intentional edits through the
-  server, and refreshes native contents on remount. It never calls Nemlig
-  directly. Use `update_product_review_conversation` action `show` with the exact
-  `shopping_list_id` for headless recovery.
+  mounting a widget for every tool call. `start_product_review` opens the
+  selected draft or saved-list picker. Cards carry the exact draft ID and
+  transient review context; drafts expire after two hours and cannot be restored
+  after restart. The viewer uses the MCP Apps bridge and never calls Nemlig
+  directly.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -288,10 +285,9 @@ invalid tokens also trigger that prompt
 automatically.
 
 Direct `add_to_cart`, `remove_from_cart`, `replace_cart_line`, and
-`clear_cart` MCP tools intentionally do not exist. Basket additions use the exact saved native shopping list after explicit Submit,
-fresh provider validation and verified additive readback. A clear request to add
-that exact reviewed list can authorize the transfer; ambiguous or changed
-contents require approval of the exact list and quantities.
+`clear_cart` MCP tools intentionally do not exist. Basket additions require explicit Submit for the exact displayed draft and
+quantities. Searching, loading a source list, and editing the draft do not
+authorize a basket mutation.
 
 ### Auth0 and hosted MCP
 
@@ -372,6 +368,12 @@ pnpm nemlig:smoke:package
 ```
 
 Tests use synthetic HTTP responses and never access a real Nemlig account.
+
+For the connected picker walkthrough, run `pnpm storybook` from this
+directory and open **Picker/Visual contract → AppTabWalkthrough**. It renders
+the production `ViewerPage` with clearly labeled simulated host and provider
+responses; **AppTabWalkthroughChecks** runs the companion click-through. These
+fixtures demonstrate UI behavior only and do not verify live Nemlig responses.
 
 The MCP resource uses the permanent `ui://nemlig/shell.html` identity. Its
 small HTML shell fetches `/ui/nemlig/manifest.json` without credentials or
@@ -481,13 +483,13 @@ This README is the user-facing inventory of shipped feature sets:
 - account access
 - product and department discovery
 - native Nemlig shopping-list discovery
-- native shopping-list creation from selected products
-- automatic persistence of list edits with verified readback
-- exact-list refresh on card remount and recoverable error modals
-- owner-scoped durable recovery journal for interrupted list operations
+- temporary drafts and read-only saved-list loading
+- local draft edits that leave saved shopping lists unchanged
+- owner-scoped durable no-replay fences for uncertain direct writes, with
+  bounded retention for completed receipts
 - shared product presentation with tap-to-open details, press-and-hold actions, and alternatives
 - read-only actual Nemlig basket inspection
-- explicit saved-list-to-basket Submit with additive readback and durable no-replay
+- one-request additive basket Submit with readback and durable no-replay
 - CLI, MCP, Auth0, and bounded Cloudflare hosting
 - credential-free production-readiness gate
 - private package and guarded SemVer release policy
@@ -512,7 +514,8 @@ src/http.ts                   Authenticated HTTP MCP transport
 src/cloudflare-worker.ts      Gateway, Container, and Durable Objects
 src/product-discovery.ts      Request-scoped detailed product hydration
 src/product-presentation.ts  Shared factual product projection
-src/product-review.ts        Native list editing, recovery, and basket review
+src/product-review.ts        Temporary drafts, read-only list loading, basket
+                              review
 src/product-viewer.ts         Packaged product viewer and headless fallback
 src/proposals.ts              Proposal store, revalidation, and mutation lock
 release/                      Version and publication policy

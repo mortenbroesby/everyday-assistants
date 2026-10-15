@@ -449,6 +449,50 @@
         }
       }
     },
+    "/webapi/Basket/AddManyToBasket": {
+      "post": {
+        "operationId": "addManyToBasket",
+        "tags": ["Basket"],
+        "summary": "Add multiple products to the existing basket",
+        "description": "The first-party website bundle maps product IDs and positive quantities into one request with addToExisting=true. This documents observed request construction only; provider acceptance, limits, atomicity, and live behavior have not been verified.",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "add-only-positive-quantities-existing-basket",
+          "evidence": ["Nemlig website bundle main.js, TopUpService.addManyToBasket and ProductId/Quantity mapper, inspected 2026-10-14"]
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": { "schema": { "$ref": "#/components/schemas/BulkBasketAdditionRequest" } }
+          }
+        },
+        "responses": {
+          "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/ShoppingList/CreateShoppingListFromBasket": {
+      "post": {
+        "operationId": "createShoppingListFromBasket",
+        "tags": ["Shopping lists", "Basket"],
+        "summary": "Create a shopping list from the current basket",
+        "description": "The first-party website bundle calls this endpoint with a null body, which Angular serializes to an empty request body. The response shape and live acceptance have not been verified. This endpoint saves the entire current basket, including existing items. The assistant verifies the basket remains unchanged and never calls the separate clear-basket operation.",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used",
+          "confidence": "high",
+          "safety": "creates-list-from-current-basket-without-clearing-basket",
+          "evidence": ["Nemlig website bundle main.js, ShoppingListService.createShoppingListFromBasket, inspected 2026-10-14"]
+        },
+        "responses": {
+          "200": { "description": "Acknowledgement shape unverified; independent basket readback is required." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
     "/webapi/basket/addShoppingListToBasket": {
       "post": {
         "operationId": "addShoppingListToBasket",
@@ -887,6 +931,26 @@
           "quantity": { "type": "integer", "minimum": 0 },
           "AffectPartialQuantity": { "type": "boolean", "const": false },
           "disableQuantityValidation": { "type": "boolean", "const": false }
+        }
+      },
+      "BulkBasketAdditionRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["addToExisting", "Products"],
+        "properties": {
+          "addToExisting": { "type": "boolean", "const": true },
+          "Products": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ProductId", "Quantity"],
+              "properties": {
+                "ProductId": { "type": "string", "minLength": 1 },
+                "Quantity": { "type": "integer", "minimum": 1 }
+              }
+            }
+          }
         }
       },
       "AntiForgery": {
