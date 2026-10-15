@@ -717,9 +717,16 @@ function walkthroughProductName(item: Review["items"][number]): string {
     : "Product";
 }
 
-function walkthroughProgressMessage(busy: boolean, review: Review): string {
+function walkthroughProgressMessage(
+  busy: boolean,
+  screen: ViewerScreen,
+  review: Review,
+): string {
   if (!busy) {
     return "";
+  }
+  if (screen.kind === "loading") {
+    return "Simulated host is preparing the requested products…";
   }
   return review.submissionAttempted
     ? "Saving the whole basket in the simulated provider…"
@@ -758,6 +765,7 @@ type SimulatedHostPanelProps = {
   onLoadSavedLists: () => void;
   onStartEmptyDraft: () => void;
   onAddOatMilk: () => void;
+  onSimulateFiveProductRequest: () => void;
   submitCount: number;
   saveCount: number;
   submitRequest?: Array<{ product_id: number; quantity: number }>;
@@ -774,6 +782,7 @@ function SimulatedHostPanel({
   onLoadSavedLists,
   onStartEmptyDraft,
   onAddOatMilk,
+  onSimulateFiveProductRequest,
   submitCount,
   saveCount,
   submitRequest,
@@ -799,6 +808,16 @@ function SimulatedHostPanel({
         tools or live Nemlig endpoints are called.
       </p>
       <p role="status">{hostMessage}</p>
+      {currentReview.items.length === 0 &&
+        !currentReview.submissionAttempted && (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={onSimulateFiveProductRequest}
+          >
+            Simulate asking ChatGPT for five products
+          </button>
+        )}
       <div>
         <button type="button" disabled={busy} onClick={onLoadSavedLists}>
           Load saved shopping lists
@@ -870,8 +889,13 @@ function SimulatedHostPanel({
 }
 
 function useWalkthroughViewState() {
-  const [screen, setScreen] = useState<ViewerScreen>({ kind: "loading" });
-  const [currentReview, setCurrentReview] = useState(() => directDraft([], 1));
+  const initialReview = directDraft([], 1);
+  const [screen, setScreen] = useState<ViewerScreen>({
+    kind: "review",
+    review: initialReview,
+    active: true,
+  });
+  const [currentReview, setCurrentReview] = useState(initialReview);
   const [generation, setGeneration] = useState(1);
   const [connectionMessage, setConnectionMessage] = useState(
     "Waiting for a simulated host action…",
@@ -1146,7 +1170,7 @@ function DirectBasketWalkthrough() {
       "Simulated conversation selected 1 × Havredrik øko. for the current draft.",
     );
   };
-  const chooseStarterProducts = (prompt: string) => {
+  const chooseStarterProducts = (prompt: string, delayMs = 180) => {
     const chosenIds = starterProductIds(prompt);
     const chosenItems = review.items
       .filter((item) => chosenIds.includes(item.product_id))
@@ -1158,25 +1182,26 @@ function DirectBasketWalkthrough() {
       "Simulated conversation requested product search and comparison.",
     );
     setTimeout(() => {
-      setCurrentReview((previous) => {
-        const selectedIds = new Set(
-          previous.items.map((item) => item.product_id),
-        );
-        return {
-          ...previous,
-          items: [
-            ...previous.items,
-            ...chosenItems.filter((item) => !selectedIds.has(item.product_id)),
-          ],
-        };
-      });
-      setScreen({ kind: "review", review: currentReview, active: true });
+      const selectedIds = new Set(
+        currentReview.items.map((item) => item.product_id),
+      );
+      const nextReview = {
+        ...currentReview,
+        items: [
+          ...currentReview.items,
+          ...chosenItems.filter((item) => !selectedIds.has(item.product_id)),
+        ],
+      };
+      setCurrentReview(nextReview);
+      setScreen({ kind: "review", review: nextReview, active: true });
       setBusy(false);
       setHostMessage(
         `Simulated host selected ${chosenItems.length} product${chosenItems.length === 1 ? "" : "s"} into the temporary draft. No provider write was made.`,
       );
-    }, 180);
+    }, delayMs);
   };
+  const simulateFiveProductRequest = () =>
+    chooseStarterProducts("Plan groceries for the week", 5000);
   const submit = submitReview;
   const openPicker = () => {
     setScreen({ kind: "picker", baskets: savedLists });
@@ -1189,7 +1214,7 @@ function DirectBasketWalkthrough() {
       busy,
       connectionMessage,
       presentationDestination: destination,
-      message: walkthroughProgressMessage(busy, currentReview),
+      message: walkthroughProgressMessage(busy, screen, currentReview),
       maxWidth: 375,
       baskets: savedLists,
       selectedBasketId: undefined,
@@ -1287,6 +1312,7 @@ function DirectBasketWalkthrough() {
         onLoadSavedLists={loadSavedLists}
         onStartEmptyDraft={startEmptyDraft}
         onAddOatMilk={addOatMilk}
+        onSimulateFiveProductRequest={simulateFiveProductRequest}
         submitCount={submitCount}
         saveCount={saveCount}
         submitRequest={submitRequest}
@@ -1339,7 +1365,7 @@ export const AppTabWalkthrough: Story = {
     docs: {
       description: {
         story:
-          "Manual local journey: load a saved source into a temporary draft, simulate a host product selection, edit through ViewerPage, explicitly submit, save the whole simulated basket, then open the unchanged source as a fresh draft.",
+          "Manual local journey: begin idle, simulate asking ChatGPT for five products, wait five seconds for the host response, then edit in ViewerPage, explicitly submit, save the whole simulated basket, and open the unchanged source as a fresh draft.",
       },
     },
   },
@@ -1349,6 +1375,39 @@ export const AppTabWalkthroughChecks: Story = {
   render: () => <DirectBasketWalkthrough />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
+    const fiveProductRequest = canvas.getByRole("button", {
+      name: "Simulate asking ChatGPT for five products",
+    });
+    expect(fiveProductRequest.hasAttribute("disabled")).toBe(false);
+    expect(canvasElement.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(canvas.queryByRole("progressbar")).toBeNull();
+    const requestStartedAt = Date.now();
+    await userEvent.click(fiveProductRequest);
+    expect(fiveProductRequest.hasAttribute("disabled")).toBe(true);
+    expect(canvasElement.querySelector('[aria-busy="true"]')).toBeTruthy();
+    expect(
+      canvas.getByText("Simulated host is searching and comparing products…"),
+    ).toBeTruthy();
+    await waitFor(
+      () =>
+        expect(
+          canvas.getByRole("group", { name: "Arla ØKO Minimælk" }),
+        ).toBeTruthy(),
+      { timeout: 8000, interval: 100 },
+    );
+    expect(Date.now() - requestStartedAt).toBeGreaterThanOrEqual(5000);
+    for (const productName of [
+      "Arla ØKO Minimælk",
+      "Lasagneplader øko.",
+      "Havredrik øko.",
+      "Lurpak Smørbar",
+      "Hakkede tomater",
+    ]) {
+      expect(canvas.getByRole("group", { name: productName })).toBeTruthy();
+    }
+    expect(canvasElement.querySelector('[aria-busy="true"]')).toBeNull();
+    expect(canvas.queryByRole("progressbar")).toBeNull();
+
     await userEvent.click(
       canvas.getByRole("button", { name: "Load saved shopping lists" }),
     );
