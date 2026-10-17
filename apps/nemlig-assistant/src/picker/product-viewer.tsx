@@ -182,6 +182,62 @@ export function reviewSubmissionBlockTransition(
     ? false
     : undefined;
 }
+/** Pure review-state decision; host identity and cancellation checks stay in the adapter. */
+export function reconcileReviewState({
+  previousVisible,
+  previousConfirmed,
+  next,
+  current,
+  acknowledgePartialList,
+}: {
+  previousVisible?: Review;
+  previousConfirmed?: Review;
+  next: Review;
+  current: boolean;
+  acknowledgePartialList: boolean;
+}) {
+  const previous = previousVisible ?? previousConfirmed;
+  const sameReview = Boolean(
+    previous && reviewTargetId(previous) === reviewTargetId(next),
+  );
+  const review =
+    current &&
+    !acknowledgePartialList &&
+    sameReview &&
+    previous?.saveStatus === "partial" &&
+    next.saveStatus === "saved" &&
+    previous.shoppingListId === next.shoppingListId
+      ? {
+          ...next,
+          saveStatus: "partial" as const,
+          saveProgress: previous.saveProgress,
+          actionNotice:
+            previous.actionNotice ??
+            "Only part of the selected products was confirmed in this exact list. Review the current rows before continuing.",
+        }
+      : next;
+  return {
+    state: {
+      review,
+      active: !(
+        review.shoppingListId === undefined &&
+        (review.saveStatus === "partial" || review.saveStatus === "uncertain")
+      ),
+    },
+    sameReview,
+    submitBlocked: reviewSubmissionBlockTransition(
+      previousVisible,
+      next,
+      sameReview,
+    ),
+    preserveContinuation:
+      sameReview &&
+      previousVisible?.submission?.status === "submitted" &&
+      next.submission?.status === "submitted" &&
+      previousVisible.submission.submission_id ===
+        next.submission.submission_id,
+  };
+}
 function reviewTargetArgs(review: Review): Record<string, unknown> {
   if (review.basketMode === "direct-basket" && review.draftId) {
     return {
@@ -631,64 +687,34 @@ export function ProductViewer() {
         ) {
           ignorePassivePayloads.current = true;
         }
-        const previousReview = previous?.review ?? lastConfirmedReview.current;
-        const sameReview = Boolean(
-          previousReview &&
-          reviewTargetId(previousReview) === reviewTargetId(next.review),
-        );
-        const review =
-          current &&
-          !acknowledgePartialList &&
-          sameReview &&
-          previousReview?.saveStatus === "partial" &&
-          next.review.saveStatus === "saved" &&
-          previousReview.shoppingListId === next.review.shoppingListId
-            ? {
-                ...next.review,
-                saveStatus: "partial" as const,
-                saveProgress: previousReview.saveProgress,
-                actionNotice:
-                  previousReview.actionNotice ??
-                  "Only part of the selected products was confirmed in this exact list. Review the current rows before continuing.",
-              }
-            : next.review;
-        if (!sameReview) {
+        const transition = reconcileReviewState({
+          previousVisible: previous?.review,
+          previousConfirmed: lastConfirmedReview.current,
+          next: next.review,
+          current,
+          acknowledgePartialList,
+        });
+        if (!transition.sameReview) {
           setReviewDisclosures(new Map());
         }
-        const state = {
-          review,
-          active: !(
-            review.shoppingListId === undefined &&
-            (review.saveStatus === "partial" ||
-              review.saveStatus === "uncertain")
-          ),
-        };
+        const { state } = transition;
         if (current && nextTargetId) {
           autoRefreshListId.current = nextTargetId;
         }
         activeReview.current = state;
-        lastConfirmedReview.current = review;
-        const nextSubmitBlocked = reviewSubmissionBlockTransition(
-          previous?.review,
-          next.review,
-          sameReview,
-        );
-        if (nextSubmitBlocked !== undefined) {
-          setSubmitBlocked(nextSubmitBlocked);
+        lastConfirmedReview.current = state.review;
+        if (transition.submitBlocked !== undefined) {
+          setSubmitBlocked(transition.submitBlocked);
         }
-        const preserveContinuation =
-          sameReview &&
-          previous?.review.submission?.status === "submitted" &&
-          next.review.submission?.status === "submitted" &&
-          previous.review.submission.submission_id ===
-            next.review.submission.submission_id;
-        setContinueSubmitted((continued) => continued && preserveContinuation);
+        setContinueSubmitted(
+          (continued) => continued && transition.preserveContinuation,
+        );
         if (next.review.submissionAttempted) {
           ignorePassivePayloads.current = true;
         }
         setScreen({ kind: "review", ...state });
         setPresentationDestination((visible) => {
-          if (!sameReview || adoptPresentationDestination) {
+          if (!transition.sameReview || adoptPresentationDestination) {
             return next.review.destination;
           }
           if (visible === "alternatives" && !next.review.alternatives) {
@@ -697,6 +723,7 @@ export function ProductViewer() {
           return visible ?? next.review.destination;
         });
         setMessage("");
+        const { review } = state;
         if (
           current &&
           ((review.shoppingListId !== undefined &&

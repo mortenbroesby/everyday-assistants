@@ -6,6 +6,7 @@ import {
   isKnownNoWriteFailure,
   progressMessage,
   readPayload,
+  reconcileReviewState,
   reviewSubmissionBlockTransition,
   viewerToolCallOptions,
 } from "./product-viewer.js";
@@ -126,6 +127,83 @@ test("submission transition preserves a pending local fence until the correlated
     ),
     false,
   );
+});
+
+test("review transition preserves partial list evidence until explicitly acknowledged", () => {
+  const partial: Review = {
+    ...draftReview(),
+    basketMode: "native-list",
+    draftId: undefined,
+    shoppingListId: 77,
+    saveStatus: "partial",
+    saveProgress: { completed: 1, total: 2 },
+    actionNotice: "One line was not confirmed",
+  };
+  const next: Review = {
+    ...partial,
+    saveStatus: "saved",
+    saveProgress: undefined,
+    actionNotice: undefined,
+  };
+  const input = {
+    previousVisible: partial,
+    previousConfirmed: partial,
+    next,
+    current: true,
+  };
+  const protectedState = reconcileReviewState({
+    ...input,
+    acknowledgePartialList: false,
+  });
+  assert.equal(protectedState.sameReview, true);
+  assert.equal(protectedState.state.review.saveStatus, "partial");
+  assert.deepEqual(protectedState.state.review.saveProgress, {
+    completed: 1,
+    total: 2,
+  });
+  assert.equal(protectedState.state.review.actionNotice, partial.actionNotice);
+  assert.equal(
+    reconcileReviewState({ ...input, acknowledgePartialList: true }).state
+      .review.saveStatus,
+    "saved",
+  );
+});
+
+test("review transition separates a new draft from an older submission", () => {
+  const submitted: Review = {
+    ...draftReview(),
+    submission: {
+      submission_id: "12345678-1234-4234-8234-123456789abc",
+      status: "submitted",
+      review: {},
+    },
+  };
+  assert.equal(
+    reconcileReviewState({
+      previousVisible: submitted,
+      previousConfirmed: submitted,
+      next: submitted,
+      current: true,
+      acknowledgePartialList: false,
+    }).preserveContinuation,
+    true,
+  );
+  const next = {
+    ...draftReview(),
+    draftId: "22345678-1234-4234-8234-123456789abc",
+  };
+  const result = reconcileReviewState({
+    previousVisible: submitted,
+    previousConfirmed: submitted,
+    next,
+    current: true,
+    acknowledgePartialList: false,
+  });
+  assert.equal(result.sameReview, false);
+  assert.equal(result.submitBlocked, false);
+  assert.equal(result.preserveContinuation, false);
+  assert.equal(result.state.active, true);
+  assert.equal(result.state.review, next);
 });
 
 test("viewer actions allow long native-list work and retain cancellation", () => {
