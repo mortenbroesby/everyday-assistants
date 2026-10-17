@@ -344,14 +344,14 @@ of the repository.
 
 1. Search for a product phrase that needs Danish normalization and inspect the
    returned detailed results.
-2. With approval for a bounded native-list test, create a list from selected
-   products. Verify its provider contents and change quantities/replacements.
-3. Reopen the exact list after reloading the card; confirm persisted edits and
-   that no separate Save/Update is required.
-4. Confirm these edits did not change the actual basket. Add to the basket only
-   with exact authorization; verify readback and source cleanup separately.
+2. Create a temporary draft from selected exact products. Change quantities and
+   replacements, then confirm those edits affect only the draft.
+3. Load an exact saved list as a read-only source when authorized. Confirm draft
+   edits do not change that source and an expired draft is not silently restored.
+4. Add to the basket only with separate exact authorization; verify additive
+   readback. If chosen, test the optional whole-basket list save separately.
 5. Use fixtures for interrupted/uncertain writes. Follow the
-   [native ChatGPT smoke runbook](../../docs/nemlig-chatgpt-smoke-test.md) for live
+   [ChatGPT smoke runbook](../../docs/nemlig-chatgpt-smoke-test.md) for live
    acceptance; repository checks do not authorize provider changes.
 
 <a id="development"></a>
