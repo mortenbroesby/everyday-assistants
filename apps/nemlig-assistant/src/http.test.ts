@@ -542,7 +542,7 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
   }
 });
 
-test("HTTP MCP creates bounded isolated clients, credentials, favourites, and review stores per principal", async () => {
+test("HTTP MCP creates bounded isolated clients, credentials, and favourites per principal", async () => {
   const logins: string[] = [];
   const clients = new Set<ShoppingClient>();
   const app = createHttpApp(
