@@ -56,7 +56,7 @@ import {
   type ProductDiscoveryEvent,
 } from "./cloudflare-observability.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
-import type { LocalBasketRepository } from "./product-review.js";
+import type { ReviewJournalRepository } from "./product-review.js";
 import type { LocalBasketCommand } from "./local-basket.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
@@ -609,7 +609,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   };
   const localBasketRepository = (
     signal: AbortSignal,
-  ): LocalBasketRepository | undefined => {
+  ): ReviewJournalRepository | undefined => {
     const capability = requestContext?.localBasketCapability;
     if (!capability) {
       if (requestContext) {
@@ -681,13 +681,6 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       async claim(operationId, generation) {
         return (await repository.mutate({
           kind: "review-operation-claim",
-          operationId,
-          generation,
-        })) as boolean;
-      },
-      async release(operationId, generation) {
-        return (await repository.mutate({
-          kind: "review-operation-release",
           operationId,
           generation,
         })) as boolean;
