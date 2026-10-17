@@ -251,7 +251,7 @@ test("only an explicit pre-dispatch result is classified as a known no-write", (
   assert.equal(isKnownNoWriteFailure("No transfer was sent."), true);
   assert.equal(
     isKnownNoWriteFailure(
-      "Shopping-list recovery storage is full. This Save or Update did not reach Nemlig; use an existing list and do not retry an uncertain Save.",
+      "Operation recovery storage is full. The Nemlig result may be uncertain; inspect the basket or saved lists before retrying.",
     ),
     false,
   );

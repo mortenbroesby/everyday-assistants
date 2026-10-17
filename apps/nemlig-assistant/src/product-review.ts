@@ -141,14 +141,23 @@ export type ReviewJournalCommand = Extract<
   LocalBasketCommand,
   { kind: `review-operation-${string}` }
 >;
-export interface LocalBasketRepository {
+export interface ReviewJournalRepository {
   mutate(command: ReviewJournalCommand): Promise<unknown>;
 }
+type DirectReviewOperationIntent = Pick<
+  ReviewOperation,
+  | "operationId"
+  | "generation"
+  | "accountIdentity"
+  | "name"
+  | "items"
+  | "baseline"
+> & { kind: "submit" | "basket-save" };
 export interface ReviewOperationJournal {
+  // Reads include historical native-list receipts; current writes do not create them.
   read(operationId: string): Promise<ReviewOperation | undefined>;
   claim(operationId: string, generation: string): Promise<boolean>;
-  release?(operationId: string, generation: string): Promise<boolean>;
-  write(operation: ReviewOperation): Promise<void>;
+  write(operation: DirectReviewOperationIntent): Promise<void>;
   complete(operationId: string, generation: string): Promise<void | boolean>;
 }
 
@@ -963,7 +972,7 @@ export class ProductReviewService {
               "Nemlig account changed before direct basket submission. No basket write was sent.",
             );
           }
-          const operation: ReviewOperation = {
+          const operation: DirectReviewOperationIntent = {
             operationId,
             generation: submissionId,
             accountIdentity,
@@ -1100,7 +1109,7 @@ export class ProductReviewService {
             );
           }
           const items = basketOperationItems(baseline);
-          const operation: ReviewOperation = {
+          const operation: DirectReviewOperationIntent = {
             operationId,
             generation: saveId,
             accountIdentity,
