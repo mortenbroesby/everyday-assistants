@@ -52,7 +52,7 @@ const connectModern = async (
 };
 
 test("server modules do not depend on the executable CLI entry point", async () => {
-  for (const file of ["mcp.ts", "http.ts", "proposals.ts"]) {
+  for (const file of ["mcp.ts", "http.ts", "product-review.ts"]) {
     const source = await readFile(
       new URL(`./${file}`, import.meta.url),
       "utf8",

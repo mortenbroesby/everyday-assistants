@@ -5,11 +5,11 @@ import { NemligError } from "./nemlig-error.js";
 
 export { NemligError } from "./nemlig-error.js";
 
-export const API_BASE_URL = "https://www.nemlig.com/webapi";
+const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL =
   "https://webapi.prod.knl.nemlig.it/searchgateway/api";
 export const NEMLIG_API_ATTEMPT_TIMEOUT_MS = 120_000;
-export const NEMLIG_READ_MAX_RETRIES = 1;
+const NEMLIG_READ_MAX_RETRIES = 1;
 const KNOWN_PRODUCT_LIMIT = 1_000;
 const SHOPPING_LIST_PAGE_SIZE = 6;
 const MAX_SHOPPING_LIST_PAGES = 100;
@@ -148,7 +148,7 @@ export interface ShoppingListOverview {
 }
 
 /** Stable basket identity for additive writes; prices are estimates, not approval limits. */
-export const basketFingerprint = (basket: Basket): string => {
+const basketFingerprint = (basket: Basket): string => {
   const stable = {
     items: basket.items
       .map((item) => ({
@@ -252,17 +252,6 @@ const assertSafeBasketIncreases = (
   }
 };
 
-export const shoppingListFingerprint = (list: ShoppingList): string =>
-  createHash("sha256")
-    .update(
-      JSON.stringify(
-        list.items
-          .map(({ productId, quantity }) => ({ productId, quantity }))
-          .sort((left, right) => left.productId - right.productId),
-      ),
-    )
-    .digest("hex");
-
 const asRecord = (value: unknown): Record<string, unknown> => {
   const parsed = recordSchema.safeParse(value);
   return parsed.success ? parsed.data : {};
@@ -330,7 +319,7 @@ const boundedAttributeValue = (value: unknown): string | undefined => {
   return text ? text.slice(0, 300) : undefined;
 };
 
-export function normalizeBasket(value: unknown): Basket {
+function normalizeBasket(value: unknown): Basket {
   const cart = asRecord(value);
   return {
     items: asRecords(cart.Lines).map((line) => ({
@@ -596,6 +585,8 @@ export class NemligClient {
     return this.loggedIn;
   }
 
+  // Called structurally by runtime.ts to fence reads after a session refresh.
+  // fallow-ignore-next-line unused-class-member
   getSessionGeneration(): number {
     return this.sessionGeneration;
   }
@@ -1838,7 +1829,7 @@ export class NemligClient {
   }
 }
 
-/** The minimum provider surface shared by CLI, MCP, HTTP, and proposal flows. */
+/** The provider surface shared by CLI, MCP, and HTTP flows. */
 export type ShoppingClient = Pick<
   NemligClient,
   | "isLoggedIn"

@@ -37,7 +37,6 @@ import {
   type LocalBasketInventoryStorage,
   type LocalBasketStorageAccess,
 } from "./local-basket-storage.js";
-import { BasketProposalService } from "./proposals.js";
 import {
   PRODUCT_VIEWER_RESOURCE_URI,
   readProductViewerArtifact,
@@ -530,7 +529,7 @@ test("profile exposes the live runtime release without provider access", async (
     },
   });
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, undefined, {
+    createMcpServer(client, testCredentials, undefined, {
       principalKey: "auth0|profile-owner",
       policyRevision: "test-v1",
     }),
@@ -860,7 +859,7 @@ test("direct basket mode routes selection and abandon without shopping-list call
 test("production MCP inventory is exact", async () => {
   const expected = Object.values(productionToolInventory).flat().sort();
   await withMcpClient(
-    createMcpServer(fakeClient(), testCredentials, process.env, undefined, {
+    createMcpServer(fakeClient(), testCredentials, process.env, {
       principalKey: "production-inventory-test",
       policyRevision: "test",
       localBasketCapability: "test-capability",
@@ -945,7 +944,7 @@ test("service acceptance exposes only its fixed read-only tool inventory", async
     serviceAcceptanceToolInventory,
   ] as const) {
     await withMcpClient(
-      createMcpServer(client, testCredentials, undefined, undefined, {
+      createMcpServer(client, testCredentials, undefined, {
         principalKey: "s".repeat(32),
         policyRevision: "service",
         kind: "service",
@@ -1053,7 +1052,7 @@ test("connection status verifies Nemlig and does not trust OAuth context alone",
     },
   });
   await withMcpClient(
-    createMcpServer(client, testCredentials, undefined, undefined, {
+    createMcpServer(client, testCredentials, undefined, {
       principalKey: "p".repeat(32),
       policyRevision: "test",
     }),
@@ -1299,7 +1298,7 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
     createMcpServer(fakeClient(), testCredentials),
     async (stdio) => {
       await withMcpClient(
-        createMcpServer(fakeClient(), testCredentials, undefined, undefined, {
+        createMcpServer(fakeClient(), testCredentials, undefined, {
           principalKey: "auth0|owner",
           policyRevision: "test-v1",
         }),
@@ -1682,13 +1681,7 @@ test("explicit list action opens native list discovery without a provider write"
 
   try {
     await withMcpClient(
-      createMcpServer(
-        provider,
-        async () => undefined,
-        undefined,
-        undefined,
-        context,
-      ),
+      createMcpServer(provider, async () => undefined, undefined, context),
       async (mcp) => {
         const nativeLists = await mcp.callTool({
           name: "start_product_review",
@@ -1761,12 +1754,7 @@ test("retired MCP feature request is unavailable and has no Nemlig side effect",
     },
   });
   await withMcpClient(
-    createMcpServer(
-      client,
-      async () => undefined,
-      undefined,
-      new BasketProposalService(client),
-    ),
+    createMcpServer(client, async () => undefined, undefined),
     async (mcp) => {
       assert.equal(
         (await mcp.listTools()).tools.some(
@@ -1903,7 +1891,7 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
     { providerIdentity: () => "account-1" },
   );
   const server = () =>
-    createMcpServer(provider, testCredentials, undefined, undefined, {
+    createMcpServer(provider, testCredentials, undefined, {
       principalKey: "direct-review-owner",
       policyRevision: "direct-review-test",
       localBasketCapability: "direct-review-capability",

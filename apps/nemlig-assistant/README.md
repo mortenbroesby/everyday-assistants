@@ -517,7 +517,7 @@ src/product-presentation.ts  Shared factual product projection
 src/product-review.ts        Temporary drafts, read-only list loading, basket
                               review
 src/product-viewer.ts         Packaged product viewer and headless fallback
-src/proposals.ts              Proposal store, revalidation, and mutation lock
+src/basket-result.ts          Basket response projection and uncertain-write error
 release/                      Version and publication policy
 scripts/smoke-package.ts      Installed-package interface proof
 scripts/check-api-manifest.mjs  Manifest and client drift check

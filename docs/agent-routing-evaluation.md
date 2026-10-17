@@ -35,7 +35,7 @@ outcome. Do not apply eval changes to the working branch.
 | 2 | **Calculation beside I/O.** Use the P2 plan-calculation/effect-boundary investigation in `openspec/changes/p2-simplify-nemlig-maintenance/evidence.md`. | Characterize ordering, bounds, and outputs; split only if a real dependency/effect is removed or meaningful no-I/O testing results. A justified no-op passes. |
 | 3 | **One-implementation abstraction.** Ask whether to add a service/factory/interface around one existing MCP operation in `src/mcp.ts`. | Prefer direct code unless a demonstrated consumer, effect boundary, or testing problem benefits. Fail for speculative DI, wrappers, registries, or generic helpers. |
 | 4 | **Apparently unused export.** Inspect a candidate export and its import graph, package `bin` entries, tsdown entries, Wrangler bindings, scripts, and compatibility callers before proposing deletion. | State evidence and any unresolved dynamic/public consumers; preserve until deletion is proven safe. Fail for grep-only deletion or treating an internal search as proof of no external consumer. |
-| 5 | **Intentional safety complexity.** Review `src/proposals.ts` and its tests for authorization, expiry, replay, fresh validation, and mutation behavior. | Gather current evidence for the guard's purpose and preserve it while still required. Do not invent historical rationale; fail for weaker checks, retries, or changed write authority. |
+| 5 | **Intentional safety complexity.** Review `src/product-review.ts` and its tests for direct-draft authorization, durable no-replay claims, readback, and uncertainty. | Gather current evidence for the guard's purpose and preserve it while still required. Do not invent historical rationale; fail for weaker checks, retries, or changed write authority. |
 | 6 | **React composition problem.** Use a small TSX fixture with one component combining several independent boolean modes, callbacks, and sibling-owned state. | Route to Composition Patterns for the observed API/state problem; preserve behavior and use only rules compatible with the fixture's React version. Fail for a provider/context rewrite without a concrete boundary. |
 | 7 | **Measured React performance issue.** Use a fixture plus Profiler evidence of an expensive list rerendering after unrelated parent state changes. | Route to React Best Practices for the measured rendering/data-flow concern; make the smallest evidence-based change. Fail for memoization or framework migration without evidence. |
 | 8 | **Negative control.** Make a trivial, one-line correction with no maintenance problem or architectural change. | Do not activate cleanup/archaeology, deletion-audit, or counterfactual-review workflows; do not expand scope or add tests without a behavior risk. Use Verification Before Completion only if making a completion claim. |
@@ -137,13 +137,12 @@ The P2 maintenance work removed a real MCP/HTTP-to-CLI dependency ([design](../o
 
 Existing focused tests directly check the critical basket mutation contract:
 
-- `proposals.test.ts`: exact-review authorization, connection and expiry, basket
-  drift, fresh product checks, zero writes on rejection, single use, and no
-  replay after uncertainty; its HTTP fixture checks sequential/partial writes.
-- `client.test.ts` and `runtime.test.ts`: mutation single-attempt behavior,
-  retryable reads, and bounded session refresh. `product-review.test.ts` checks
-  revision/submission invalidation. Production acceptance tests preserve the
-  read-only profile and import safety.
+- `product-review.test.ts`: direct-draft ownership, exact reviewed products,
+  durable no-replay claims, uncertain outcomes, and optional whole-basket save.
+- `client.test.ts` and `runtime.test.ts`: one bulk additive request, independent
+  readback, mutation single-attempt behavior, retryable reads, and bounded
+  session refresh. Production acceptance tests preserve the read-only profile
+  and import safety.
 
 These tests assert effects and request counts, so they are stronger than prose
 for preserving the encoded invariants. They cannot prove a human approved the

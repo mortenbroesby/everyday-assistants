@@ -37,7 +37,6 @@ import {
   readProductViewerArtifact,
 } from "./product-viewer.js";
 import { ProductReviewService } from "./product-review.js";
-import { BasketProposalService } from "./proposals.js";
 import {
   findEnabledPrincipal,
   MAX_PRINCIPALS,
@@ -51,7 +50,6 @@ import type { Credentials } from "./config.js";
 
 export interface PrincipalContext {
   client: ShoppingClient;
-  proposals: BasketProposalService;
   reviews?: ProductReviewService;
 }
 
@@ -61,7 +59,7 @@ export type PrincipalContextFactory = (
 
 const defaultPrincipalContext: PrincipalContextFactory = () => {
   const client = new NemligClient();
-  return { client, proposals: new BasketProposalService(client) };
+  return { client };
 };
 
 const servicePrincipal: Principal = {
@@ -116,7 +114,7 @@ const serviceContext = (): PrincipalContext => {
       throw new Error("service fixture is read-only");
     },
   };
-  return { client, proposals: new BasketProposalService(client) };
+  return { client };
 };
 
 const isCredentialFreeRequest = (request: Request): boolean => {
@@ -194,16 +192,13 @@ export function createHttpApp(
         context.client,
         async () => credentials,
         mcpEnv,
-        context.proposals,
         {
           principalKey: principal.principal_key,
           policyRevision: config.principalPolicy.revision,
           ...(localBasketCapability ? { localBasketCapability } : {}),
           ...(service ? { kind: "service" as const } : {}),
         },
-        (context.reviews ??= new ProductReviewService(context.client, {
-          proposals: context.proposals,
-        })),
+        (context.reviews ??= new ProductReviewService(context.client)),
       );
     },
     { legacy: "stateless" },

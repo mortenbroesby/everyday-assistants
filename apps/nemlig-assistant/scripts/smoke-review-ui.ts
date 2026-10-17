@@ -11,7 +11,6 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
 import type { Basket, Product, ShoppingClient } from "../src/client.js";
-import { BasketProposalService } from "../src/proposals.js";
 import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -120,6 +119,11 @@ const catalogue = {
     const baseline = structuredClone(currentBasket);
     await options.beforeDispatch(baseline);
     directWrites++;
+    simulatedSubmissions++;
+    const uncertain = nextSubmissionStatus === "uncertain";
+    if (uncertain) {
+      nextSubmissionStatus = "submitted";
+    }
     const addedItems = additions.map(({ productId, quantity }) => {
       const view = product(productId);
       return {
@@ -137,6 +141,11 @@ const catalogue = {
         0,
       ),
     };
+    if (uncertain) {
+      throw new Error(
+        "Synthetic ambiguous outcome; provider mutation may have occurred.",
+      );
+    }
     return structuredClone(currentBasket);
   },
   createShoppingListFromBasket: async (options: {
@@ -224,28 +233,6 @@ const catalogue = {
     };
   },
 } as unknown as ShoppingClient;
-const proposalService = new BasketProposalService(catalogue);
-const uncertainProposals = {
-  prepareAdditions: (
-    ...args: Parameters<BasketProposalService["prepareAdditions"]>
-  ) => proposalService.prepareAdditions(...args),
-  prepareShoppingListAdditions: (
-    ...args: Parameters<BasketProposalService["prepareShoppingListAdditions"]>
-  ) => proposalService.prepareShoppingListAdditions(...args),
-  transferNativeShoppingList: (
-    ...args: Parameters<BasketProposalService["transferNativeShoppingList"]>
-  ) => proposalService.transferNativeShoppingList(...args),
-  apply: async (...args: Parameters<BasketProposalService["apply"]>) => {
-    simulatedSubmissions++;
-    if (nextSubmissionStatus === "uncertain") {
-      nextSubmissionStatus = "submitted";
-      throw new Error(
-        "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
-      );
-    }
-    return proposalService.apply(...args);
-  },
-} as unknown as BasketProposalService;
 // Keep durable storage across MCP restarts, just as the owner Durable Object does.
 let stored = new Map<string, unknown>();
 const storage: LocalBasketInventoryStorage = {
@@ -286,17 +273,11 @@ globalThis.fetch = (async (input, init) => {
   );
 }) as typeof fetch;
 const makeServer = () =>
-  createMcpServer(
-    catalogue,
-    async () => undefined,
-    process.env,
-    uncertainProposals,
-    {
-      principalKey: "smoke-owner",
-      policyRevision: "smoke-policy",
-      localBasketCapability: "smoke-capability",
-    },
-  );
+  createMcpServer(catalogue, async () => undefined, process.env, {
+    principalKey: "smoke-owner",
+    policyRevision: "smoke-policy",
+    localBasketCapability: "smoke-capability",
+  });
 let current = makeServer();
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
@@ -363,8 +344,9 @@ document.getElementById('run').onclick = async () => {
   check(summary,'Loaded source product row missing');
   summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
   await wait(()=>row.querySelector('.product-inline-actions'));
-  const plus=row.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type');
-  check(plus,'Draft quantity controls missing'); plus.click();
+  const plus=()=>[...doc().querySelectorAll('.product-action-row')].find(item=>item.textContent.includes('Smoke product 2'))?.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button[aria-label^="Increase quantity"]');
+  await wait(()=>plus()&&!plus().disabled);
+  plus().click();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===2&&item.quantity===3)));
   transcript.structuredContent.review=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
   const editedStats=await fetch('/stats').then(r=>r.json());
@@ -640,6 +622,64 @@ try {
       `Fake provider basket write boundary crossed: ${JSON.stringify(stats)}`,
     );
   }
+  await fetch(new URL("/reset", origin), { method: "POST" });
+  await fetch(new URL("/uncertain-next", origin), { method: "POST" });
+  const started = await client.callTool({
+    name: "start_product_review",
+    arguments: { items: [{ product_id: 7, quantity: 2 }] },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const review = (
+    started.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const submit = () =>
+    client.callTool({
+      name: "submit_product_review_conversation",
+      arguments: {
+        draft_id: review.draftId,
+        review_context_id: review.reviewContextId,
+        submission_id: "77777777-7777-4777-8777-777777777777",
+        reviewed_list: {
+          name: review.shoppingListName ?? "Smoke draft",
+          items: [{ product_id: 7, quantity: 2 }],
+        },
+      },
+      _meta: { "openai/session": "review-ui-smoke-conversation" },
+    });
+  if (!(await submit()).isError || !(await submit()).isError) {
+    throw new Error("Ambiguous submission or its replay was not fenced");
+  }
+  const afterUncertain = (await fetch(new URL("/stats", origin)).then(
+    (response) => response.json(),
+  )) as { basketWrites: number; basketItems: Basket["items"] };
+  if (
+    afterUncertain.basketWrites !== 1 ||
+    JSON.stringify(
+      afterUncertain.basketItems.map(({ id, quantity }) => [id, quantity]),
+    ) !==
+      JSON.stringify([
+        [90, 3],
+        [7, 2],
+      ])
+  ) {
+    throw new Error(
+      `Ambiguous MCP submission replayed or lost basket rows: ${JSON.stringify(afterUncertain)}`,
+    );
+  }
+  console.log(
+    "MCP adapter ambiguous submit: one provider write, replay fenced",
+  );
 } finally {
   await browser.close();
   await client.close();
@@ -647,5 +687,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, and alternatives.",
+  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, alternatives, and ambiguous submit replay fence.",
 );

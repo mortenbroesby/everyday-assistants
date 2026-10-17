@@ -20,7 +20,6 @@ import {
   replaceCredentialRecord,
   type PrincipalStorage,
 } from "./principal-records.js";
-import { BasketProposalService } from "./proposals.js";
 import { parsePrincipalPolicy } from "./principal-policy.js";
 import type { ShoppingClient } from "./client.js";
 import {
@@ -149,7 +148,7 @@ test("loopback MCP bursts use encrypted credential admission without usage limit
         extra: { subject: ownerSubject },
       }),
     },
-    () => ({ client: shopper, proposals: new BasketProposalService(shopper) }),
+    () => ({ client: shopper }),
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
@@ -543,10 +542,9 @@ test("HTTP service acceptance uses signed machine identity and its fixed fixture
   }
 });
 
-test("HTTP MCP creates bounded isolated clients, credentials, favourites, and proposal stores per principal", async () => {
+test("HTTP MCP creates bounded isolated clients, credentials, and favourites per principal", async () => {
   const logins: string[] = [];
   const clients = new Set<ShoppingClient>();
-  const proposalStores = new Set<BasketProposalService>();
   const app = createHttpApp(
     config,
     oauth,
@@ -618,10 +616,8 @@ test("HTTP MCP creates bounded isolated clients, credentials, favourites, and pr
           throw new Error("unused");
         },
       };
-      const proposals = new BasketProposalService(client);
       clients.add(client);
-      proposalStores.add(proposals);
-      return { client, proposals };
+      return { client };
     },
   );
   const server = app.listen(0, config.host);
@@ -665,7 +661,6 @@ test("HTTP MCP creates bounded isolated clients, credentials, favourites, and pr
       "owner@example.test:owner-secret",
     ]);
     assert.equal(clients.size, 2);
-    assert.equal(proposalStores.size, 2);
     await owner.close();
     await guest.close();
   } finally {
@@ -751,7 +746,7 @@ test("current family stateless requests decrypt credentials and isolate credenti
         extra: { subject: "auth0|guest" },
       }),
     },
-    () => ({ client, proposals: new BasketProposalService(client) }),
+    () => ({ client }),
   );
   const server = app.listen(0, config.host);
   await new Promise<void>((resolve, reject) => {
@@ -854,7 +849,7 @@ test("stale Local basket requests without credentials cannot reach native invent
           throw new Error("provider must stay asleep");
         },
       } as unknown as ShoppingClient;
-      return { client, proposals: new BasketProposalService(client) };
+      return { client };
     },
   );
   const server = app.listen(0, config.host);

@@ -230,13 +230,7 @@ test("MCP submits one exact direct draft and never changes a saved list", async 
   };
   try {
     await withMcpClient(
-      createMcpServer(
-        provider,
-        credentials,
-        undefined,
-        undefined,
-        requestContext,
-      ),
+      createMcpServer(provider, credentials, undefined, requestContext),
       async (mcp) => {
         const found = await mcp.callTool({
           name: "find_groceries",
@@ -378,13 +372,7 @@ test("MCP submits one exact direct draft and never changes a saved list", async 
       },
     );
     await withMcpClient(
-      createMcpServer(
-        provider,
-        credentials,
-        undefined,
-        undefined,
-        requestContext,
-      ),
+      createMcpServer(provider, credentials, undefined, requestContext),
       async (restarted) => {
         const reopened = await restarted.callTool({
           name: "submit_product_review_conversation",
