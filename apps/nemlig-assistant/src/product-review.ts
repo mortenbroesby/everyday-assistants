@@ -1,4 +1,5 @@
 import {
+  basketPayload,
   type ApplyResult,
   NativeTransferUnconfirmedError,
 } from "./basket-result.js";
@@ -941,19 +942,12 @@ export class ProductReviewService {
         );
       }
       if (prior.completed) {
-        const basket = await this.client.getCart(signal);
         return {
           result: {
             status: "completed",
             operation: "additions",
             replayed: true,
-            basket: {
-              items: basket.items,
-              products_price: basket.productsPrice,
-              delivery_price: basket.deliveryPrice,
-              number_of_products: basket.numberOfProducts,
-              delivery_time: basket.deliveryTime,
-            },
+            basket: basketPayload(await this.client.getCart(signal)),
           },
         };
       }
@@ -1056,13 +1050,7 @@ export class ProductReviewService {
           status: "completed",
           operation: "additions",
           replayed: false,
-          basket: {
-            items: basket.items,
-            products_price: basket.productsPrice,
-            delivery_price: basket.deliveryPrice,
-            number_of_products: basket.numberOfProducts,
-            delivery_time: basket.deliveryTime,
-          },
+          basket: basketPayload(basket),
         },
       };
     } catch (error) {

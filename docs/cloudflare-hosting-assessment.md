@@ -87,7 +87,8 @@ a separate Worker-native evaluation.
 | MCP transport/session IDs | Restart-discardable | The client can establish a new MCP session. |
 | Nemlig cookies, access token, user ID, timestamps, product-name cache, timeslot | Restart-discardable | They can be recovered by logging in and reading Nemlig again. |
 | Auth0 metadata and JWKS cache | Restart-discardable | They can be fetched again with bounded calls. |
-| Prepared, completed, invalid, or indeterminate basket proposals | Restart-discardable and fail-closed | Losing an approval ID prevents application; indeterminate operations remain non-retryable. |
+| Temporary direct basket drafts | Restart-discardable and fail-closed | A lost draft cannot be submitted; the user starts a new review. |
+| Direct submission receipts in the owner-scoped journal | Restart-required safety state | Losing a receipt could allow replay of an uncertain or completed basket addition. |
 | Rate windows, daily counts, breaker flag/time/reason | Restart-required safety state | Losing them could reopen a tripped backend or undercount usage. |
 | Nemlig account, basket, and favorites | External | Nemlig remains the system of record. |
 | Auth0 user/tenant configuration | External | Auth0 remains the identity provider. |

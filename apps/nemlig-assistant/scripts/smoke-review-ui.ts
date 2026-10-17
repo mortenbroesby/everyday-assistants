@@ -120,11 +120,9 @@ const catalogue = {
     await options.beforeDispatch(baseline);
     directWrites++;
     simulatedSubmissions++;
-    if (nextSubmissionStatus === "uncertain") {
+    const uncertain = nextSubmissionStatus === "uncertain";
+    if (uncertain) {
       nextSubmissionStatus = "submitted";
-      throw new Error(
-        "Synthetic ambiguous outcome; no provider mutation occurred.",
-      );
     }
     const addedItems = additions.map(({ productId, quantity }) => {
       const view = product(productId);
@@ -143,6 +141,11 @@ const catalogue = {
         0,
       ),
     };
+    if (uncertain) {
+      throw new Error(
+        "Synthetic ambiguous outcome; provider mutation may have occurred.",
+      );
+    }
     return structuredClone(currentBasket);
   },
   createShoppingListFromBasket: async (options: {
@@ -619,6 +622,64 @@ try {
       `Fake provider basket write boundary crossed: ${JSON.stringify(stats)}`,
     );
   }
+  await fetch(new URL("/reset", origin), { method: "POST" });
+  await fetch(new URL("/uncertain-next", origin), { method: "POST" });
+  const started = await client.callTool({
+    name: "start_product_review",
+    arguments: { items: [{ product_id: 7, quantity: 2 }] },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const review = (
+    started.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const submit = () =>
+    client.callTool({
+      name: "submit_product_review_conversation",
+      arguments: {
+        draft_id: review.draftId,
+        review_context_id: review.reviewContextId,
+        submission_id: "77777777-7777-4777-8777-777777777777",
+        reviewed_list: {
+          name: review.shoppingListName ?? "Smoke draft",
+          items: [{ product_id: 7, quantity: 2 }],
+        },
+      },
+      _meta: { "openai/session": "review-ui-smoke-conversation" },
+    });
+  if (!(await submit()).isError || !(await submit()).isError) {
+    throw new Error("Ambiguous submission or its replay was not fenced");
+  }
+  const afterUncertain = (await fetch(new URL("/stats", origin)).then(
+    (response) => response.json(),
+  )) as { basketWrites: number; basketItems: Basket["items"] };
+  if (
+    afterUncertain.basketWrites !== 1 ||
+    JSON.stringify(
+      afterUncertain.basketItems.map(({ id, quantity }) => [id, quantity]),
+    ) !==
+      JSON.stringify([
+        [90, 3],
+        [7, 2],
+      ])
+  ) {
+    throw new Error(
+      `Ambiguous MCP submission replayed or lost basket rows: ${JSON.stringify(afterUncertain)}`,
+    );
+  }
+  console.log(
+    "MCP adapter ambiguous submit: one provider write, replay fenced",
+  );
 } finally {
   await browser.close();
   await client.close();
@@ -626,5 +687,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, and alternatives.",
+  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, alternatives, and ambiguous submit replay fence.",
 );
