@@ -502,6 +502,80 @@ test("an uncertain direct draft remains protected from a new selection", async (
   assert.equal(writes, 1);
 });
 
+test("a failed durable completion leaves a dispatched direct addition fenced after restart", async () => {
+  const owner = "failed-completion-owner";
+  const durable = createDurableReviewJournal(owner);
+  const requested = [{ product_id: 7, quantity: 2 }];
+  let writes = 0;
+  let basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  const provider = {
+    ...client,
+    getCart: async () => structuredClone(basket),
+    addManyToCart: async (
+      additions: BasketAddition[],
+      options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+    ) => {
+      await options?.beforeDispatch?.(structuredClone(basket));
+      writes++;
+      basket = {
+        ...basket,
+        items: additions.map(({ productId, quantity }) => ({
+          id: productId,
+          name: `Product ${productId}`,
+          quantity,
+          total: quantity * 5,
+        })),
+        numberOfProducts: 2,
+      };
+      return structuredClone(basket);
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const draft = await service.startDirectBasket(owner, requested);
+  const journal = {
+    ...durable.journal,
+    complete: async () => {
+      throw new Error("Synthetic completion outage");
+    },
+  } satisfies ReviewOperationJournal;
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "77777777-7777-4777-8777-777777777777",
+      requested,
+      undefined,
+      journal,
+    ),
+    /Synthetic completion outage/u,
+  );
+  assert.equal(writes, 1);
+  const receipt = (await durable.read(
+    `direct-basket-submit:${draft.draftId}`,
+  )) as ReviewOperation;
+  assert.equal(receipt.dispatchAttempted, true);
+  assert.notEqual(receipt.completed, true);
+  const restarted = new ProductReviewService(provider);
+  await assert.rejects(
+    restarted.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "88888888-8888-4888-8888-888888888888",
+      requested,
+      undefined,
+      durable.journal,
+    ),
+    /may have completed/u,
+  );
+  assert.equal(writes, 1);
+});
+
 test("expired direct receipts cannot replay while the old draft stays active", async () => {
   const owner = "retained-direct-owner";
   let now = 10_000;
