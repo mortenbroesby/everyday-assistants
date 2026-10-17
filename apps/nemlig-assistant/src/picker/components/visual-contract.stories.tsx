@@ -10,7 +10,7 @@ import type {
   ViewerPageProps,
   ViewerScreen,
 } from "../viewer-page.js";
-import { ViewerPage } from "../viewer-page.js";
+import { toggleReviewDisclosure, ViewerPage } from "../viewer-page.js";
 import {
   alternativesFor,
   removeItem,
@@ -446,17 +446,9 @@ function disclosureActions(
 ): Pick<ViewerPageActions, "onFactExpandedChange"> {
   return {
     onFactExpandedChange: (productId, factKey, expanded) =>
-      setReviewDisclosures((previous) => {
-        const facts = new Set(previous.get(productId));
-        if (expanded) {
-          facts.add(factKey);
-        } else {
-          facts.delete(factKey);
-        }
-        const next = new Map(previous);
-        next.set(productId, facts);
-        return next;
-      }),
+      setReviewDisclosures((previous) =>
+        toggleReviewDisclosure(previous, productId, factKey, expanded),
+      ),
   };
 }
 
@@ -681,23 +673,6 @@ function starterProductIds(prompt: string): number[] {
     return [2, 4, 5];
   }
   return [1];
-}
-
-function toggleFactDisclosure(
-  previous: ViewerPageModel["reviewDisclosures"],
-  productId: number,
-  factKey: string,
-  expanded: boolean,
-): ViewerPageModel["reviewDisclosures"] {
-  const next = new Map(previous);
-  const facts = new Set(previous.get(productId));
-  if (expanded) {
-    facts.add(factKey);
-  } else {
-    facts.delete(factKey);
-  }
-  next.set(productId, facts);
-  return next;
 }
 
 function findWalkthroughAlternatives(productId: number, query: string) {
@@ -1229,10 +1204,7 @@ function DirectBasketWalkthrough() {
     },
     actions: {
       onNavigate: setDestination,
-      onFactExpandedChange: (productId, factKey, expanded) =>
-        setReviewDisclosures((previous) =>
-          toggleFactDisclosure(previous, productId, factKey, expanded),
-        ),
+      ...disclosureActions(setReviewDisclosures),
       onRefresh: () =>
         setHostMessage("Simulated host refreshed the current draft."),
       onOpenPicker: openPicker,
@@ -1244,12 +1216,7 @@ function DirectBasketWalkthrough() {
       },
       onSaveCurrentBasketAsShoppingList: saveCurrentBasket,
       onSelectBasket: selectSavedList,
-      onQuantity: (item, quantity) =>
-        setCurrentReview((previous) =>
-          updateQuantity(previous, item.product_id, quantity),
-        ),
-      onRemove: (item) =>
-        setCurrentReview((previous) => removeItem(previous, item.product_id)),
+      ...reviewActions(setCurrentReview),
       onOpenAlternatives: (item, query) => {
         setCurrentReview((previous) =>
           alternativesFor(

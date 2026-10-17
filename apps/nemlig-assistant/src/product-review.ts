@@ -20,10 +20,11 @@ import {
   type ProductDiscoveryClient,
 } from "./product-discovery.js";
 import { createProductView, type ProductView } from "./product-presentation.js";
+import type { ReviewItem, ReviewSnapshot } from "./review-schema.js";
 import { runReadPool } from "./read-coordination.js";
 import type { LocalBasketCommand, ReviewOperation } from "./local-basket.js";
 
-export type ReviewDestination = "needs-review" | "ready" | "alternatives";
+export type ReviewDestination = ReviewSnapshot["destination"];
 /** Bounds transient draft payloads while allowing a full family shopping trip. */
 export const MAX_DRAFT_PRODUCTS = 500;
 const quantityMap = <Item>(
@@ -88,46 +89,7 @@ const isUuid = (value: string): boolean =>
     value,
   );
 export const DRAFT_IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-interface ReviewItem {
-  product_id: number;
-  quantity: number;
-  state: "needs-review" | "ready";
-  view: ProductView;
-}
-export interface ProductReviewSnapshot {
-  basketMode?: "native-list" | "direct-basket";
-  draftId?: string;
-  draftExpiresAt?: number;
-  shoppingListId?: number;
-  reviewContextId?: string;
-  shoppingListName?: string;
-  saveStatus?: "saving" | "saved" | "partial" | "uncertain";
-  shoppingListDirty?: boolean;
-  updateStatus?: "saving" | "partial" | "uncertain";
-  conflictItems?: ReviewItem[];
-  saveProgress?: { completed: number; total: number };
-  actionNotice?: string;
-  basketId?: string;
-  revision?: number;
-  submissionAttempted?: boolean;
-  destination: ReviewDestination;
-  items: ReviewItem[];
-  submission?: {
-    submission_id: string;
-    status: "prepared" | "submitted" | "uncertain" | "partial";
-    verified_additions?: number;
-    skipped_products?: Array<{ product_id: number; name: string }>;
-    cleanup_warning?: string;
-    expires_at: string;
-    review: Record<string, unknown>;
-  };
-  alternatives?: {
-    product_id: number;
-    origin: ReviewItem["state"];
-    query: string;
-    views: ProductView[];
-  };
-}
+export type ProductReviewSnapshot = ReviewSnapshot;
 export interface ReviewedShoppingList {
   name: string;
   items: Array<{ product_id: number; quantity: number }>;

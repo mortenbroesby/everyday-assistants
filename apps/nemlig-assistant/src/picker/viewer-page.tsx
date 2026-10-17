@@ -16,6 +16,7 @@ import {
   ShoppingBasket,
 } from "lucide-react";
 import type { ProductView } from "../product-presentation.js";
+import type { ReviewItem, ViewerReview } from "../review-schema.js";
 import {
   ActionFooter,
   ShoppingListStarters,
@@ -31,49 +32,8 @@ import {
   ViewerShell,
 } from "./components/index.js";
 
-export type ReviewItem = {
-  product_id: number;
-  quantity: number;
-  state: "needs-review" | "ready";
-  view: ProductView;
-};
-export type Review = {
-  basketMode?: "native-list" | "direct-basket";
-  draftId?: string;
-  shoppingListId?: number;
-  reviewContextId?: string;
-  shoppingListName?: string;
-  saveStatus?: "saving" | "saved" | "partial" | "uncertain";
-  shoppingListDirty?: boolean;
-  updateStatus?: "saving" | "partial" | "uncertain";
-  conflictItems?: ReviewItem[];
-  saveProgress?: { completed: number; total: number };
-  actionNotice?: string;
-  revision?: number;
-  submissionAttempted?: boolean;
-  destination: "needs-review" | "ready" | "alternatives";
-  items: ReviewItem[];
-  alternatives?: { product_id: number; query: string; views: ProductView[] };
-  submission?: {
-    status: "prepared" | "submitted" | "uncertain" | "partial";
-    verified_additions?: number;
-    skipped_products?: Array<{ product_id: number; name: string }>;
-    cleanup_warning?: string;
-    submission_id: string;
-    review: {
-      lines?: Array<{
-        product_id: number;
-        quantity: number;
-        name?: string;
-        unit_size?: string;
-        item_price?: number;
-        line_total?: number;
-      }>;
-      expected_products_price?: number;
-      skipped_products?: Array<{ product_id: number; name: string }>;
-    };
-  };
-};
+export type { ReviewItem } from "../review-schema.js";
+export type Review = ViewerReview;
 export type BasketSummary = {
   basketId: string;
   nativeShoppingList?: true;
@@ -128,6 +88,23 @@ export type ViewerPageModel = {
   baskets: BasketSummary[];
   selectedBasketId?: string;
 };
+
+export function toggleReviewDisclosure(
+  previous: ViewerPageModel["reviewDisclosures"],
+  productId: number,
+  factKey: string,
+  expanded: boolean,
+): ViewerPageModel["reviewDisclosures"] {
+  const next = new Map(previous);
+  const facts = new Set(previous.get(productId));
+  if (expanded) {
+    facts.add(factKey);
+  } else {
+    facts.delete(factKey);
+  }
+  next.set(productId, facts);
+  return next;
+}
 
 export type ViewerPageActions = {
   onNavigate: (destination: PresentationDestination) => void;

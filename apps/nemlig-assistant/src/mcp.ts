@@ -49,6 +49,7 @@ import {
   type ReviewedShoppingList,
 } from "./product-review.js";
 import { candidateSchema, productViewSchema } from "./product-view-schema.js";
+import { reviewSnapshotSchema } from "./review-schema.js";
 import { resolveDetailedProductSearch } from "./product-discovery.js";
 import {
   parseProductDiscoveryEvent,
@@ -95,72 +96,6 @@ export const serviceAcceptanceResourceInventory = [
   ...RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 ] as const;
 
-const reviewSnapshotSchema = z.object({
-  basketMode: z.enum(["native-list", "direct-basket"]).optional(),
-  draftId: z.string().uuid().optional(),
-  draftExpiresAt: z.number().int().nonnegative().optional(),
-  shoppingListId: z.number().int().positive().optional(),
-  reviewContextId: z.string().uuid().optional(),
-  shoppingListName: z.string().optional(),
-  saveStatus: z.enum(["saving", "saved", "partial", "uncertain"]).optional(),
-  shoppingListDirty: z.boolean().optional(),
-  updateStatus: z.enum(["saving", "partial", "uncertain"]).optional(),
-  conflictItems: z
-    .array(
-      z.object({
-        product_id: z.number().int().positive(),
-        quantity: z.number().int().positive(),
-        state: z.enum(["needs-review", "ready"]),
-        view: productViewSchema,
-      }),
-    )
-    .optional(),
-  saveProgress: z
-    .object({
-      completed: z.number().int().nonnegative(),
-      total: z.number().int().nonnegative(),
-    })
-    .strict()
-    .optional(),
-  actionNotice: z.string().max(300).optional(),
-  revision: z.number().int().nonnegative().optional(),
-  submissionAttempted: z.boolean().optional(),
-  destination: z.enum(["needs-review", "ready", "alternatives"]),
-  items: z.array(
-    z.object({
-      product_id: z.number().int().positive(),
-      quantity: z.number().int().positive(),
-      state: z.enum(["needs-review", "ready"]),
-      view: productViewSchema,
-    }),
-  ),
-  alternatives: z
-    .object({
-      product_id: z.number().int().positive(),
-      origin: z.enum(["needs-review", "ready"]),
-      query: z.string(),
-      views: z.array(productViewSchema),
-    })
-    .optional(),
-  submission: z
-    .object({
-      submission_id: z.string().uuid(),
-      status: z.enum(["prepared", "submitted", "uncertain", "partial"]),
-      verified_additions: z.number().int().nonnegative().optional(),
-      cleanup_warning: z.string().optional(),
-      skipped_products: z
-        .array(
-          z.object({
-            product_id: z.number().int().positive(),
-            name: z.string(),
-          }),
-        )
-        .optional(),
-      expires_at: z.string(),
-      review: z.record(z.string(), z.unknown()),
-    })
-    .optional(),
-});
 const showReviewActionSchema = z.object({ kind: z.literal("show") });
 const localActionSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("list") }),
