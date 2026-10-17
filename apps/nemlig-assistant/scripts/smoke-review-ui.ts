@@ -437,7 +437,15 @@ document.getElementById('uncertain').onclick = async () => {
   const stats=await fetch('/stats').then(r=>r.json());
   check(stats.basketWrites===1&&stats.simulatedSubmissions===1,'Uncertain Submit did not make exactly one provider attempt');
   await wait(()=>doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket')&&!doc()?.querySelector('main.viewer[aria-busy="true"]'));
-  publish(); await new Promise(resolve=>setTimeout(resolve,100));
+  let staleDelivered=false;
+  const child=frame.contentWindow;
+  const onStale=event=>{
+   if(event.source===window&&event.data?.method==='ui/notifications/tool-result'&&event.data.params?.structuredContent?.review?.draftId===stale.structuredContent.review.draftId)staleDelivered=true;
+  };
+  child.addEventListener('message',onStale);
+  publish(); await wait(()=>staleDelivered);
+  child.removeEventListener('message',onStale);
+  await new Promise(resolve=>child.requestAnimationFrame(()=>child.requestAnimationFrame(resolve)));
   check(doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket'),'Stale passive output dismissed uncertain recovery');
   const repeat=[...doc().querySelectorAll('button')].find(button=>button.textContent.trim()==='Add to Nemlig basket');
   check(!repeat||repeat.disabled,'Stale passive output re-enabled an uncertain Submit');
