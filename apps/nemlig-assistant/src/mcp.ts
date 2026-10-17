@@ -878,9 +878,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     if (action.kind === "show") {
       return success({ unavailable: true as const });
     }
-    throw new NemligError(
-      "Start a temporary draft before editing products.",
-    );
+    throw new NemligError("Start a temporary draft before editing products.");
   };
   const submitReview = async (
     owner: string,
