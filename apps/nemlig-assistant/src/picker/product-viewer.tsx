@@ -845,7 +845,6 @@ export function ProductViewer() {
       return;
     }
     deactivateReview();
-    setPendingQuantities(new Map());
     setScreen({
       kind: "error",
       message:
