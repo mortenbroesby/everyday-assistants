@@ -5,7 +5,7 @@ export class LocalBasketOperationCapacityError extends Error {
 
   constructor() {
     super(
-      "Operation recovery storage is full. The Nemlig result may be uncertain; inspect the basket or saved lists before retrying.",
+      "Operation recovery storage is full. No Nemlig write was sent for this attempt; inspect any earlier uncertain operation before retrying.",
     );
   }
 }

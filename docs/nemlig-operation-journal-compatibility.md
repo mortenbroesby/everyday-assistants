@@ -14,7 +14,7 @@ This is the Step 4 implementation record for [#319](https://github.com/mortenbro
 
 The application journal port now accepts only current direct intents and omits its unused `release` adapter. The `review-operation-release` callback and storage branch remain for historical command compatibility. This does **not** imply release is generally safe after a claim; it must not be used for uncertain provider writes. Historical `ReviewOperation` fields remain in the durable reader and callback schema. No persisted record, key, command or retention rule is migrated or deleted.
 
-The capacity response now describes an uncertain result rather than claiming every failure happened before dispatch. Capacity can also be reached while recording completion after a provider write. The HTTP status and machine error code remain stable; the viewer still treats this as an uncertain outcome.
+The capacity code arises while writing the intent, before this attempt's provider dispatch. Its shared callback/MCP response says no write was sent for **this attempt** and cautions that an earlier attempt may still be uncertain. A completion failure after dispatch takes the separate generic storage/uncertainty path, not the capacity code. The 429 status and machine error code remain stable; the viewer conservatively treats the capacity response as uncertain rather than authorizing a replay.
 
 ## Safety and rollback boundary
 

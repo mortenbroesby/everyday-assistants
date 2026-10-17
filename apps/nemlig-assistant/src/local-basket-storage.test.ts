@@ -812,7 +812,7 @@ test("oversized recovery journals preserve fences and return an actionable error
   assert.ok(lastWritten);
   assert.match(
     (capacityError as Error | undefined)?.message ?? "",
-    /recovery storage is full.*result may be uncertain.*before retrying/iu,
+    /recovery storage is full.*No Nemlig write was sent for this attempt.*earlier uncertain operation/iu,
   );
   assert.ok(
     await mutateOwnerLocalBasketInventory(storage, "owner-1", {

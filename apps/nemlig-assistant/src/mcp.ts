@@ -57,7 +57,10 @@ import {
 } from "./cloudflare-observability.js";
 import { NEMLIG_ASSISTANT_ICON } from "./nemlig-assistant-icon.js";
 import type { ReviewJournalRepository } from "./product-review.js";
-import type { LocalBasketCommand } from "./local-basket.js";
+import {
+  LocalBasketOperationCapacityError,
+  type LocalBasketCommand,
+} from "./local-basket.js";
 
 export const NEMLIG_CONNECT_URL = "https://nemlig-mcp.broesby.dk/connect";
 export const NEMLIG_IMAGE_ORIGINS = IMAGE_ORIGINS;
@@ -654,7 +657,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
               : status === 409
                 ? "Shopping-list recovery state changed or is busy. Refresh before continuing."
                 : status === 429
-                  ? "Shopping-list recovery storage is full. This list change or basket addition did not reach Nemlig; use an existing list and do not retry an uncertain transfer."
+                  ? new LocalBasketOperationCapacityError().message
                   : status === 403
                     ? "Shopping-list recovery is not authorized for this request."
                     : "Shopping-list recovery storage is temporarily unavailable. Refresh the exact list before continuing.";
