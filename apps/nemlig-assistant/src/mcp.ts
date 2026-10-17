@@ -315,7 +315,7 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
         .strict()
         .optional()
         .describe(
-          "The exact draft name, product IDs, and quantities the user reviewed. The server compares them with the current draft before basket submission.",
+          "The reviewed draft name, product IDs, and quantities. The server compares product IDs and quantities with the current draft before basket submission.",
         ),
     })
     .strict()
@@ -1481,9 +1481,12 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       annotations: reviewActionAnnotations,
       _meta: {
         ui: { visibility: ["model"] },
-        "openai/toolInvocation/invoking":
-          "Updating your temporary basket draft…",
-        "openai/toolInvocation/invoked": "Draft result received",
+        "openai/toolInvocation/invoking": reviews.directBasketMode
+          ? "Updating your temporary basket draft…"
+          : "Updating your shopping list…",
+        "openai/toolInvocation/invoked": reviews.directBasketMode
+          ? "Draft result received"
+          : "Shopping list result received",
       },
     },
     ({ action, shopping_list_id, draft_id, review_context_id }, ctx) => {

@@ -19,7 +19,7 @@
     "capabilities": ["Interactive"],
     "category": "Productivity",
     "composerIcon": "./assets/icon.png",
-    "defaultPrompt": "Help me shop on Nemlig. Offer to find products, start a temporary basket draft, or load an exact saved shopping list as a read-only source. Draft edits stay local. Ask before adding the exact reviewed products to my Nemlig basket; do not open an unrelated list or submit on selection alone.",
+    "defaultPrompt": "Help me shop on Nemlig. Offer to find products, start a temporary basket draft, or load an exact saved shopping list as a read-only source. Draft edits stay local. Add exact reviewed products only after a clear existing instruction or explicit approval; ask if neither is present. Do not open an unrelated list or submit on selection alone.",
     "developerName": "Morten & Josephine Broesby-Olsen",
     "displayName": "Nemlig Assistant",
     "logo": "./assets/icon.png",

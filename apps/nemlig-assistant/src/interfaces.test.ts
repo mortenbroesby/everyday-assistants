@@ -639,7 +639,7 @@ test("direct draft catalog exposes its input contract and loading status", async
       );
       assert.match(
         submitProperties.reviewed_list.description ?? "",
-        /draft name/u,
+        /product IDs and quantities/u,
       );
       assert.doesNotMatch(
         modelTools.map(({ description }) => description).join("\n"),
@@ -2094,7 +2094,7 @@ test("product search is read-only and selection starts a temporary draft", async
       assert.equal(missingTarget.isError, true);
       const retiredTarget = await mcp.callTool({
         name: "update_product_review_conversation",
-        arguments: { basket_id: randomUUID(), action: { kind: "delete" } },
+        arguments: { basket_id: randomUUID(), action: { kind: "show" } },
       });
       assert.equal(retiredTarget.isError, true);
       const missingSubmitIdentity = await mcp.callTool({
