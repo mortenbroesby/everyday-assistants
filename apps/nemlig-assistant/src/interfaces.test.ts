@@ -1233,6 +1233,16 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       }
       const byName = new Map(tools.map((tool) => [tool.name, tool]));
       for (const name of [
+        "start_product_review",
+        "update_product_review",
+        "submit_product_review",
+      ]) {
+        const advertised = JSON.stringify(byName.get(name)?.outputSchema);
+        assert.match(advertised, /"draftExpiresAt"/u, name);
+        assert.match(advertised, /"reviewContextId"/u, name);
+        assert.match(advertised, /"items"/u, name);
+      }
+      for (const name of [
         "find_groceries",
         "check_nemlig_connection",
         "show_my_basket",
