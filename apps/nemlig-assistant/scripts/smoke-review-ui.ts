@@ -11,7 +11,6 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
 import type { Basket, Product, ShoppingClient } from "../src/client.js";
-import { BasketProposalService } from "../src/proposals.js";
 import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -120,6 +119,13 @@ const catalogue = {
     const baseline = structuredClone(currentBasket);
     await options.beforeDispatch(baseline);
     directWrites++;
+    simulatedSubmissions++;
+    if (nextSubmissionStatus === "uncertain") {
+      nextSubmissionStatus = "submitted";
+      throw new Error(
+        "Synthetic ambiguous outcome; no provider mutation occurred.",
+      );
+    }
     const addedItems = additions.map(({ productId, quantity }) => {
       const view = product(productId);
       return {
@@ -224,28 +230,6 @@ const catalogue = {
     };
   },
 } as unknown as ShoppingClient;
-const proposalService = new BasketProposalService(catalogue);
-const uncertainProposals = {
-  prepareAdditions: (
-    ...args: Parameters<BasketProposalService["prepareAdditions"]>
-  ) => proposalService.prepareAdditions(...args),
-  prepareShoppingListAdditions: (
-    ...args: Parameters<BasketProposalService["prepareShoppingListAdditions"]>
-  ) => proposalService.prepareShoppingListAdditions(...args),
-  transferNativeShoppingList: (
-    ...args: Parameters<BasketProposalService["transferNativeShoppingList"]>
-  ) => proposalService.transferNativeShoppingList(...args),
-  apply: async (...args: Parameters<BasketProposalService["apply"]>) => {
-    simulatedSubmissions++;
-    if (nextSubmissionStatus === "uncertain") {
-      nextSubmissionStatus = "submitted";
-      throw new Error(
-        "Synthetic ambiguous outcome; provider mutation is forbidden in this smoke.",
-      );
-    }
-    return proposalService.apply(...args);
-  },
-} as unknown as BasketProposalService;
 // Keep durable storage across MCP restarts, just as the owner Durable Object does.
 let stored = new Map<string, unknown>();
 const storage: LocalBasketInventoryStorage = {
@@ -286,17 +270,11 @@ globalThis.fetch = (async (input, init) => {
   );
 }) as typeof fetch;
 const makeServer = () =>
-  createMcpServer(
-    catalogue,
-    async () => undefined,
-    process.env,
-    uncertainProposals,
-    {
-      principalKey: "smoke-owner",
-      policyRevision: "smoke-policy",
-      localBasketCapability: "smoke-capability",
-    },
-  );
+  createMcpServer(catalogue, async () => undefined, process.env, {
+    principalKey: "smoke-owner",
+    policyRevision: "smoke-policy",
+    localBasketCapability: "smoke-capability",
+  });
 let current = makeServer();
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
@@ -363,8 +341,9 @@ document.getElementById('run').onclick = async () => {
   check(summary,'Loaded source product row missing');
   summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
   await wait(()=>row.querySelector('.product-inline-actions'));
-  const plus=row.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button:last-of-type');
-  check(plus,'Draft quantity controls missing'); plus.click();
+  const plus=()=>[...doc().querySelectorAll('.product-action-row')].find(item=>item.textContent.includes('Smoke product 2'))?.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button[aria-label^="Increase quantity"]');
+  await wait(()=>plus()&&!plus().disabled);
+  plus().click();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&result.structuredContent.review.items.some(item=>item.product_id===2&&item.quantity===3)));
   transcript.structuredContent.review=widgetResults.findLast(result=>result.name==='update_product_review').structuredContent.review;
   const editedStats=await fetch('/stats').then(r=>r.json());

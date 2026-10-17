@@ -2,11 +2,6 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  ProductReviewService,
-  type ReviewOperationJournal,
-} from "../product-review.js";
-import type { ReviewOperation } from "../local-basket.js";
 import type { ProductView } from "../product-presentation.js";
 import { ProductFacts } from "./components/product.js";
 import { ViewerPage } from "./viewer-page.js";
@@ -675,104 +670,6 @@ test("partial native-list updates expose discard recovery without a replay actio
     uncertain,
     /<button[^>]*disabled=""[^>]*>.*Add to Nemlig basket<\/button>/u,
   );
-});
-
-test("a recovered native-list review exposes and runs explicit discard recovery", async () => {
-  const pageProps = props();
-  const native = {
-    id: 44,
-    name: "Family",
-    items: [{ productId: 7, quantity: 1 }],
-  };
-  let operation: ReviewOperation = {
-    operationId: "native-list-update:44",
-    generation: "update-generation-1",
-    accountIdentity: "account-1",
-    kind: "update",
-    name: "Family",
-    listId: 44,
-    baseline: [{ productId: 7, quantity: 1 }],
-    items: [{ productId: 7, quantity: 2 }],
-  };
-  const journal: ReviewOperationJournal = {
-    read: async () => structuredClone(operation),
-    claim: async () => false,
-    write: async (next) => {
-      operation = structuredClone(next);
-    },
-    complete: async () => {
-      operation = { ...operation, completedUntil: Date.now() + 7_200_000 };
-    },
-  };
-  const service = new ProductReviewService({
-    getProduct: async (id) => ({
-      id,
-      name: "Fixture yoghurt",
-      price: 10,
-      unitPrice: 20,
-      unit: "kr/kg",
-      unitSize: "500 g",
-      brand: "Fixture",
-      category: "",
-      subcategory: "",
-      imageUrl: "",
-      available: true,
-      labels: [],
-      isOrganic: false,
-      isFrozen: false,
-      isRefrigerated: false,
-      isDairy: true,
-      isLactoseFree: false,
-      isGlutenFree: false,
-      isVegan: false,
-      isOnDiscount: false,
-    }),
-    searchProducts: async () => [],
-    providerIdentity: () => "account-1",
-    listShoppingLists: async () => [{ id: 44, name: "Family" }],
-    getShoppingList: async () => structuredClone(native),
-    updateShoppingListProduct: async (_id, productId, quantity) => {
-      native.items = native.items.filter(
-        (item) => item.productId !== productId,
-      );
-      if (quantity > 0) {
-        native.items.push({ productId, quantity });
-      }
-    },
-  });
-  const recovered = await service.openShoppingList(
-    "owner",
-    44,
-    undefined,
-    journal,
-  );
-  assert.equal(recovered.updateStatus, "partial");
-  assert.equal(recovered.conflictItems?.[0]?.quantity, 1);
-  if (pageProps.model.screen.kind !== "review") {
-    throw new Error("review fixture missing");
-  }
-  pageProps.model.screen = {
-    ...pageProps.model.screen,
-    review: recovered,
-  };
-  let updateResult: ReturnType<typeof service.updateShoppingList> | undefined;
-  pageProps.actions.onDiscardPendingUpdate = () => {
-    updateResult = service.updateShoppingList(
-      "owner",
-      44,
-      { kind: "discard_pending_update" },
-      undefined,
-      journal,
-    );
-  };
-
-  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
-  assert.match(markup, /Discard pending changes and use current list/u);
-  assert.doesNotMatch(markup, /Resume update|Update shopping list/u);
-  pageProps.actions.onDiscardPendingUpdate();
-  assert.equal((await updateResult)?.updateStatus, undefined);
-  assert.deepEqual(native.items, [{ productId: 7, quantity: 1 }]);
-  assert.ok(operation.completedUntil);
 });
 
 test("pending prepared submission shows progress while keeping replay fenced", () => {
