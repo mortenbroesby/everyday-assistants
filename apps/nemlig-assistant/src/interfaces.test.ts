@@ -597,6 +597,54 @@ test("direct draft catalog exposes its input contract and loading status", async
         tool._meta?.["openai/toolInvocation/invoked"],
         "Draft ready for review",
       );
+      const tools = (await mcp.listTools()).tools;
+      const modelTools = tools.filter((candidate) =>
+        (
+          candidate._meta?.ui as { visibility?: string[] } | undefined
+        )?.visibility?.includes("model"),
+      );
+      const appTools = tools.filter((candidate) =>
+        (
+          candidate._meta?.ui as { visibility?: string[] } | undefined
+        )?.visibility?.includes("app"),
+      );
+      assert.deepEqual(appTools.map(({ name }) => name).sort(), [
+        "save_basket_as_shopping_list",
+        "submit_product_review",
+        "update_product_review",
+      ]);
+      assert.equal(
+        modelTools.some(({ name }) => name === "save_basket_as_shopping_list"),
+        false,
+      );
+      const update = modelTools.find(
+        ({ name }) => name === "update_product_review_conversation",
+      );
+      const submit = modelTools.find(
+        ({ name }) => name === "submit_product_review_conversation",
+      );
+      assert.ok(update);
+      assert.ok(submit);
+      const updateProperties = update.inputSchema.properties as Record<
+        string,
+        { description?: string }
+      >;
+      const submitProperties = submit.inputSchema.properties as Record<
+        string,
+        { description?: string }
+      >;
+      assert.match(
+        updateProperties.review_context_id.description ?? "",
+        /draft review/u,
+      );
+      assert.match(
+        submitProperties.reviewed_list.description ?? "",
+        /draft name/u,
+      );
+      assert.doesNotMatch(
+        modelTools.map(({ description }) => description).join("\n"),
+        /load_saved_shopping_list|automatically saved shopping list/iu,
+      );
     },
   );
 });
@@ -2022,6 +2070,45 @@ test("product search is read-only and selection starts a temporary draft", async
         arguments: { items: [{ product_id: 7, quantity: 1 }] },
       });
       assert.equal(started.isError, undefined, toolText(started));
+      const rejectedStarts = [
+        {
+          items: [{ product_id: 7, quantity: 1 }],
+          creation_id: randomUUID(),
+        },
+        {
+          items: [{ product_id: 7, quantity: 1 }],
+          shopping_list_id: 55,
+        },
+      ];
+      for (const arguments_ of rejectedStarts) {
+        const rejected = await mcp.callTool({
+          name: "start_product_review",
+          arguments: arguments_,
+        });
+        assert.equal(rejected.isError, true, toolText(rejected));
+      }
+      const missingTarget = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: { action: { kind: "quantity", product_id: 7, quantity: 2 } },
+      });
+      assert.equal(missingTarget.isError, true);
+      const retiredTarget = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: { basket_id: randomUUID(), action: { kind: "delete" } },
+      });
+      assert.equal(retiredTarget.isError, true);
+      const missingSubmitIdentity = await mcp.callTool({
+        name: "submit_product_review_conversation",
+        arguments: {
+          draft_id: randomUUID(),
+          submission_id: randomUUID(),
+          reviewed_list: {
+            name: "Basket draft",
+            items: [{ product_id: 7, quantity: 1 }],
+          },
+        },
+      });
+      assert.equal(missingSubmitIdentity.isError, true);
       const retiredDraft = await mcp.callTool({
         name: "update_product_review_conversation",
         arguments: {

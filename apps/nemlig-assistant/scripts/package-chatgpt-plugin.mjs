@@ -23,6 +23,9 @@ const appPath = resolve(packageRoot, ".app.json");
 const mcpPath = resolve(packageRoot, "mcp.json");
 const cloudflareConfigPath = resolve(appRoot, "wrangler.jsonc");
 const plugin = readJson(pluginPath);
+const desktopPlugin = readJson(
+  resolve(packageRoot, ".codex-plugin/plugin.json"),
+);
 const app = readJson(appPath);
 const mcp = readJson(mcpPath);
 const cloudflareConfig = readJson(cloudflareConfigPath);
@@ -98,6 +101,20 @@ function validate() {
     throw new Error(
       "Do not package the private export's author email in this public repository.",
     );
+  }
+
+  if (
+    desktopPlugin.name !== plugin.name ||
+    desktopPlugin.version !== plugin.version ||
+    desktopPlugin.description !== plugin.description ||
+    desktopPlugin.apps !== plugin.extensions?.["com.openai"]?.apps ||
+    JSON.stringify(desktopPlugin.author) !== JSON.stringify(plugin.author) ||
+    JSON.stringify(desktopPlugin.keywords) !==
+      JSON.stringify(plugin.keywords) ||
+    JSON.stringify(desktopPlugin.interface) !==
+      JSON.stringify(plugin.extensions?.["com.openai"]?.interface)
+  ) {
+    throw new Error("The desktop plugin manifest must mirror plugin.json.");
   }
 
   const shortDescription =

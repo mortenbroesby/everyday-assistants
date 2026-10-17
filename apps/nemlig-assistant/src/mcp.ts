@@ -270,9 +270,7 @@ const reviewTargetFields = {
     .string()
     .uuid()
     .optional()
-    .describe(
-      "Opaque temporary handle for this card's review of the exact saved list.",
-    ),
+    .describe("Opaque temporary handle for this card's exact draft review."),
 };
 const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
   z
@@ -317,7 +315,7 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
         .strict()
         .optional()
         .describe(
-          "The exact saved-list or temporary-draft product IDs and quantities the user reviewed. The server compares them with the current review before basket submission.",
+          "The exact draft name, product IDs, and quantities the user reviewed. The server compares them with the current draft before basket submission.",
         ),
     })
     .strict()
@@ -1179,7 +1177,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Search Nemlig products",
       description:
-        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use update_product_review_conversation show; use load_saved_shopping_list for a saved-list source.",
+        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use update_product_review_conversation show; use start_product_review with an exact shopping_list_id to load a saved list as a read-only draft source.",
       inputSchema: z.object({
         search_term: z
           .string()
@@ -1484,8 +1482,8 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       _meta: {
         ui: { visibility: ["model"] },
         "openai/toolInvocation/invoking":
-          "Working on your Nemlig shopping list…",
-        "openai/toolInvocation/invoked": "Shopping-list result received",
+          "Updating your temporary basket draft…",
+        "openai/toolInvocation/invoked": "Draft result received",
       },
     },
     ({ action, shopping_list_id, draft_id, review_context_id }, ctx) => {
@@ -1601,7 +1599,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       _meta: {
         ui: { visibility: ["model"] },
         "openai/toolInvocation/invoking":
-          "Adding your shopping list to Nemlig basket…",
+          "Adding reviewed products to Nemlig basket…",
         "openai/toolInvocation/invoked": "Basket-transfer result received",
       },
     },
