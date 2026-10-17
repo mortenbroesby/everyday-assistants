@@ -3,7 +3,7 @@
   "author": {
     "name": "Morten & Josephine Broesby-Olsen"
   },
-  "description": "Find Nemlig groceries, edit an automatically saved shopping list, and add its reviewed products to the Nemlig basket only when asked.",
+  "description": "Find Nemlig groceries, edit a temporary basket draft, and add its reviewed products to the Nemlig basket only when authorized.",
   "extensions": {
     "com.openai": {
       "apps": "./.app.json",
@@ -11,17 +11,17 @@
         "capabilities": ["Interactive"],
         "category": "Productivity",
         "composerIcon": "./assets/icon.png",
-        "defaultPrompt": "Help me shop on Nemlig. Offer to find products, create a shopping list, or open an existing one. Once I choose products for a shopping list, save it to Nemlig and save my edits automatically. Do not open an unrelated list or add anything to my Nemlig basket unless I ask.",
+        "defaultPrompt": "Help me shop on Nemlig. Offer to find products, start a temporary basket draft, or load an exact saved shopping list as a read-only source. Draft edits stay local. Add exact reviewed products only after a clear existing instruction or explicit approval; ask if neither is present. Do not open an unrelated list or submit on selection alone.",
         "developerName": "Morten & Josephine Broesby-Olsen",
         "displayName": "Nemlig Assistant",
         "logo": "./assets/icon.png",
-        "longDescription": "Find current Nemlig products and compare sizes and prices. Create a shopping list from your chosen products and edit it interactively, with changes saved directly to Nemlig. Add its reviewed products to your real basket only after authorization. No checkout or payment.",
-        "shortDescription": "Groceries and shopping lists"
+        "longDescription": "Find current Nemlig products and compare sizes and prices. Review chosen products in a temporary draft; edits do not change saved shopping lists or the real basket. Add exact reviewed products to the basket only after authorization. After verified addition, the app can optionally save the whole basket as a shopping list. No checkout or payment.",
+        "shortDescription": "Groceries and basket drafts"
       }
     }
   },
   "name": "nemlig-shopping",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "keywords": [
     "groceries",
     "grocery shopping",

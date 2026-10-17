@@ -122,14 +122,14 @@ The MCP runtime SHALL ensure authentication before every provider-backed task, r
 - **THEN** it retries once with the newer session without another login and returns any subsequent failure
 
 ### Requirement: Representative recipe-scale smoke verification
-The repository SHALL provide a deterministic, credentials-free smoke scenario covering product discovery, exact Draft list choices, Ready preparation, explicit authorization, a single protected addition, verified Nemlig basket readback, and an uncertain-write path without contacting Nemlig.
+The repository SHALL provide a deterministic, credentials-free smoke scenario covering product discovery, exact temporary-draft choices, explicit authorization, a single protected addition, verified Nemlig basket readback, and an uncertain-write path without contacting Nemlig.
 
 #### Scenario: Representative flow succeeds
 - **WHEN** the smoke runs against its deterministic catalogue and basket fixture
-- **THEN** the exact authorized Ready additions apply once and final readback confirms the result
+- **THEN** the exact authorized draft additions apply once and final readback confirms the result
 
 #### Scenario: Authorization differs from settled additions
-- **WHEN** a prepared submission contains a product or quantity outside the settled Ready set
+- **WHEN** a submission contains a product or quantity outside the reviewed draft
 - **THEN** verification fails before simulated mutation succeeds
 
 #### Scenario: Simulated write is uncertain
@@ -137,7 +137,7 @@ The repository SHALL provide a deterministic, credentials-free smoke scenario co
 - **THEN** the submission is not retried and the user is directed to inspect the actual Nemlig basket
 
 ### Requirement: Seven model-visible shopping tools and owner-scoped viewer actions
-The model-visible user tool set SHALL contain exactly `check_nemlig_connection`, `find_groceries`, `get_profile`, `show_my_basket`, `start_product_review`, `update_product_review_conversation`, and `submit_product_review_conversation`. The app-only `update_product_review` widget action SHALL accept `{action}` only and apply it to the authenticated conversation's current Draft list. The `submit_product_review` widget action SHALL accept `{submission_id}` only and remain bound to the exact prepared Ready payload. Neither action SHALL use card, review, or revision authority or render another card. `get_profile`, search, and actual-basket reads SHALL remain read-only. The start/update tools SHALL change only the temporary Draft list; only the protected submit paths MAY add to the actual Nemlig basket. Retired tool names SHALL return the standard unknown-tool response without provider mutation.
+The model-visible user tool set SHALL contain exactly `check_nemlig_connection`, `find_groceries`, `get_profile`, `show_my_basket`, `start_product_review`, `update_product_review_conversation`, and `submit_product_review_conversation`. The app-only `update_product_review` and `submit_product_review` actions SHALL target the exact active `draft_id` and `review_context_id`; submission SHALL also include a unique `submission_id` and the exact `reviewed_list`. The app-only `save_basket_as_shopping_list` action SHALL be available only after verified submission. `get_profile`, search, and actual-basket reads SHALL remain read-only. Start/update SHALL change only the temporary draft; only protected submit paths MAY add to the actual basket. Retired tool names SHALL return the standard unknown-tool response without provider mutation.
 
 #### Scenario: Model-visible tools are listed
 - **WHEN** a compatible client lists tools and honors app visibility metadata
@@ -145,14 +145,15 @@ The model-visible user tool set SHALL contain exactly `check_nemlig_connection`,
 
 #### Scenario: A widget includes a retired identifier
 - **WHEN** a widget calls `update_product_review` or `submit_product_review`
-  with an obsolete card, review, or revision field
+  with an obsolete card, review, revision, or `basket_id` field
 - **THEN** strict input validation rejects the call before its handler and
   neither the Draft list nor Nemlig basket changes
 
 #### Scenario: Multiple supported cards use the current Draft list
-- **WHEN** a supported widget submits a normal action from any rendered card
-- **THEN** the server applies it to the authenticated conversation's current
-  owner list without card activation or supersession state
+- **WHEN** a supported widget submits an action with the exact active draft
+  and review-context IDs
+- **THEN** the server applies it to that authenticated owner's draft without
+  selecting another list or superseding the current card
 
 #### Scenario: Retired tool is called
 - **WHEN** a client calls `show_my_basket_visually`, `review_items_to_add`, `add_approved_items`, or another retired tool name

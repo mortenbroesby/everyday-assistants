@@ -122,7 +122,14 @@ Use evidence to select the layer before changing it:
    is required and evidence confirms that this ChatGPT integration is updated
    from that package. A ZIP download/upload menu alone is not evidence.
 
-## Shopping-list creation validation after a server update
+## Historical shopping-list creation validation (PR #315)
+
+This section records the superseded native-list behavior. The current #318
+contract uses temporary drafts: `start_product_review` with `items` must omit
+`creation_id`, while `shopping_list_id` loads a saved list as a read-only source.
+Refresh installed ChatGPT tools and plugin instructions when they still require
+native-list creation or automatic saving. Confirm the active contract from a
+fresh `tools/list`; a refresh acknowledgement alone is insufficient.
 
 The native-list contract introduced in PR #315 requires `items` and a
 `creation_id` UUID together. An older installed tool snapshot can advertise
@@ -130,7 +137,7 @@ only `items`, so ChatGPT cannot supply the new field and the server rejects the
 call before creating a list. This is a tool-definition mismatch, not evidence
 of a Nemlig login or basket failure.
 
-Use **Refresh tools** on the existing Nemlig Assistant settings page. Verify
+For the historical contract, use **Refresh tools** on the existing Nemlig Assistant settings page. Verify
 that its action details describe native list creation, and that a fresh tool
 catalog exposes `creation_id`. The server's `tools/list` includes the paired
 input requirement and clear recovery guidance for rejected calls. Do not
