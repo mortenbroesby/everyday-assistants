@@ -23,7 +23,7 @@ import {
   withAuthenticatedReadRetry,
 } from "./runtime.js";
 import { getCredentials, type Credentials } from "./config.js";
-import { BasketProposalService, basketPayload } from "./proposals.js";
+import { basketPayload } from "./basket-result.js";
 import {
   IMAGE_ORIGINS,
   createProductViewFromSummary,
@@ -499,11 +499,8 @@ export function createMcpServer(
   client: ShoppingClient = getClient(),
   loadCredentials: () => Promise<Credentials | undefined> = getCredentials,
   env: NodeJS.ProcessEnv = process.env,
-  proposals: BasketProposalService = new BasketProposalService(client),
   requestContext?: McpRequestContext,
-  reviews: ProductReviewService = new ProductReviewService(client, {
-    proposals,
-  }),
+  reviews: ProductReviewService = new ProductReviewService(client),
 ): McpServer {
   const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. Submit to the real basket only when the user clearly directs addition of the exact reviewed products and quantities, or explicitly approves them. Search, display, selection, draft edits, and a remembered ChatGPT tool approval are not authorization for a new addition. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
 
@@ -818,7 +815,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     signal: AbortSignal,
   ) => {
     if (targets.draftId) {
-      if (!reviews.directBasketMode || targets.shoppingListId !== undefined) {
+      if (targets.shoppingListId !== undefined) {
         throw new NemligError(
           "This card does not match the active basket mode.",
         );
@@ -878,126 +875,11 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         "This card targets a saved list. Load it again to create a temporary draft before editing or submitting.",
       );
     }
-    if (targets.shoppingListId) {
-      return updateNativeShoppingList(
-        owner,
-        targets.shoppingListId,
-        action,
-        signal,
-      );
-    }
-    if (!targets.shoppingListId && action.kind === "show") {
+    if (action.kind === "show") {
       return success({ unavailable: true as const });
     }
     throw new NemligError(
-      "Select or create a native shopping list before editing products.",
-    );
-  };
-  const openNativeShoppingList = async (
-    owner: string,
-    listId: number,
-    signal: AbortSignal,
-    preserveMissingSelection = false,
-  ) => {
-    try {
-      return success({
-        review: await reviews.openShoppingList(
-          owner,
-          listId,
-          signal,
-          reviewOperationJournal(signal),
-        ),
-        shoppingLists: await reviews.getShoppingLists(signal),
-        selectedShoppingListId: listId,
-      });
-    } catch (error) {
-      if (
-        !(error instanceof NemligError) ||
-        error.message !== "Shopping list is unavailable or was deleted."
-      ) {
-        throw error;
-      }
-      const retired = await reviews.retireDeletedNativeListUpdate(
-        owner,
-        listId,
-        signal,
-        reviewOperationJournal(signal),
-      );
-      if (!retired) {
-        if (preserveMissingSelection) {
-          return success(
-            { unavailable: true as const },
-            "That exact shopping list is unavailable. Refresh it or choose an existing list explicitly.",
-          );
-        }
-        return listNativeShoppingLists(
-          signal,
-          "That shopping list is unavailable. Choose another existing list or create a new list in conversation.",
-        );
-      }
-      return success({
-        review: retired,
-        shoppingLists: await reviews.getShoppingLists(signal),
-        selectedShoppingListId: null,
-      });
-    }
-  };
-  // This dispatcher preserves the native list's read, edit, and no-delete boundaries.
-  // fallow-ignore-next-line complexity
-  const updateNativeShoppingList = async (
-    owner: string,
-    listId: number,
-    action: z.infer<typeof reviewActionSchema>,
-    signal: AbortSignal,
-  ) => {
-    if (action.kind === "abandon_draft") {
-      throw new NemligError(
-        "Only a temporary direct-basket draft can be abandoned this way.",
-      );
-    }
-    if (action.kind === "prepare_submission") {
-      if (reviews.active(owner)?.shoppingListId !== listId) {
-        throw new NemligError("Select this exact shopping list again.");
-      }
-      return success({ review: await reviews.prepare(owner, signal) });
-    }
-    if (action.kind === "show") {
-      return openNativeShoppingList(owner, listId, signal, true);
-    }
-    if (action.kind === "select") {
-      return openNativeShoppingList(owner, listId, signal);
-    }
-    if (action.kind === "list") {
-      throw new NemligError(
-        "Native shopping lists cannot be deleted or cleared here.",
-      );
-    }
-    const review = await reviews.updateShoppingList(
-      owner,
-      listId,
-      action,
-      signal,
-      reviewOperationJournal(signal),
-    );
-    return success({ review });
-  };
-  const submitProcessReview = async (
-    owner: string,
-    submissionId: string,
-    shoppingListId: number,
-    signal: AbortSignal,
-    reviewedList?: ReviewedShoppingList,
-  ) => {
-    await ensureLoggedIn(client, loadCredentials);
-    return success(
-      await reviews.submit(
-        owner,
-        submissionId,
-        shoppingListId,
-        signal,
-        reviewOperationJournal(signal),
-        reviewedList,
-      ),
+      "Start a temporary draft before editing products.",
     );
   };
   const submitReview = async (
@@ -1009,39 +891,30 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     draftId?: string,
     reviewContextId?: string,
   ) => {
-    if (draftId !== undefined) {
-      if (!reviews.directBasketMode || !reviewedList) {
-        throw new NemligError(
-          "Direct basket submission requires the exact reviewed draft contents.",
-        );
-      }
-      const active = reviews.active(owner, draftId);
-      if (active && active.reviewContextId !== reviewContextId) {
-        throw new NemligError(
-          "This direct basket card has expired. Use its exact review context or start a new draft.",
-        );
-      }
-      await ensureLoggedIn(client, loadCredentials);
-      return success(
-        await reviews.submitDirectBasket(
-          owner,
-          draftId,
-          submissionId,
-          reviewedList.items,
-          signal,
-          reviewOperationJournal(signal),
-        ),
-      );
-    }
-    if (reviews.directBasketMode || shoppingListId === undefined) {
+    if (shoppingListId !== undefined || draftId === undefined) {
       throw new NemligError("This card does not match the active basket mode.");
     }
-    return submitProcessReview(
-      owner,
-      submissionId,
-      shoppingListId,
-      signal,
-      reviewedList,
+    if (!reviewedList) {
+      throw new NemligError(
+        "Direct basket submission requires the exact reviewed draft contents.",
+      );
+    }
+    const active = reviews.active(owner, draftId);
+    if (active && active.reviewContextId !== reviewContextId) {
+      throw new NemligError(
+        "This direct basket card has expired. Use its exact review context or start a new draft.",
+      );
+    }
+    await ensureLoggedIn(client, loadCredentials);
+    return success(
+      await reviews.submitDirectBasket(
+        owner,
+        draftId,
+        submissionId,
+        reviewedList.items,
+        signal,
+        reviewOperationJournal(signal),
+      ),
     );
   };
 
@@ -1255,12 +1128,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   registerTool(
     "start_product_review",
     {
-      title: reviews.directBasketMode
-        ? "Review products before a basket addition"
-        : "Create or open a Nemlig shopping list",
-      description: reviews.directBasketMode
-        ? "Create a temporary process-local draft from exact returned product IDs and quantities. Edits affect only this draft. Submit only after separate explicit authorization; one additive request sends the exact reviewed lines. Load saved lists as read-only sources, and never retry an uncertain provider write."
-        : "Create and open a native Nemlig shopping list when the user selects exact returned product IDs and quantities. When items are supplied, creation_id UUID is required: generate it once for this intentional creation and retain it for recovery; never generate a different ID to retry an uncertain write. If your tool schema lacks creation_id, refresh this app’s tools before proceeding. The list is created and verified immediately; use shopping_list_name only when the user supplied one. Omit items to discover existing native lists without creating or changing one, or pass shopping_list_id to reopen that exact list. Product edits persist to the selected list immediately; browsing and alternatives stay read-only. Creation or editing never changes the actual Nemlig basket. Explicit Submit separately rechecks the exact saved list and basket baseline, transfers once, verifies additive basket readback, and applies existing source cleanup and durable no-replay safeguards. Cards carry the exact shopping_list_id and transient review_context_id; after restart, show/select that exact ID to refresh and establish a new context. Never infer a target from its name or replay an uncertain write.",
+      title: "Review products before a basket addition",
+      description:
+        "Create a temporary process-local draft from exact returned product IDs and quantities. Edits affect only this draft. Submit only after separate explicit authorization; one additive request sends the exact reviewed lines. Load saved lists as read-only sources, and never retry an uncertain provider write.",
       inputSchema: z
         .object({
           items: z
@@ -1274,9 +1144,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
             .max(MAX_DRAFT_PRODUCTS)
             .optional()
             .describe(
-              reviews.directBasketMode
-                ? "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one."
-                : "Exact returned products and package quantities to create a native shopping list immediately. Omit to discover existing lists without creating one.",
+              "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
             ),
           shopping_list_name: z
             .string()
@@ -1284,20 +1152,12 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
             .min(1)
             .max(30)
             .optional()
-            .describe(
-              reviews.directBasketMode
-                ? "Not used by temporary direct basket drafts."
-                : "Optional name supplied by the user for the new list.",
-            ),
+            .describe("Not used by temporary direct basket drafts."),
           creation_id: z
             .string()
             .uuid()
             .optional()
-            .describe(
-              reviews.directBasketMode
-                ? "Not used by temporary direct basket drafts."
-                : "Required when items are supplied; omit when opening or listing existing lists. Generate one UUID for an intentional new list and reuse only to inspect/recover that same creation after an uncertain result.",
-            ),
+            .describe("Not used by temporary direct basket drafts."),
           shopping_list_id: z
             .number()
             .int()
@@ -1314,84 +1174,48 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
             message: "Create a list or open an exact shopping list, not both.",
           },
         )
-        .refine(
-          ({ items, creation_id }) =>
-            items?.length
-              ? reviews.directBasketMode
-                ? creation_id === undefined
-                : creation_id !== undefined
-              : creation_id === undefined,
-          {
-            message: reviews.directBasketMode
-              ? "Direct basket drafts do not use a native-list creation_id."
-              : "A new selection requires one creation_id.",
-          },
-        )
-        .meta(
-          reviews.directBasketMode
-            ? {
+        .refine(({ creation_id }) => creation_id === undefined, {
+          message: "Direct basket drafts do not use a native-list creation_id.",
+        })
+        .meta({
+          anyOf: [
+            {
+              required: ["items"],
+              not: {
                 anyOf: [
-                  {
-                    required: ["items"],
-                    not: {
-                      anyOf: [
-                        { required: ["shopping_list_id"] },
-                        { required: ["creation_id"] },
-                      ],
-                    },
-                  },
-                  {
-                    required: ["shopping_list_id"],
-                    not: {
-                      anyOf: [
-                        { required: ["items"] },
-                        { required: ["creation_id"] },
-                      ],
-                    },
-                  },
-                  {
-                    not: {
-                      anyOf: [
-                        { required: ["items"] },
-                        { required: ["shopping_list_id"] },
-                        { required: ["creation_id"] },
-                      ],
-                    },
-                  },
-                ],
-              }
-            : {
-                anyOf: [
-                  {
-                    required: ["items", "creation_id"],
-                    not: { required: ["shopping_list_id"] },
-                  },
-                  {
-                    not: {
-                      anyOf: [
-                        { required: ["items"] },
-                        { required: ["creation_id"] },
-                      ],
-                    },
-                  },
+                  { required: ["shopping_list_id"] },
+                  { required: ["creation_id"] },
                 ],
               },
-        ),
+            },
+            {
+              required: ["shopping_list_id"],
+              not: {
+                anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
+              },
+            },
+            {
+              not: {
+                anyOf: [
+                  { required: ["items"] },
+                  { required: ["shopping_list_id"] },
+                  { required: ["creation_id"] },
+                ],
+              },
+            },
+          ],
+        }),
       outputSchema: durableReviewResultSchema,
       annotations: {
         readOnlyHint: false,
-        destructiveHint: !reviews.directBasketMode,
+        destructiveHint: false,
         idempotentHint: false,
         openWorldHint: true,
       },
       _meta: {
         ...(requestContext ? PRODUCT_VIEWER_RESOURCE_METADATA : {}),
-        "openai/toolInvocation/invoking": reviews.directBasketMode
-          ? "Preparing your Nemlig basket draft…"
-          : "Opening your Nemlig shopping list…",
-        "openai/toolInvocation/invoked": reviews.directBasketMode
-          ? "Draft ready for review"
-          : "Shopping-list result received",
+        "openai/toolInvocation/invoking": "Preparing your Nemlig basket draft…",
+        "openai/toolInvocation/invoked": "Draft ready for review",
         ui: {
           ...(requestContext
             ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }
@@ -1400,7 +1224,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         },
       },
     },
-    ({ items, shopping_list_id, shopping_list_name, creation_id }, ctx) => {
+    ({ items, shopping_list_id }, ctx) => {
       const perform = async () => {
         const owner = reviewOwner(ctx);
         if (shopping_list_id) {
@@ -1421,32 +1245,13 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
             selectionRequired: true,
           });
         }
-        if (reviews.directBasketMode) {
-          await ensureLoggedIn(client, loadCredentials);
-          return success({
-            review: await reviews.startDirectBasket(
-              owner,
-              items,
-              ctx.mcpReq.signal,
-            ),
-          });
-        }
-        if (!creation_id) {
-          throw new NemligError(
-            "A shopping-list creation ID is required for this selection.",
-          );
-        }
         await ensureLoggedIn(client, loadCredentials);
-        const review = await reviews.startShoppingList(
-          owner,
-          items,
-          creation_id,
-          shopping_list_name,
-          ctx.mcpReq.signal,
-          reviewOperationJournal(ctx.mcpReq.signal),
-        );
         return success({
-          review,
+          review: await reviews.startDirectBasket(
+            owner,
+            items,
+            ctx.mcpReq.signal,
+          ),
         });
       };
       return items?.length
@@ -1458,7 +1263,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   const draftActionOutputSchema = durableReviewResultSchema;
   const reviewActionAnnotations = {
     readOnlyHint: false,
-    destructiveHint: !reviews.directBasketMode,
+    destructiveHint: false,
     idempotentHint: false,
     openWorldHint: true,
   };
@@ -1466,12 +1271,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   registerTool(
     "update_product_review_conversation",
     {
-      title: reviews.directBasketMode
-        ? "Edit the temporary basket draft"
-        : "Update your shopping list",
-      description: reviews.directBasketMode
-        ? "Update the exact temporary draft identified by draft_id and review_context_id. Product edits remain local; they do not change Nemlig until explicit Submit."
-        : "List native Nemlig shopping lists with action=list, open one by passing shopping_list_id with action=select, and target every card edit with its exact shopping_list_id and review_context_id. Product additions, removals, replacements, and quantity changes persist to that exact list and return verified current contents. Searching and browsing alternatives are read-only. These edits never change the actual Nemlig basket; only a separately authorized Submit adds its exact reviewed list to the basket. After an error, refresh the exact list and never replay an uncertain write.",
+      title: "Edit the temporary basket draft",
+      description:
+        "Update the exact temporary draft identified by draft_id and review_context_id. Product edits remain local; they do not change Nemlig until explicit Submit.",
       inputSchema: reviewInputSchema(
         modelReviewActionSchema.describe(
           "The requested product-review change, navigation, refresh, or submission preparation.",
@@ -1481,12 +1283,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       annotations: reviewActionAnnotations,
       _meta: {
         ui: { visibility: ["model"] },
-        "openai/toolInvocation/invoking": reviews.directBasketMode
-          ? "Updating your temporary basket draft…"
-          : "Updating your shopping list…",
-        "openai/toolInvocation/invoked": reviews.directBasketMode
-          ? "Draft result received"
-          : "Shopping list result received",
+        "openai/toolInvocation/invoking":
+          "Updating your temporary basket draft…",
+        "openai/toolInvocation/invoked": "Draft result received",
       },
     },
     ({ action, shopping_list_id, draft_id, review_context_id }, ctx) => {
@@ -1528,12 +1327,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   registerTool(
     "update_product_review",
     {
-      title: reviews.directBasketMode
-        ? "Edit the temporary basket draft"
-        : "Update your shopping list",
-      description: reviews.directBasketMode
-        ? "Internal UI action for this exact temporary basket draft. Product edits remain local until explicit Submit."
-        : "Internal UI action for this exact native shopping list. Product edits persist immediately to that list; basket submission remains separate.",
+      title: "Edit the temporary basket draft",
+      description:
+        "Internal UI action for this exact temporary basket draft. Product edits remain local until explicit Submit.",
       inputSchema: reviewInputSchema(reviewActionSchema),
       outputSchema: draftActionOutputSchema,
       annotations: reviewActionAnnotations,
@@ -1579,12 +1375,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   registerTool(
     "submit_product_review_conversation",
     {
-      title: reviews.directBasketMode
-        ? "Submit the reviewed products to Nemlig"
-        : "Submit the exact shopping list to Nemlig",
-      description: reviews.directBasketMode
-        ? "Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities. Selection, display, and draft edits are not approval. Add those quantities in one request; the server checks the active draft and records a durable no-replay fence. Never retry an uncertain result."
-        : "Add the exact reviewed saved Nemlig shopping list to the basket once after explicit user authorization. Pass shopping_list_id and reviewed_list from the user's reviewed list, including its name and every product ID and quantity. The server re-reads that list and rejects changed contents before transfer; an active card or in-memory review is not required. Uncertain transfers are never retried.",
+      title: "Submit the reviewed products to Nemlig",
+      description:
+        "Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities. Selection, display, and draft edits are not approval. Add those quantities in one request; the server checks the active draft and records a durable no-replay fence. Never retry an uncertain result.",
       inputSchema: submitReviewInputSchema(
         z
           .string()
@@ -1637,12 +1430,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   registerTool(
     "submit_product_review",
     {
-      title: reviews.directBasketMode
-        ? "Submit the current draft to Nemlig"
-        : "Submit the current shopping list",
-      description: reviews.directBasketMode
-        ? "Internal one-click action for the exact temporary draft shown in this viewer. It sends all approved lines once and verifies additive basket readback."
-        : "Internal one-click action for the exact saved native shopping list shown in the viewer. Passes the reviewed list contents so a card or server restart does not require an active in-memory review. Writes a durable attempt fence before transfer, verifies additive basket readback, and never retries an uncertain transfer.",
+      title: "Submit the current draft to Nemlig",
+      description:
+        "Internal one-click action for the exact temporary draft shown in this viewer. It sends all approved lines once and verifies additive basket readback.",
       inputSchema: submitReviewInputSchema(z.string().uuid()),
       outputSchema: durableReviewResultSchema,
       annotations: {
