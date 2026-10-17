@@ -1,4 +1,5 @@
 import {
+  LocalBasketOperationCapacityError,
   serializedLocalBasketFailureCode,
   type LocalBasketCommand,
 } from "./local-basket.js";
@@ -90,10 +91,9 @@ const storageFailureResponse = (error: unknown): Response => {
     serializedLocalBasketFailureCode(error) ===
     "LOCAL_BASKET_OPERATION_CAPACITY"
   ) {
-    return new Response(
-      "Shopping-list recovery storage is full. This Save, Update, or Submit did not reach Nemlig; use an existing list and do not retry an uncertain transfer.",
-      { status: 429 },
-    );
+    return new Response(new LocalBasketOperationCapacityError().message, {
+      status: 429,
+    });
   }
   return new Response("Local basket storage is temporarily unavailable.", {
     status: 500,
