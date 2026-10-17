@@ -6,6 +6,20 @@ Product selection SHALL create an owner-scoped temporary process-local draft.
 Draft edits SHALL remain local and SHALL NOT create or mutate a Nemlig shopping
 list.
 
+#### Scenario: Start and edit a draft
+- **WHEN** the user chooses exact product IDs and positive quantities for visual editing
+- **THEN** the system creates a temporary draft with those products
+- **AND** later draft edits remain local until an explicitly authorized Submit
+
+#### Scenario: Saved list as read-only source
+- **WHEN** the user selects an exact saved Nemlig shopping-list ID
+- **THEN** its current rows are copied into a new temporary draft
+- **AND** draft edits, submission, or abandonment do not change or delete the source list
+
+#### Scenario: Search only
+- **WHEN** the user only searches or compares products
+- **THEN** no draft, saved list, or real basket is changed
+
 #### Scenario: Explicit additive basket submission
 
 - GIVEN a draft bound to the exact account, card context, product IDs, and
