@@ -330,7 +330,8 @@ document.getElementById('run').onclick = async () => {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
   transcript=await call({name:'start_product_review',arguments:{shopping_list_id:77}});
   frame.src='/viewer'; await wait(()=>initialized); publish();
-  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===transcript.structuredContent.review.draftId));
+  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);
   await wait(()=>doc().querySelectorAll('.product-action-row').length===2);
   const review=transcript.structuredContent.review;
   check(review.basketMode==='direct-basket'&&review.draftId,'Saved list was not copied into a temporary direct draft');
