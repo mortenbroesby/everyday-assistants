@@ -436,7 +436,9 @@ document.getElementById('uncertain').onclick = async () => {
   await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'));
   const stats=await fetch('/stats').then(r=>r.json());
   check(stats.basketWrites===1&&stats.simulatedSubmissions===1,'Uncertain Submit did not make exactly one provider attempt');
+  await wait(()=>doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket')&&!doc()?.querySelector('main.viewer[aria-busy="true"]'));
   publish(); await new Promise(resolve=>setTimeout(resolve,100));
+  check(doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket'),'Stale passive output dismissed uncertain recovery');
   const repeat=[...doc().querySelectorAll('button')].find(button=>button.textContent.trim()==='Add to Nemlig basket');
   check(!repeat||repeat.disabled,'Stale passive output re-enabled an uncertain Submit');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===1,'Passive output retried an uncertain Submit');
