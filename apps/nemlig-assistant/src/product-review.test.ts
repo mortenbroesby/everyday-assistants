@@ -383,6 +383,83 @@ test("direct basket draft submits 37 lines once, saves whole basket once, and ab
   assert.equal(listCalls, 0);
 });
 
+test(
+  "concurrent direct draft submissions dispatch only once",
+  { timeout: 5_000 },
+  async () => {
+    const owner = "concurrent-direct-owner";
+    const requested = [{ product_id: 7, quantity: 2 }];
+    const durable = createDurableReviewJournal(owner);
+    let markEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      markEntered = resolve;
+    });
+    let releaseWrite!: () => void;
+    const release = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
+    });
+    let writes = 0;
+    const basket: Basket = {
+      items: [],
+      productsPrice: 0,
+      deliveryPrice: 0,
+      numberOfProducts: 0,
+      deliveryTime: undefined,
+    };
+    const service = new ProductReviewService({
+      ...client,
+      getCart: async () => structuredClone(basket),
+      addManyToCart: async (
+        additions: BasketAddition[],
+        options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+      ) => {
+        markEntered();
+        await release;
+        await options?.beforeDispatch?.(structuredClone(basket));
+        writes++;
+        return {
+          ...basket,
+          items: additions.map(({ productId, quantity }) => ({
+            id: productId,
+            name: `Product ${productId}`,
+            quantity,
+            total: quantity * 5,
+          })),
+          numberOfProducts: 2,
+        };
+      },
+    });
+    const draft = await service.startDirectBasket(owner, requested);
+    const first = service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "11111111-1111-4111-8111-111111111111",
+      requested,
+      undefined,
+      durable.journal,
+    );
+    await entered;
+    try {
+      await assert.rejects(
+        service.submitDirectBasket(
+          owner,
+          draft.draftId!,
+          "22222222-2222-4222-8222-222222222222",
+          requested,
+          undefined,
+          durable.journal,
+        ),
+        /operation is in progress/u,
+      );
+      assert.equal(writes, 0);
+    } finally {
+      releaseWrite();
+    }
+    assert.equal((await first).result.status, "completed");
+    assert.equal(writes, 1);
+  },
+);
+
 test("a deliberate same-item request after submission starts a fresh draft", async () => {
   const owner = "repeat-direct-owner";
   const durable = createDurableReviewJournal(owner);
