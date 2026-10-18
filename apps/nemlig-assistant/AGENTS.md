@@ -5,7 +5,7 @@ app, also apply this file. Then select the matching app-local skill:
 
 - Load `.codex/skills/nemlig-production/SKILL.md` for production readiness,
   deployment, provider, or hosted-service operations.
-- Load `.codex/skills/nemlig-basket/SKILL.md` for product search, proposals,
+- Load `.codex/skills/nemlig-basket/SKILL.md` for product search, draft review,
   basket review, or any basket operation.
 - Load both only when the task genuinely spans both scopes. Loading a skill
   never authorizes credentials, provider changes, production changes, or a
@@ -23,10 +23,10 @@ app, also apply this file. Then select the matching app-local skill:
   If the provider only accepts absolute quantities, read the current basket and
   set a strictly greater positive resulting quantity; fail closed on incomplete
   or stale state. Never send zero or any quantity at/below the observed value.
-  This rule applies to MCP, CLI, provider clients, proposal services, tests, and
-  production acceptance. Product removal from the temporary draft is separate
-  and remains allowed. Actual basket additions must follow the exact
-  prepare/review/authorization/apply/readback contract in `nemlig-basket`;
+  This rule applies to MCP, CLI, provider clients, tests, and production
+  acceptance. Product removal from the temporary draft is separate and remains
+  allowed. Actual basket additions must follow the exact
+  review/authorization/add/readback contract in `nemlig-basket`;
   checkout, payment, ordering, and
   delivery-slot actions are never allowed.
 - Production/provider work must follow `nemlig-production` and
