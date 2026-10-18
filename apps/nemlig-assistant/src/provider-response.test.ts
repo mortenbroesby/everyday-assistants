@@ -41,6 +41,21 @@ test("pure product parsing preserves provider unknowns and bounded safe text", (
   );
 });
 
+test("search products retain the provider's unit-price label when full unit text is absent", () => {
+  const [search, exact] = normalizeProducts([
+    { Id: 1, UnitPriceLabel: "kr/l", UnitPriceCalc: 19.95 },
+    {
+      Id: 2,
+      UnitPrice: "19,95 kr./Ltr.",
+      UnitPriceLabel: "kr./Ltr.",
+      UnitPriceCalc: 19.95,
+    },
+  ]);
+  assert.equal(search.unit, "kr/l");
+  assert.equal(search.unitPrice, 19.95);
+  assert.equal(exact.unit, "19,95 kr./Ltr.");
+});
+
 test("pure list parsing rejects wrong identity, malformed rows and duplicate IDs", () => {
   const list = {
     Id: 7,

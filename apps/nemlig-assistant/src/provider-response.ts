@@ -284,7 +284,7 @@ const assertUniqueShoppingListOverviewIds = (
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
   const records =
     limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);
-  // Keep the existing explicit provider-field mapping; this callback moved unchanged.
+  // Keep explicit provider fields; live search uses UnitPriceLabel without UnitPrice.
   // fallow-ignore-next-line complexity
   return records.map((item) => {
     const availability = asRecord(item.Availability);
@@ -304,7 +304,7 @@ export function normalizeProducts(value: unknown, limit?: number): Product[] {
       id: asId(item.Id),
       name: asString(item.Name),
       price: asNumber(item.Price),
-      unit: asString(item.UnitPrice) ?? "",
+      unit: asString(item.UnitPrice) ?? asString(item.UnitPriceLabel) ?? "",
       unitPrice: asNumber(item.UnitPriceCalc),
       unitSize: asString(item.Description) ?? "",
       ...(description ? { description } : {}),
