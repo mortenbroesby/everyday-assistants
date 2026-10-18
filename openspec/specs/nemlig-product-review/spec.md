@@ -62,10 +62,10 @@ Separate user consent comes from a clear conversational instruction to add the e
 
 ### Requirement: Optional whole-basket shopping-list save
 
-After verified basket submission, the viewer MAY offer a separate explicit action to save the entire current Nemlig basket as a shopping list. It SHALL include existing basket rows, preserve the basket, and SHALL NOT claim a saved-list ID unless the provider establishes one. An uncertain save SHALL NOT be retried. This action is app-only and SHALL NOT be advertised as a model-facing shopping tool.
+After at least one verified basket addition, the viewer MAY offer a separate explicit action to save the entire current Nemlig basket as a shopping list. It SHALL include existing basket rows, preserve the basket, and SHALL NOT claim a saved-list ID unless the provider establishes one. An uncertain save SHALL NOT be retried. This action is app-only and SHALL NOT be advertised as a model-facing shopping tool.
 
 #### Scenario: Save after verified addition
-- **WHEN** the user separately chooses the optional save action after verified submission
+- **WHEN** the user separately chooses the optional save action after at least one verified addition
 - **THEN** the whole current basket is sent for list saving without clearing the basket
 
 #### Scenario: No verified addition

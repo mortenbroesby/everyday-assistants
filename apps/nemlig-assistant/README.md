@@ -51,7 +51,7 @@ Once connected, try prompts like:
 
 Product search and Nemlig basket reads are read-only. Choosing products opens a
 temporary draft; edits stay local until **Add to Nemlig basket** explicitly
-submits every reviewed line in one additive request. Existing saved lists can
+submits the available, unchanged reviewed lines in one additive request. Existing saved lists can
 be loaded as read-only sources into a new draft. After a verified addition, the
 viewer offers a separate action to save the entire current basket as a list;
 this includes existing basket rows and does not clear the basket.

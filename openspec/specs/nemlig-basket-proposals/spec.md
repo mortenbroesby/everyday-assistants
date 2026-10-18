@@ -74,7 +74,7 @@ Only after a verified addition MAY the viewer offer a separate explicit action t
 
 #### Scenario: Verified addition followed by optional save
 
-- **WHEN** the user explicitly chooses whole-basket save after verified Submit
+- **WHEN** the user explicitly chooses whole-basket save after at least one verified addition
 - **THEN** the client sends one separately fenced basket-to-list request, preserves the actual basket, and reports only the list identity the provider establishes
 
 ### Requirement: No autonomous checkout
