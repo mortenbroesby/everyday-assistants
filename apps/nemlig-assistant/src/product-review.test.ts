@@ -286,6 +286,20 @@ test("direct Submit rechecks identity and package before dispatch but accepts a 
   );
   assert.equal(writes, 0);
 
+  current = { ...product(7), unitSize: "2 stk", available: false };
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "88888888-8888-4888-8888-888888888888",
+      [{ product_id: 7, quantity: 1 }],
+      undefined,
+      durable.journal,
+    ),
+    /product.*changed.*review/i,
+  );
+  assert.equal(writes, 0);
+
   current = { ...product(7), price: 6 };
   const submitted = await service.submitDirectBasket(
     owner,
@@ -296,7 +310,7 @@ test("direct Submit rechecks identity and package before dispatch but accepts a 
     durable.journal,
   );
   assert.equal(submitted.result.status, "completed");
-  assert.equal(freshReads, 3);
+  assert.equal(freshReads, 4);
   assert.equal(writes, 1);
 });
 

@@ -179,7 +179,11 @@ const sameReviewedProduct = (reviewed: ProductView, fresh: ProductView) => {
 };
 
 const checkFreshReviewItem = (item: ReviewItem, current: Product) => {
-  if (current.id !== item.product_id) {
+  const freshView = createProductView(current, { kind: "details" });
+  if (
+    current.id !== item.product_id ||
+    !sameReviewedProduct(item.view, freshView)
+  ) {
     throw new NemligError(
       "A reviewed product changed or could not be validated. Refresh and review it before submitting; no basket write was sent.",
     );
@@ -196,11 +200,7 @@ const checkFreshReviewItem = (item: ReviewItem, current: Product) => {
         `Product ${item.product_id}`,
     };
   }
-  const freshView = createProductView(current, { kind: "details" });
-  if (
-    current.available !== true ||
-    !sameReviewedProduct(item.view, freshView)
-  ) {
+  if (current.available !== true) {
     throw new NemligError(
       "A reviewed product changed or could not be validated. Refresh and review it before submitting; no basket write was sent.",
     );
