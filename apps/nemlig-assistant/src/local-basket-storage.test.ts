@@ -101,6 +101,42 @@ test("review operation journal is owner-scoped and stores only exact IDs and qua
   );
 });
 
+test("an interrupted claim transaction rolls back dispatch authority", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "direct-basket-submit:draft-1",
+    generation: "submission-1",
+    accountIdentity: "account-1",
+    kind: "submit",
+    name: "Direct basket draft",
+    items: [{ productId: 7, quantity: 1 }],
+    baseline: [],
+  };
+  await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-write",
+    operation,
+  });
+  const put = storage.put.bind(storage);
+  storage.put = async (key, value) => {
+    await put(key, value);
+    throw new Error("Synthetic transaction interruption");
+  };
+  await assert.rejects(
+    mutateOwnerLocalBasketInventory(storage, "owner-1", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation: operation.generation,
+    }),
+    /Synthetic transaction interruption/u,
+  );
+  storage.put = put;
+  const stored = (await mutateOwnerLocalBasketInventory(storage, "owner-1", {
+    kind: "review-operation-read",
+    operationId: operation.operationId,
+  })) as ReviewOperation;
+  assert.equal(stored.dispatchAttempted, undefined);
+});
+
 test("native submission receipt stays durable and only pre-dispatch release removes it", async () => {
   const storage = new FakeStorage();
   const operation: ReviewOperation = {

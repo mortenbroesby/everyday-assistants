@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   attachLocalBasketCapability,
+  forwardWithLocalBasketCapability,
   localBasketCapability,
   revokeWhenBodyEnds,
 } from "./local-basket-capability.js";
@@ -42,6 +43,24 @@ test("capability revokes only after a streamed response completes", async () => 
   assert.equal(revoked, 1);
 });
 
+test("forwarded capability stays live through a successful streamed response", async () => {
+  let revoked = 0;
+  const response = await forwardWithLocalBasketCapability(
+    new Request("http://local-basket-state.internal/inventory"),
+    "container-token",
+    async (request) => {
+      assert.equal(localBasketCapability(request), "container-token");
+      return new Response("complete");
+    },
+    async () => {
+      revoked++;
+    },
+  );
+  assert.equal(revoked, 0);
+  assert.equal(await response.text(), "complete");
+  assert.equal(revoked, 1);
+});
+
 test("capability revokes after streamed response error", async () => {
   let revoked = 0;
   const response = await revokeWhenBodyEnds(
@@ -57,5 +76,25 @@ test("capability revokes after streamed response error", async () => {
     },
   );
   await assert.rejects(response.arrayBuffer());
+  assert.equal(revoked, 1);
+});
+
+test("failed Container forwarding revokes the request capability", async () => {
+  let revoked = 0;
+  const failure = new Error("Synthetic forward failure");
+  await assert.rejects(
+    forwardWithLocalBasketCapability(
+      new Request("http://local-basket-state.internal/inventory"),
+      "container-token",
+      async (request) => {
+        assert.equal(localBasketCapability(request), "container-token");
+        throw failure;
+      },
+      async () => {
+        revoked++;
+      },
+    ),
+    (error) => error === failure,
+  );
   assert.equal(revoked, 1);
 });
