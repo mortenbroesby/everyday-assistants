@@ -110,7 +110,7 @@ test("packages the configured plugin with the pinned plugin artwork", () => {
       outputPath,
       "skills/grocery-shopping/SKILL.md",
     );
-    assert.equal(manifest.version, "0.1.7");
+    assert.equal(manifest.version, "0.1.8");
     assert.equal(desktopManifest.version, manifest.version);
     assert.equal(desktopManifest.description, manifest.description);
     assert.deepEqual(

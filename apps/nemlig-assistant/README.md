@@ -502,6 +502,9 @@ remain untouched pending a separately reviewed migration and retirement plan.
 Update this inventory whenever shipped behavior changes. Planned work belongs in
 [`BACKLOG.md`](BACKLOG.md) or an active OpenSpec change.
 
+The [architecture integration record](../../docs/nemlig-architecture-refactor-closeout.md)
+tracks the #319 refactor evidence and the separate hosted and ChatGPT acceptance gates.
+
 ## 🗂️ Project map
 
 ```text

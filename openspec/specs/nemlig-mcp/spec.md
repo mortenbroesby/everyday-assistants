@@ -29,9 +29,9 @@ The Nemlig MCP HTTP server SHALL serve the modern `2026-07-28` protocol through 
 - **WHEN** an authenticated compatible client uses the `2025-06-18` initialize handshake
 - **THEN** the canonical endpoint accepts it through stateless legacy compatibility without creating a transport-owned provider session or bypassing authentication and principal isolation
 
-#### Scenario: A reviewed basket change crosses HTTP requests
+#### Scenario: A temporary draft crosses HTTP requests
 
-- **WHEN** one authenticated principal prepares a basket review in one HTTP request and applies it in a later request using a fresh MCP server instance
+- **WHEN** one authenticated principal starts a temporary draft in one HTTP request and submits that exact reviewed draft in a later request using a fresh MCP server instance
 - **THEN** the review remains available to that principal and the existing expiry, freshness, single-use, write serialization, uncertainty, and readback checks remain enforced
 
 #### Scenario: Requests belong to different principals
@@ -62,7 +62,7 @@ Every provider-backed MCP tool SHALL use an authenticated client for the current
 - **THEN** it does not issue another login before the provider write and still enforces exact approval, fresh basket/product validation, single-use authorization, and verified readback
 
 #### Scenario: Cold protected write authenticates first
-- **WHEN** an approved basket apply or local-review submission tool is called without an authenticated session
+- **WHEN** a protected temporary-draft submission is called without an authenticated session
 - **THEN** it authenticates before performing the provider write and still requires unchanged exact approval, applicable fresh product and basket checks, single-use authorization, and verified readback
 
 #### Scenario: Same-origin API mutation uses anti-forgery state
