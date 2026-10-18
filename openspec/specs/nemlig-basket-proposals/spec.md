@@ -22,7 +22,22 @@ A basket addition SHALL require a clear instruction to add the exact reviewed pr
 
 ### Requirement: Add-only bulk provider operation
 
-The assistant SHALL expose no real-basket remove, decrease, replace, swap, or clear operation. For a protected draft Submit, the provider client SHALL verify the current basket and anti-forgery state before dispatch, then send the approved positive additions in one `AddManyToBasket` request with additive semantics. It SHALL independently read back the basket, verify the requested increases, and preserve previously observed unrelated rows. Missing or changed prices alone SHALL NOT block an exact authorized addition; unknown prices SHALL remain unknown. Nemlig has no proven atomicity guarantee against a concurrent external basket change, so the assistant SHALL report only what it can observe and verify.
+The assistant SHALL expose no real-basket remove, decrease, replace, swap, or clear operation. After Submit begins and while the draft is locked, it SHALL freshly resolve every reviewed product without using remembered product details. A changed identity or package, failed or ambiguous lookup, or unknown current availability SHALL stop before provider dispatch. A product confirmed missing or unavailable MAY be skipped and reported while other unchanged reviewed products continue. Missing or changed prices alone SHALL NOT block an exact authorized addition; unknown prices SHALL remain unknown. If no products remain, no basket write or optional basket-to-list save is offered. Otherwise the provider client SHALL verify the current basket and anti-forgery state before dispatch, then send the available approved positive additions in one `AddManyToBasket` request with additive semantics. It SHALL independently read back the basket, verify the requested increases, and preserve previously observed unrelated rows. Nemlig has no proven atomicity guarantee against a concurrent external basket change, so the assistant SHALL report only what it can observe and verify.
+
+#### Scenario: Fresh product details changed
+
+- **WHEN** a fresh provider read changes a reviewed product's identity or package, or cannot establish its current availability
+- **THEN** no provider write is sent and the user must review the changed or unresolved product again
+
+#### Scenario: Confirmed unavailable product among approved lines
+
+- **WHEN** a fresh provider read confirms one approved product is missing or unavailable but other reviewed products are unchanged and available
+- **THEN** only the available approved lines are sent in the one bulk request, and the skipped product is reported separately from verified additions
+
+#### Scenario: Price-only change
+
+- **WHEN** a fresh product price differs but identity and package still match the reviewed product
+- **THEN** the authorized addition can proceed and the actual basket readback supplies the resulting price
 
 #### Scenario: Many products are authorized
 

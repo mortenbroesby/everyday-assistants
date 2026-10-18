@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   NemligError,
+  ProductNotFoundError,
   type Basket,
   type BasketAddition,
   type Product,
@@ -46,6 +47,7 @@ const product = (id: number): Product => ({
 const client = {
   providerIdentity: () => "fixture-account",
   getProduct: async (id: number) => product(id),
+  getFreshProduct: async (id: number) => product(id),
   searchProducts: async () => [product(3)],
   listShoppingLists: async () => [],
   getShoppingList: async () => ({ id: 1, name: "fixture", items: [] }),
@@ -210,6 +212,236 @@ const createCallbackReviewJournal = (ownerId: string) => {
     read: durable.read,
   };
 };
+
+test("direct Submit rechecks identity and package before dispatch but accepts a price change", async () => {
+  const owner = "fresh-direct-owner";
+  const durable = createDurableReviewJournal(owner);
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  let current = { ...product(7), unitSize: "2 stk" };
+  let freshReads = 0;
+  let writes = 0;
+  const service = new ProductReviewService({
+    ...client,
+    getFreshProduct: async () => {
+      freshReads++;
+      return current;
+    },
+    getCart: async () => basket,
+    addManyToCart: async (additions, options) => {
+      await options?.beforeDispatch?.(basket);
+      writes++;
+      return {
+        ...basket,
+        items: additions.map(({ productId, quantity }) => ({
+          id: productId,
+          name: "Product 7",
+          quantity,
+          total: 6 * quantity,
+        })),
+        numberOfProducts: additions.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        ),
+      };
+    },
+  });
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 1 },
+  ]);
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "11111111-1111-4111-8111-111111111111",
+      [{ product_id: 7, quantity: 1 }],
+      undefined,
+      durable.journal,
+    ),
+    /product.*changed.*review/i,
+  );
+  assert.equal(freshReads, 1);
+  assert.equal(writes, 0);
+  assert.equal(
+    await durable.read(`direct-basket-submit:${draft.draftId}`),
+    undefined,
+  );
+
+  current = { ...product(8), available: false };
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "77777777-7777-4777-8777-777777777777",
+      [{ product_id: 7, quantity: 1 }],
+      undefined,
+      durable.journal,
+    ),
+    /product.*changed.*review/i,
+  );
+  assert.equal(writes, 0);
+
+  current = { ...product(7), price: 6 };
+  const submitted = await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "22222222-2222-4222-8222-222222222222",
+    [{ product_id: 7, quantity: 1 }],
+    undefined,
+    durable.journal,
+  );
+  assert.equal(submitted.result.status, "completed");
+  assert.equal(freshReads, 3);
+  assert.equal(writes, 1);
+});
+
+test("direct Submit skips a confirmed missing product and blocks an ambiguous fresh lookup", async () => {
+  const owner = "fresh-skipped-owner";
+  const durable = createDurableReviewJournal(owner);
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  let failLookup = true;
+  let dispatched: BasketAddition[] = [];
+  const service = new ProductReviewService({
+    ...client,
+    getFreshProduct: async (id) => {
+      if (id === 7) {
+        throw new ProductNotFoundError(id);
+      }
+      if (failLookup) {
+        throw new Error("Product lookup unavailable");
+      }
+      return product(id);
+    },
+    getCart: async () => basket,
+    addManyToCart: async (additions, options) => {
+      await options?.beforeDispatch?.(basket);
+      dispatched = additions;
+      return {
+        ...basket,
+        items: additions.map(({ productId, quantity }) => ({
+          id: productId,
+          name: `Product ${productId}`,
+          quantity,
+          total: 5 * quantity,
+        })),
+        numberOfProducts: additions.reduce(
+          (sum, item) => sum + item.quantity,
+          0,
+        ),
+      };
+    },
+  });
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 1 },
+    { product_id: 8, quantity: 2 },
+  ]);
+  await assert.rejects(
+    service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "33333333-3333-4333-8333-333333333333",
+      [
+        { product_id: 7, quantity: 1 },
+        { product_id: 8, quantity: 2 },
+      ],
+      undefined,
+      durable.journal,
+    ),
+    /lookup|validated/i,
+  );
+  assert.deepEqual(dispatched, []);
+  assert.equal(
+    await durable.read(`direct-basket-submit:${draft.draftId}`),
+    undefined,
+  );
+
+  failLookup = false;
+  const submitted = await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "44444444-4444-4444-8444-444444444444",
+    [
+      { product_id: 7, quantity: 1 },
+      { product_id: 8, quantity: 2 },
+    ],
+    undefined,
+    durable.journal,
+  );
+  assert.deepEqual(dispatched, [{ productId: 8, quantity: 2 }]);
+  assert.deepEqual(submitted.result.skipped_products, [
+    { product_id: 7, name: "Product 7" },
+  ]);
+  assert.equal(submitted.result.verified_additions, 2);
+});
+
+test("direct Submit with only unavailable products reports no write and cannot offer basket save", async () => {
+  const owner = "all-skipped-owner";
+  const durable = createDurableReviewJournal(owner);
+  const basket: Basket = {
+    items: [],
+    productsPrice: 0,
+    deliveryPrice: 0,
+    numberOfProducts: 0,
+    deliveryTime: undefined,
+  };
+  let basketWrites = 0;
+  let listWrites = 0;
+  const service = new ProductReviewService({
+    ...client,
+    getFreshProduct: async (id) => ({ ...product(id), available: false }),
+    getCart: async () => basket,
+    addManyToCart: async () => {
+      basketWrites++;
+      return basket;
+    },
+    createShoppingListFromBasket: async () => {
+      listWrites++;
+      return basket;
+    },
+  });
+  const draft = await service.startDirectBasket(owner, [
+    { product_id: 7, quantity: 1 },
+  ]);
+  const submitted = await service.submitDirectBasket(
+    owner,
+    draft.draftId!,
+    "55555555-5555-4555-8555-555555555555",
+    [{ product_id: 7, quantity: 1 }],
+    undefined,
+    durable.journal,
+  );
+  assert.equal(submitted.result.verified_additions, 0);
+  assert.deepEqual(submitted.result.skipped_products, [
+    { product_id: 7, name: "Product 7" },
+  ]);
+  assert.equal(basketWrites, 0);
+  assert.equal(
+    await durable.read(`direct-basket-submit:${draft.draftId}`),
+    undefined,
+  );
+  await assert.rejects(
+    service.saveCurrentBasketAsShoppingList(
+      owner,
+      draft.draftId!,
+      "66666666-6666-4666-8666-666666666666",
+      undefined,
+      durable.journal,
+    ),
+    /only after.*addition is verified/u,
+  );
+  assert.equal(listWrites, 0);
+});
 
 test("direct basket draft submits 37 lines once, saves whole basket once, and abandons locally", async () => {
   const owner = "direct-owner";

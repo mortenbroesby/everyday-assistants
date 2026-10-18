@@ -84,8 +84,10 @@ this includes existing basket rows and does not clear the basket.
   temporary draft. The source list remains unchanged.
 - Add, remove, replace, and change quantities in the temporary draft; these
   edits do not write to Nemlig.
-- Submit once to add the exact reviewed rows to the actual basket. The request
-  preserves existing rows and the assistant never retries an uncertain write.
+- Submit once to freshly check the reviewed products, then add the available
+  unchanged rows to the actual basket in one request. Confirmed unavailable
+  rows are reported as skipped; price-only changes do not block submission.
+  Existing basket rows are preserved and uncertain writes are never retried.
 - After verified submission, optionally save the whole current basket as a
   shopping list. This integration does not establish or return a verified
   new-list ID, so find it in the saved-list picker. This action never clears
@@ -142,8 +144,9 @@ controls. Choosing products does not write to Nemlig. A user may load an exact
 saved list as a read-only source; its contents are copied into a new draft, and
 later edits or basket submission never update or delete that source.
 
-Explicit Submit sends all reviewed rows in one additive basket request and
-verifies the resulting basket independently. Unprotected drafts expire after
+Explicit Submit freshly checks identity, package, and availability, then sends
+the available reviewed rows in one additive basket request and verifies the
+resulting basket independently. Unprotected drafts expire after
 two hours of inactivity; unresolved work keeps a draft available until resolved.
 No process-local draft can be recovered after restart. Uncertain basket writes
 retain a durable no-replay receipt. After a verified addition, the viewer offers a separate
@@ -171,12 +174,13 @@ Search or load a saved list → edit temporary draft → explicit one-request ba
   read-only. Loading a saved list copies its exact rows into a temporary draft;
   the source remains unchanged.
 - Draft selection and edits write only to process-local state. Explicit Submit
-  sends every reviewed product ID and additional quantity in one additive
-  request, then validates basket readback and preserves prior rows.
+  freshly checks each reviewed product, skips confirmed unavailable ones, and
+  sends the remaining approved quantities in one additive request. It validates
+  basket readback and preserves prior rows. Price-only changes do not block it.
 - An uncertain or partial addition is never retried automatically. Inspect the
   actual basket before deciding what to do.
 - Saving the current basket as a shopping list is a separate explicit action
-  offered only after verified Submit. It includes all current basket items,
+  offered only after at least one verified addition. It includes all current basket items,
   preserves the basket, and does not provide a verified new-list ID.
 - The observed request builders do not establish live acceptance, provider
   atomicity, or provider limits. Nemlig changes can race the independent
