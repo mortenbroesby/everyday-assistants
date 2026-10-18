@@ -460,6 +460,57 @@ test(
   },
 );
 
+test("direct submission does not dispatch when journal read, write, or claim fails", async () => {
+  for (const failed of ["read", "write", "claim"] as const) {
+    const owner = `journal-${failed}-failure`;
+    const durable = createDurableReviewJournal(owner);
+    const requested = [{ product_id: 7, quantity: 1 }];
+    const basket: Basket = {
+      items: [],
+      productsPrice: 0,
+      deliveryPrice: 0,
+      numberOfProducts: 0,
+      deliveryTime: undefined,
+    };
+    let writes = 0;
+    const service = new ProductReviewService({
+      ...client,
+      getCart: async () => structuredClone(basket),
+      addManyToCart: async (
+        _additions: BasketAddition[],
+        options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+      ) => {
+        await options?.beforeDispatch?.(structuredClone(basket));
+        writes++;
+        return structuredClone(basket);
+      },
+    });
+    const draft = await service.startDirectBasket(owner, requested);
+    const journal = {
+      ...durable.journal,
+      [failed]: async () => {
+        throw new Error(`Synthetic ${failed} outage`);
+      },
+    } satisfies ReviewOperationJournal;
+    await assert.rejects(
+      service.submitDirectBasket(
+        owner,
+        draft.draftId!,
+        "99999999-9999-4999-8999-999999999999",
+        requested,
+        undefined,
+        journal,
+      ),
+      new RegExp(`Synthetic ${failed} outage`, "u"),
+    );
+    assert.equal(writes, 0, failed);
+    const receipt = (await durable.read(
+      `direct-basket-submit:${draft.draftId}`,
+    )) as ReviewOperation | undefined;
+    assert.equal(receipt?.dispatchAttempted, undefined, failed);
+  }
+});
+
 test("a deliberate same-item request after submission starts a fresh draft", async () => {
   const owner = "repeat-direct-owner";
   const durable = createDurableReviewJournal(owner);
@@ -1107,6 +1158,80 @@ test("an uncertain whole-basket save is fenced across service restart", async ()
   );
   assert.equal(listSaves, 1);
   assert.equal(basketWrites, 1);
+});
+
+test("basket-to-list save does not dispatch when journal read, write, or claim fails", async () => {
+  for (const failed of ["read", "write", "claim"] as const) {
+    const owner = `save-journal-${failed}-failure`;
+    const durable = createDurableReviewJournal(owner);
+    let basket: Basket = {
+      items: [],
+      productsPrice: 0,
+      deliveryPrice: 0,
+      numberOfProducts: 0,
+      deliveryTime: undefined,
+    };
+    let saves = 0;
+    const service = new ProductReviewService({
+      ...client,
+      getCart: async () => structuredClone(basket),
+      addManyToCart: async (
+        additions: BasketAddition[],
+        options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
+      ) => {
+        await options?.beforeDispatch?.(structuredClone(basket));
+        basket = {
+          ...basket,
+          items: additions.map(({ productId, quantity }) => ({
+            id: productId,
+            name: `Product ${productId}`,
+            quantity,
+            total: quantity * 5,
+          })),
+          numberOfProducts: 1,
+        };
+        return structuredClone(basket);
+      },
+      createShoppingListFromBasket: async (options: {
+        beforeDispatch?: (baseline: Basket) => Promise<void>;
+      }) => {
+        await options.beforeDispatch?.(structuredClone(basket));
+        saves++;
+        return structuredClone(basket);
+      },
+    });
+    const requested = [{ product_id: 7, quantity: 1 }];
+    const draft = await service.startDirectBasket(owner, requested);
+    await service.submitDirectBasket(
+      owner,
+      draft.draftId!,
+      "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      requested,
+      undefined,
+      durable.journal,
+    );
+    const journal = {
+      ...durable.journal,
+      [failed]: async () => {
+        throw new Error(`Synthetic ${failed} outage`);
+      },
+    } satisfies ReviewOperationJournal;
+    await assert.rejects(
+      service.saveCurrentBasketAsShoppingList(
+        owner,
+        draft.draftId!,
+        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        undefined,
+        journal,
+      ),
+      new RegExp(`Synthetic ${failed} outage`, "u"),
+    );
+    assert.equal(saves, 0, failed);
+    const receipt = (await durable.read(
+      `direct-basket-save:${draft.draftId}`,
+    )) as ReviewOperation | undefined;
+    assert.equal(receipt?.createAttempted, undefined, failed);
+  }
 });
 
 test("account changes after direct writes keep their receipts uncertain", async () => {

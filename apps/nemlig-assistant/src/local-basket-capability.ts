@@ -57,3 +57,21 @@ export const revokeWhenBodyEnds = async (
   });
   return new Response(body, response);
 };
+
+/** Revoke the request capability if Container forwarding fails before a response. */
+export const forwardWithLocalBasketCapability = async (
+  request: Request,
+  capability: string,
+  forward: (request: Request) => Promise<Response>,
+  revoke: () => Promise<void>,
+): Promise<Response> => {
+  try {
+    const response = await forward(
+      attachLocalBasketCapability(request, capability),
+    );
+    return await revokeWhenBodyEnds(response, revoke);
+  } catch (error) {
+    await revoke();
+    throw error;
+  }
+};

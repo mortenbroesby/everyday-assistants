@@ -45,10 +45,7 @@ import {
 import { encryptCredentials } from "./credential-envelope.js";
 import type { Credentials } from "./config.js";
 import { handleOnboardingRequest } from "./onboarding.js";
-import {
-  attachLocalBasketCapability,
-  revokeWhenBodyEnds,
-} from "./local-basket-capability.js";
+import { forwardWithLocalBasketCapability } from "./local-basket-capability.js";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import {
   expireOwnerLocalBasketInventory,
@@ -592,17 +589,12 @@ export default {
           principal.principal_key,
           Date.now() + deadline.remainingMs,
         );
-        try {
-          const response = await container.fetch(
-            attachLocalBasketCapability(request, capability),
-          );
-          return await revokeWhenBodyEnds(response, () =>
-            container.revokeLocalBasketRequest(capability),
-          );
-        } catch (error) {
-          await container.revokeLocalBasketRequest(capability);
-          throw error;
-        }
+        return forwardWithLocalBasketCapability(
+          request,
+          capability,
+          (forwarded) => container.fetch(forwarded),
+          () => container.revokeLocalBasketRequest(capability),
+        );
       },
     });
   },
