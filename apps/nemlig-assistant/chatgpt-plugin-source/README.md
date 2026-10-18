@@ -11,12 +11,12 @@ From the repository root, build the ZIP with:
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs
 ```
 
-The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.6.zip`.
+The output is `apps/nemlig-assistant/dist/plugin/nemlig-shopping-0.1.7.zip`.
 To rebuild the tracked upload artifact after changing the source:
 
 ```sh
 node apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs \
-  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.6.zip
+  --output apps/nemlig-assistant/chatgpt-plugin-archives/nemlig-shopping-0.1.7.zip
 ```
 
 The packager checks the endpoint against `wrangler.jsonc`, the local skill and
@@ -56,10 +56,14 @@ The older `nemlig-assistant` package points at a retired app and should not be
 installed alongside it. Keep the connected MCP app: the package supplies a
 skill and default prompt; it does not replace that connection.
 
-Version 0.1.6 aligns the package with selected products → automatically saved
-native shopping list → separately authorized basket addition. Plain search
-remains read-only; edits persist directly to the selected list. Its desktop
-compatibility manifest mirrors the root manifest. Build from this source and use a guarded Plugin Creator
-update of the existing private package; a repository merge alone does not
-update installed package instructions. Verify the new release in a fresh
-session after updating the desktop installation.
+Version 0.1.7 aligns the package with search → temporary draft → separately
+authorized basket addition → optional whole-basket list save. A saved Nemlig
+list can be loaded as a read-only draft source. Plain search remains read-only;
+draft edits are local; unprotected drafts expire after two hours of inactivity,
+while unresolved work remains available until resolved. All process-local
+drafts disappear after a server restart. Its
+desktop compatibility manifest mirrors the root manifest. Build from this
+source and use a guarded Plugin Creator update of the existing private package;
+a repository merge alone does not update installed package instructions. After
+the owner updates the private package, refresh tools and check read-only flows
+in a fresh ChatGPT session before any separately authorized basket test.

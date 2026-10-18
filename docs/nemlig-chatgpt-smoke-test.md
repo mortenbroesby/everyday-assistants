@@ -1,158 +1,70 @@
 # Native ChatGPT smoke test
 
-Use this runbook against the deployed Nemlig Assistant in ChatGPT. Record each
-flow as **PASS**, **FAIL**, or **NOT RUN** using observed evidence. A Storybook
-preview, another client's tool call, or green CI does not prove native ChatGPT
-behavior.
+Use this runbook against a deployed Nemlig Assistant in a fresh ChatGPT conversation. Record each flow as **PASS**, **FAIL**, or **NOT RUN** from observed evidence. A packaged ZIP, local fixture, green CI, or tool response alone does not prove that ChatGPT rendered the current UI. Follow [production readiness](nemlig-production-readiness.md) and keep private product data, conversation links, and credentials out of shared reports.
 
-Product selection now creates a **Nemlig shopping list immediately**. Editing
-it changes that provider list automatically. These are real provider writes,
-although they do not change the checkout basket. Obtain approval for a bounded
-test list and its edits before flows 1–4. Mere approval to search or test a local
-fixture does not authorize these writes. Flow 5 separately requires exact basket
-addition approval. Never check out, pay, order, choose delivery, or remove,
-decrease, replace, or clear real basket contents.
+Product search and temporary-draft edits do not write a Nemlig shopping list or the real basket. Loading an existing saved list uses it as a read-only source. A real basket addition requires separate exact authorization and an independent readback. Do not check out, pay, order, choose delivery, or remove/decrease/clear actual basket contents.
 
 ## Before starting
 
-- Record UTC time, deployed commit, successful production workflow, installed
-  app identity, browser/device and whether the chat is new.
-- Follow [production readiness](nemlig-production-readiness.md). Record the
-  stable `ui://nemlig/shell.html` manifest/build marker separately from package
-  version. Do not reconnect or rotate URLs to hide failures.
-- Use an authenticated isolated browser session; keep credentials private and
-  have the owner complete human verification. Do not alter an existing family
-  shopping conversation: reproduce its actions in a fresh test conversation.
-- Agree on exact initial products/quantities, a recognisable test list name,
-  and permitted list-only edits. Never select an unrelated existing list or
-  invent permission to delete the test list as cleanup.
-- Keep private product data, IDs, conversation links and screenshots local and
-  ignored. Publish only sanitised counts, timings, release IDs and findings.
+- Record UTC time, deployed commit/workflow, installed plugin version, app ID, browser/device, new conversation, and `ui://nemlig/shell.html` marker. Refresh installed plugin instructions and tools separately when stale; a ZIP merge does not update them.
+- Agree on exact products and positive quantities for a bounded test. Search-only requests remain read-only. Do not alter an existing family shopping conversation or select an unrelated saved list.
+- Obtain separate approval before any real basket write. Optional whole-basket list save is also a provider write and needs its own authorization. Do not treat permission to test a draft as either approval.
 
-## Flow 1 — Search and create one native shopping list
+## Flow 1 — Search and temporary draft
 
-1. Search for the agreed five products without creating a list. A search-only
-   request, particularly one forbidding provider changes, must stay read-only.
-2. Request a new shopping list with the approved exact products and quantities.
-   Do not submit it to the actual Nemlig basket.
-3. Verify one native list is created. Its card shows the correct five products
-   and quantities, its native ID is available for subsequent actions, and an
-   independent read of that list confirms the contents.
+1. Search for exact products with `find_groceries`; check returned names, sizes, prices, availability, and IDs. Verify that search alone does not create a draft or provider list.
+2. Request visual editing of the chosen exact products. Confirm the tool call is `start_product_review` with `items: [{product_id, quantity}]`, no `creation_id`, and no `shopping_list_id`.
+3. Confirm the current card renders those products and quantities as a temporary draft. Record the loading feedback and time to render; the tool result alone does not prove the card rendered.
 
-**Pass:** one provider-backed Shopping list renders, with recognisable products,
-quantities and prices or explicit unknown values. There are no unsaved draft,
-To decide/Ready, manual Save or manual Update stages. A partial or uncertain
-create is reported truthfully, without silently creating another list. Record
-time to render and the feedback visible while waiting.
+**Pass:** one editable temporary draft appears, no native list is created, and no basket write occurs. Missing or uncertain UI is reported rather than replaced with an imitation card.
 
-## Flow 2 — Product actions and automatically persisted edits
+## Flow 2 — Edit and recover the draft
 
-Use the rendered card rather than conversational substitutes for UI controls.
+1. In the rendered card, inspect details, alternatives, and close behavior. Check mobile long press or desktop Shift+F10 separately; a desktop shortcut does not prove mobile gesture support.
+2. Change an approved quantity, replace one product, and remove one product. Confirm the card reflects the exact result and the saved-list source and real basket remain unchanged.
+3. Reload the current card while the draft is active. Check the resulting state and error handling. Unprotected drafts expire after two hours of inactivity; unresolved work remains available until resolved. No process-local draft survives a server restart; do not claim persistent edits from this flow.
+4. If a draft becomes unavailable, confirm the UI explains it without silently recreating a different draft or restoring submission authority. Start a new draft only from reconfirmed exact products.
 
-1. Open product details; inspect description/ingredients and return.
-2. Open row actions with long press on mobile or Shift+F10 on desktop. Check
-   close/Escape and vertical scrolling. A desktop shortcut does not prove the
-   native mobile gesture works or avoids ChatGPT gesture interception.
-3. Increase one product from one to two. On another product, rapidly increase
-   from one to three then decrease to two. Verify provider list readback.
-4. Immediately after a quantity edit, find alternatives. Cancel and return:
-   the quantity and original product must remain. Repeat and choose the approved
-   replacement: only that product changes and its quantity is retained.
-5. Remove an approved test product. Confirm the row count and exact native list
-   readback. Verify other products remain. No separate Save/Update should be
-   necessary for any edit.
+**Pass:** local changes remain associated with the exact active draft; an expired or unavailable draft is reported honestly. An error leaves understandable, recoverable UI rather than silently switching products.
 
-**Pass:** each edit is persisted to the same list, with usable feedback and no
-actual-basket write. If an error occurs naturally, the card retains visible
-context, displays an explanatory modal, and offers a safe read/refresh without
-replaying an uncertain write. Do not inject production outages for this smoke.
+## Flow 3 — Existing saved-list source (optional)
 
-## Flow 3 — Reload and recover current native contents
+With permission to read the exact list, use `start_product_review` with its `shopping_list_id` and no `items` or `creation_id`. Verify the current rows are copied into a new temporary draft. Edit the draft and independently confirm that the saved source is unchanged. List discovery may omit both inputs; it must never auto-select an unrelated list by name.
 
-1. Record the list ID, latest products and quantities after flow 2.
-2. Reload ChatGPT. The original tool snapshot must not become stale editable
-   state. The card should refresh that exact list and display the persisted
-   replacement, removal and quantities before enabling edits or submission.
-3. Ask to reopen the same native list by exact ID without creating another.
-4. In a fresh conversation, open native list discovery and explicitly select
-   the test list. Confirm its current contents again.
-5. If a read fails, record whether a modal explains it and preserves context.
-   Missing/deleted lists must not redirect an edit to another list or silently
-   recreate a list. Do not delete existing user lists to force this case.
+**Pass:** exact source selection, copied draft contents, and no source-list mutation or deletion.
 
-**Pass:** remount and fresh-chat selection recover provider truth without lost
-edits, duplicate lists, or restored submission authority. Old cached cards or
-retired draft inputs are not proof that current code ran; record that boundary.
+## Flow 4 — Larger draft (optional)
 
-## Flow 4 — Optional larger list
+Only within an agreed scope, prepare 55 distinct product IDs locally. Inspect beginning, middle, and end of the scrollable card, then change an item near the end. Virtualized off-screen rows need not all be in the DOM. Record counts and elapsed time; do not infer scale performance from a five-product smoke.
 
-Only with separate agreed scope, extend the test list to **55 distinct product
-IDs**, normally one each. Do not duplicate products to reach the count. Count
-confirmed native contents after each batch, record partial/uncertain outcomes,
-and stop rather than replay an uncertain edit.
+## Flow 5 — Separately authorized real basket addition (optional)
 
-Scroll beginning, middle and end; inspect and change an approved quantity near
-the end, then reload and verify readback. Virtualized off-screen rows need not
-all appear in the DOM. Verify complete native counts and visible rows across
-scrolling. Record search count and elapsed time; do not invent performance
-thresholds or claim a five-product test proves this scale.
+Follow the [Nemlig basket contract](../apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md). Do not execute this flow without exact authorization.
 
-## Flow 5 — Optional explicitly authorized basket addition
+1. Independently read the actual basket and retain a private complete baseline. Do not clear it. Ask the owner to avoid concurrent edits.
+2. Review every intended `product_id` and added quantity, with names, sizes, and estimated prices. A failed lookup is not proof a product is unavailable.
+3. Open Submit review without applying. Obtain approval of the exact additions unless an existing instruction already authorizes that unchanged payload. Search or draft editing alone is insufficient.
+4. Confirm once. The current draft must submit with exact `draft_id`, `review_context_id`, unique `submission_id`, and `reviewed_list: {name, items}`. Independently check each approved line has `after = before + added quantity` and unrelated lines remain unchanged.
+5. If offered after verified addition, treat **Save basket as shopping list** as a distinct, optional app action: it saves the whole current basket, including older rows. Do not infer a saved-list ID if the provider does not establish one. Never retry an uncertain save.
 
-Follow the [Nemlig basket contract](../apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md).
+**Pass:** exact authorized additive readback and truthful UI outcome. HTTP success or a card message alone is insufficient. On uncertainty, stop writes and inspect the actual basket read-only; never confirm again or reuse the submission as a replay workaround.
 
-1. Independently read the actual basket and retain a private complete baseline.
-   Do not clear it. Ask the owner to avoid concurrent edits during the transfer.
-2. Review the exact native list: product IDs, names/sizes, added quantities,
-   known unavailable exclusions and estimated prices. Unknown prices are not
-   zero. A confirmed unavailable product may be skipped and reported; a failed
-   lookup is not proof that a product is unavailable.
-3. Use **Add to Nemlig basket** and stop at confirmation. Opening the review
-   must not transfer anything. Obtain approval for the exact intended additions
-   unless an existing instruction already authorizes that unchanged payload.
-4. Confirm once. Independently verify each approved line has
-   `after = before + approved added quantity`, and unrelated quantities are
-   unchanged. A success message or HTTP 200 alone is insufficient.
-5. Record whether the source list was deleted after confirmed transfer or kept
-   with a cleanup warning. Do not retry a completed transfer to fix cleanup.
-
-**Pass:** exact authorized additive readback and truthful UI outcome. Report
-partial/uncertain results distinctly. If testing more than 50 additions, at least
-51 distinct products must have verified increases to pass that scale claim.
-Do not add more products merely to turn a failed count into a pass.
-
-On uncertain transfer or failed readback, stop writes and inspect the native
-list and actual basket read-only. Never click confirmation again, reuse a
-submission ID, or recreate the same list as a replay workaround. No automatic
-cleanup may remove products from the real basket.
-
-## Flow 6 — Post-submission navigation
-
-After verified success, reopen/remount the historical card and use list
-selection. It must not restore the completed source as a fresh submittable list.
-After uncertainty, the UI must retain the warning and basket-inspection path
-without automatically preparing or replaying a transfer. Do not deliberately
-attempt another real submission; synthetic tests cover replay and restart.
-
-## Sanitised result template
+## Sanitised result
 
 ```text
 UTC / operator:
-Deployed commit / production workflow:
-App / browser / device / new or existing conversation:
-Resource URI / manifest marker / installed metadata:
-Approval for native test-list creation and edits: recorded privately | absent
-Flow 1 search + native creation: PASS | FAIL | NOT RUN — count / time / evidence
-Flow 2 automatic edits: PASS | FAIL | NOT RUN — exact observed changes
-Flow 3 reload + fresh-chat recovery: PASS | FAIL | NOT RUN — evidence
-Flow 4 >50 distinct products: PASS | FAIL | NOT RUN — count / time
-Flow 5 real basket addition: PASS | FAIL | NOT RUN — exact approval private
+Deployed commit / workflow / installed plugin version:
+App / browser / device / fresh conversation / resource marker:
+Flow 1 search + draft UI: PASS | FAIL | NOT RUN — count / time / evidence
+Flow 2 edit + recovery: PASS | FAIL | NOT RUN — observed changes
+Flow 3 read-only saved-list source: PASS | FAIL | NOT RUN — source unchanged?
+Flow 4 larger draft: PASS | FAIL | NOT RUN — count / time
+Flow 5 basket addition: PASS | FAIL | NOT RUN — exact approval private
   Baseline / approved additions / verified additions / exclusions:
   Unrelated basket quantities unchanged: yes | no | unknown
-Flow 6 terminal-state navigation: PASS | FAIL | NOT RUN — evidence
-Native mobile long press: PASS | FAIL | NOT RUN — device
+Optional whole-basket save: PASS | FAIL | NOT RUN — separately authorized?
+Mobile long press: PASS | FAIL | NOT RUN — device
 Provider writes / unresolved uncertainty / follow-up defects:
 ```
 
-A blocked login makes dependent flows NOT RUN. Keep implementation, deployment,
-real ChatGPT interaction and actual provider readback evidence separate.
+Keep implementation, deployment, native ChatGPT interaction, and provider readback evidence separate. A blocked login makes dependent flows **NOT RUN**.

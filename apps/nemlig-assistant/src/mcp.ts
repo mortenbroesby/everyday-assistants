@@ -270,9 +270,7 @@ const reviewTargetFields = {
     .string()
     .uuid()
     .optional()
-    .describe(
-      "Opaque temporary handle for this card's review of the exact saved list.",
-    ),
+    .describe("Opaque temporary handle for this card's exact draft review."),
 };
 const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
   z
@@ -317,7 +315,7 @@ const submitReviewInputSchema = <Submission extends z.ZodTypeAny>(
         .strict()
         .optional()
         .describe(
-          "The exact saved-list or temporary-draft product IDs and quantities the user reviewed. The server compares them with the current review before basket submission.",
+          "The reviewed draft name, product IDs, and quantities. The server compares product IDs and quantities with the current draft before basket submission.",
         ),
     })
     .strict()
@@ -507,7 +505,7 @@ export function createMcpServer(
     proposals,
   }),
 ): McpServer {
-  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Drafts expire after two hours and cannot be recovered after a server restart.
+  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. Submit to the real basket only when the user clearly directs addition of the exact reviewed products and quantities, or explicitly approves them. Search, display, selection, draft edits, and a remembered ChatGPT tool approval are not authorization for a new addition. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
 
 Only explicit Submit may add products to the actual basket. It sends every exact reviewed line in one additive request, preserves existing basket items, independently validates readback, and never retries an uncertain request. The actual Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots.
 
@@ -1179,7 +1177,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Search Nemlig products",
       description:
-        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use update_product_review_conversation show; use load_saved_shopping_list for a saved-list source.",
+        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use update_product_review_conversation show; use start_product_review with an exact shopping_list_id to load a saved list as a read-only draft source.",
       inputSchema: z.object({
         search_term: z
           .string()
@@ -1483,9 +1481,12 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       annotations: reviewActionAnnotations,
       _meta: {
         ui: { visibility: ["model"] },
-        "openai/toolInvocation/invoking":
-          "Working on your Nemlig shopping list…",
-        "openai/toolInvocation/invoked": "Shopping-list result received",
+        "openai/toolInvocation/invoking": reviews.directBasketMode
+          ? "Updating your temporary basket draft…"
+          : "Updating your shopping list…",
+        "openai/toolInvocation/invoked": reviews.directBasketMode
+          ? "Draft result received"
+          : "Shopping list result received",
       },
     },
     ({ action, shopping_list_id, draft_id, review_context_id }, ctx) => {
@@ -1582,7 +1583,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         ? "Submit the reviewed products to Nemlig"
         : "Submit the exact shopping list to Nemlig",
       description: reviews.directBasketMode
-        ? "After explicit user authorization, add all exact reviewed draft quantities in one request. The server checks the active draft and records a durable no-replay fence before dispatch. Uncertain results must not be retried."
+        ? "Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities. Selection, display, and draft edits are not approval. Add those quantities in one request; the server checks the active draft and records a durable no-replay fence. Never retry an uncertain result."
         : "Add the exact reviewed saved Nemlig shopping list to the basket once after explicit user authorization. Pass shopping_list_id and reviewed_list from the user's reviewed list, including its name and every product ID and quantity. The server re-reads that list and rejects changed contents before transfer; an active card or in-memory review is not required. Uncertain transfers are never retried.",
       inputSchema: submitReviewInputSchema(
         z
@@ -1601,7 +1602,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       _meta: {
         ui: { visibility: ["model"] },
         "openai/toolInvocation/invoking":
-          "Adding your shopping list to Nemlig basket…",
+          "Adding reviewed products to Nemlig basket…",
         "openai/toolInvocation/invoked": "Basket-transfer result received",
       },
     },

@@ -60,10 +60,10 @@ pnpm nemlig --help
    quantities is authorization for that exact addition. Do not ask for
    redundant approval. For any other addition, obtain approval of the exact
    products and added quantities. Show current prices as estimates; Nemlig may
-   change them before or during the addition. A native shopping list is
-   separate from the actual basket. Selecting products for visual editing
-   creates that list immediately, and later list edits persist automatically.
-   Neither action changes the actual basket or authorizes a basket addition.
+   change them before or during the addition. A temporary draft is separate
+   from the actual basket. Selecting products for visual editing creates only
+   a process-local draft; later edits remain local. Neither action changes the
+   actual basket or authorizes an addition.
    Product identity, quantity, or basket-content changes require a fresh review.
    A product confirmed unavailable or missing may be skipped and reported while
    other approved products continue. A failed lookup is not proof of absence.
@@ -85,24 +85,24 @@ remove or reduce anything, direct them to manage that directly on Nemlig.com.
 
 ## MCP workflow
 
-Search and browse products read-only. When the user chooses products for visual
-editing, create a native Nemlig shopping list immediately. Persist each add,
-remove, replacement, and quantity edit to that exact list automatically. To
-reopen after a refresh or server restart, use the exact `shopping_list_id` and
-read the list before enabling edits. If a list edit is uncertain, refresh that
-same list and resolve the recorded change; never silently switch lists or retry
-an uncertain write. Submit only the exact reviewed `shopping_list_id` and
-`reviewed_list` after separate user authorization. The server re-reads that
-same list, applies the existing durable no-replay fence, and verifies additive
-basket readback. Never retry an indeterminate basket result; inspect the actual
-basket and reconcile the shopping list without replaying the write.
+Search and browse products read-only. When the user chooses exact products for
+visual editing, call `start_product_review` with `items` and positive
+quantities to create a temporary draft, without `creation_id`. Carry its exact
+`draft_id` and `review_context_id` through edits. To use a saved list, load its
+exact `shopping_list_id` as a read-only source into a new draft; do not mutate
+or delete the source. Unprotected drafts expire after two hours of inactivity;
+unresolved work remains available until resolved. No process-local draft survives
+a server restart or can be silently recovered from a stale card. Submit the exact
+reviewed draft with its IDs, a unique `submission_id`, and `reviewed_list` only after
+separate exact authorization. The server applies a durable no-replay fence and
+verifies additive basket readback. Never retry an indeterminate result; inspect
+the actual basket without replaying the write. Only after verified addition may
+the viewer optionally save the entire current basket as a shopping list.
 
 Retired Local Basket IDs and actions, including `basket_id`, `delete`, and
 `heartbeat`, fail tool argument validation. They do not open a picker or resolve
-to another list. Use action `list` to discover native lists, then select one by
-its exact ID. A fresh product selection requires a caller-generated
-`creation_id`; reuse it only to inspect or recover that same creation. Never
-generate a new ID automatically after an uncertain creation.
+to another list. Use action `list` to discover saved lists, then select a
+read-only source by its exact ID. Do not supply `creation_id` for drafts.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never

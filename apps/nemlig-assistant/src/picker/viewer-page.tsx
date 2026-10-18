@@ -839,7 +839,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         : safeTitle === "Find an alternative"
           ? "Compare available options for this product."
           : review.basketMode === "direct-basket"
-            ? "Edits stay in this temporary draft until you explicitly submit. Drafts expire after two hours and cannot be recovered after restart."
+            ? "Edits stay in this temporary draft until you explicitly submit. It may expire after two hours of inactivity and cannot be recovered after restart."
             : "Changes save to this Nemlig shopping list automatically. Tap a product for details, or press and hold for actions."
       : basket
         ? "Your current Nemlig basket. This view cannot change it."
