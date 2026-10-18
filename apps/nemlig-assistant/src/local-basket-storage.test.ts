@@ -686,6 +686,58 @@ test("review-operation claim only fences the generation that wrote its intent", 
   );
 });
 
+test("claimed direct intent rejects changed account, payload, and generation without losing its fence", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "direct-basket-submit:draft-bound",
+    generation: "generation-one",
+    accountIdentity: "account-one",
+    kind: "submit",
+    name: "Direct basket draft",
+    items: [{ productId: 7, quantity: 2 }],
+    baseline: [{ productId: 9, quantity: 1 }],
+  };
+  const write = (next: ReviewOperation) =>
+    mutateOwnerLocalBasketInventory(storage, "owner-one", {
+      kind: "review-operation-write",
+      operation: next,
+    });
+  const claim = (generation: string) =>
+    mutateOwnerLocalBasketInventory(storage, "owner-one", {
+      kind: "review-operation-claim",
+      operationId: operation.operationId,
+      generation,
+    });
+  await write(operation);
+  assert.equal(await claim(operation.generation), true);
+  for (const changed of [
+    { ...operation, accountIdentity: "account-two" },
+    { ...operation, items: [{ productId: 7, quantity: 3 }] },
+    { ...operation, baseline: [{ productId: 9, quantity: 2 }] },
+    { ...operation, generation: "generation-two" },
+  ]) {
+    await assert.rejects(write(changed), /different shopping-list operation/u);
+  }
+  assert.equal(await claim(operation.generation), false);
+  assert.equal(await claim("generation-two"), false);
+  assert.equal(
+    await mutateOwnerLocalBasketInventory(storage, "owner-one", {
+      kind: "review-operation-complete",
+      operationId: operation.operationId,
+      generation: "generation-two",
+    }),
+    false,
+  );
+  const retained = (await mutateOwnerLocalBasketInventory(
+    storage,
+    "owner-one",
+    { kind: "review-operation-read", operationId: operation.operationId },
+  )) as ReviewOperation;
+  assert.equal(retained.dispatchAttempted, true);
+  assert.equal(retained.completed, undefined);
+  assert.deepEqual(retained.items, operation.items);
+});
+
 test("completed records do not block unresolved operations before the byte bound", async () => {
   const storage = new FakeStorage();
   const write = (operationId: string) =>
@@ -760,7 +812,7 @@ test("oversized recovery journals preserve fences and return an actionable error
   assert.ok(lastWritten);
   assert.match(
     (capacityError as Error | undefined)?.message ?? "",
-    /recovery storage is full.*did not reach Nemlig.*do not retry an uncertain Save/iu,
+    /recovery storage is full.*No Nemlig write was sent for this attempt.*earlier uncertain operation/iu,
   );
   assert.ok(
     await mutateOwnerLocalBasketInventory(storage, "owner-1", {
