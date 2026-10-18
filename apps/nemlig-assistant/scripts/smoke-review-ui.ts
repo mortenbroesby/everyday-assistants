@@ -287,7 +287,7 @@ const client = new Client(
 );
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
@@ -330,7 +330,8 @@ document.getElementById('run').onclick = async () => {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
   transcript=await call({name:'start_product_review',arguments:{shopping_list_id:77}});
   frame.src='/viewer'; await wait(()=>initialized); publish();
-  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===transcript.structuredContent.review.draftId));
+  await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);
   await wait(()=>doc().querySelectorAll('.product-action-row').length===2);
   const review=transcript.structuredContent.review;
   check(review.basketMode==='direct-basket'&&review.draftId,'Saved list was not copied into a temporary direct draft');
@@ -352,7 +353,7 @@ document.getElementById('run').onclick = async () => {
   const editedStats=await fetch('/stats').then(r=>r.json());
   check(editedStats.nativeListWrites===0&&JSON.stringify(editedStats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Draft edit changed its read-only source');
   status.textContent='PASS: saved-list rows loaded and edited in a temporary draft; source and basket unchanged';
- } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | rows: '+JSON.stringify([...doc().querySelectorAll('.product-list .product-card')].map(row=>row.outerHTML.slice(0,250)))+' | widget calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,draft_id:call.arguments.draft_id,shopping_list_id:call.arguments.shopping_list_id})));} finally {run.disabled=false;}
+ } catch(error) {status.textContent='FAIL: '+error.message+' | viewer: '+(doc()?.body?.innerText||'no iframe document')+' | rows: '+JSON.stringify([...doc().querySelectorAll('.product-list .product-card')].map(row=>row.outerHTML.slice(0,250)))+' | widget calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,draft_id:call.arguments.draft_id,shopping_list_id:call.arguments.shopping_list_id})))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text})));} finally {run.disabled=false;}
 };
 document.getElementById('flow').onclick = async () => {
  const run=document.getElementById('flow'); run.disabled=true;
@@ -415,6 +416,47 @@ document.getElementById('alternatives').onclick = async () => {
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');
   status.textContent='PASS: alternative search/navigation leaves the temporary draft unchanged; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
+};
+document.getElementById('uncertain').onclick = async () => {
+ const run=document.getElementById('uncertain'); run.disabled=true;
+ status.textContent='Checking uncertain direct Submit';
+ const doc=()=>frame.contentDocument, text=()=>doc()?.querySelector('main')?.textContent||'';
+ const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+text());await new Promise(r=>setTimeout(r,25));}};
+ const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ try {
+  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
+  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1}]}});
+  frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
+  await wait(()=>doc()?.querySelectorAll('.product-list .product-card').length===1&&text().includes('Smoke product 1'));
+  const stale=transcript;
+  await fetch('/uncertain-next',{method:'POST'});
+  await wait(()=>[...doc().querySelectorAll('button')].some(button=>button.textContent.trim()==='Add to Nemlig basket'&&!button.disabled));
+  const submit=[...doc().querySelectorAll('button')].find(button=>button.textContent.trim()==='Add to Nemlig basket');
+  check(submit&&!submit.disabled,'Direct draft did not offer Submit'); submit.click();
+  await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'));
+  const stats=await fetch('/stats').then(r=>r.json());
+  check(stats.basketWrites===1&&stats.simulatedSubmissions===1,'Uncertain Submit did not make exactly one provider attempt');
+  await wait(()=>doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket')&&!doc()?.querySelector('main.viewer[aria-busy="true"]'));
+  let staleDelivered=false;
+  const child=frame.contentWindow;
+  const onStale=event=>{
+   if(event.source===window&&event.data?.method==='ui/notifications/tool-result'&&event.data.params?.structuredContent?.review?.draftId===stale.structuredContent.review.draftId)staleDelivered=true;
+  };
+  child.addEventListener('message',onStale);
+  publish(); await wait(()=>staleDelivered);
+  child.removeEventListener('message',onStale);
+  await new Promise(resolve=>child.requestAnimationFrame(()=>child.requestAnimationFrame(resolve)));
+  check(doc()?.querySelector('.submission-recovery-dialog')?.textContent.includes('Check your Nemlig basket'),'Stale passive output dismissed uncertain recovery');
+  const repeat=[...doc().querySelectorAll('button')].find(button=>button.textContent.trim()==='Add to Nemlig basket');
+  check(!repeat||repeat.disabled,'Stale passive output re-enabled an uncertain Submit');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===1,'Passive output retried an uncertain Submit');
+  initialized=false; frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); transcript=stale; publish();
+  await wait(()=>text().includes('A previous addition needs checking'));
+  const remounted=[...doc().querySelectorAll('button')].find(button=>button.textContent.trim()==='Add to Nemlig basket');
+  check(!remounted||remounted.disabled,'Remount re-enabled an uncertain Submit');
+  check((await fetch('/stats').then(r=>r.json())).basketWrites===1,'Remount retried an uncertain Submit');
+  status.textContent='PASS: uncertain direct Submit attempted once; stale output and remount could not replay it';
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+text()+' | calls: '+JSON.stringify(widgetCalls.map(call=>call.name))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text})));} finally{run.disabled=false;}
 };
 </script></body></html>`;
 const server = createServer((req, res) => {
@@ -622,6 +664,8 @@ try {
       `Fake provider basket write boundary crossed: ${JSON.stringify(stats)}`,
     );
   }
+  await browserPage.locator("#uncertain").click();
+  await waitForResult("MCP adapter uncertain submission");
   await fetch(new URL("/reset", origin), { method: "POST" });
   await fetch(new URL("/uncertain-next", origin), { method: "POST" });
   const started = await client.callTool({
@@ -687,5 +731,5 @@ try {
   globalThis.fetch = originalFetch;
 }
 console.log(
-  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, alternatives, and ambiguous submit replay fence.",
+  "MCP adapter browser smoke passed: read-only saved-list load, one bulk basket add, separate whole-basket save, basket preservation, alternatives, and uncertain no-replay in both UI and MCP.",
 );

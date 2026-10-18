@@ -518,6 +518,7 @@ src/product-discovery.ts      Request-scoped detailed product hydration
 src/product-presentation.ts  Shared factual product projection
 src/product-review.ts        Temporary drafts, read-only list loading, basket
                               review
+src/review-schema.ts         Shared MCP review payload and viewer compatibility
 src/product-viewer.ts         Packaged product viewer and headless fallback
 src/basket-result.ts          Basket response projection and uncertain-write error
 release/                      Version and publication policy

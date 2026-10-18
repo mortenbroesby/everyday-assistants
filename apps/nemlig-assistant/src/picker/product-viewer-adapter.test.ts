@@ -5,8 +5,206 @@ import {
   isBasketId,
   isKnownNoWriteFailure,
   progressMessage,
+  readPayload,
+  reconcileReviewState,
+  reviewSubmissionBlockTransition,
   viewerToolCallOptions,
 } from "./product-viewer.js";
+import type { Review } from "./viewer-page.js";
+
+const draftReview = (): Review => ({
+  basketMode: "direct-basket",
+  draftId: "12345678-1234-4234-8234-123456789abc",
+  reviewContextId: "12345678-1234-4234-8234-123456789def",
+  draftExpiresAt: 1_800_000_000_000,
+  destination: "ready",
+  items: [
+    {
+      product_id: 7,
+      quantity: 2,
+      state: "ready",
+      view: {
+        context: "review",
+        status: "complete",
+        product: {
+          id: 7,
+          name: "Milk",
+          price: 12.5,
+          unit_price: 12.5,
+          unit: "1 L",
+          unit_size: "1 L",
+          currency: "DKK",
+          brand: undefined,
+          available: true,
+          is_organic: false,
+          is_frozen: false,
+          is_on_discount: false,
+          image_url: undefined,
+          labels: [],
+          tags: [],
+        },
+      },
+    },
+  ],
+});
+
+test("viewer decodes the current shared review contract without losing draft expiry", () => {
+  const review = draftReview();
+  assert.deepEqual(readPayload({ structuredContent: { review } }), {
+    kind: "review",
+    review,
+    active: true,
+  });
+});
+
+test("viewer rejects corrupt review data and keeps cached optional fields compatible", () => {
+  const review = draftReview();
+  assert.equal(
+    readPayload({
+      review: { ...review, items: [{ ...review.items[0], quantity: 0 }] },
+    }),
+    undefined,
+  );
+  assert.equal(
+    readPayload({
+      review: {
+        ...review,
+        submission: {
+          submission_id: "12345678-1234-4234-8234-123456789abc",
+          status: "submitted",
+          expires_at: "2026-10-17T00:00:00Z",
+          review: { lines: [{ product_id: 7, quantity: -1 }] },
+        },
+      },
+    }),
+    undefined,
+  );
+  assert.equal(
+    readPayload({ review: { ...review, draftId: undefined } }),
+    undefined,
+  );
+  const cached = {
+    ...review,
+    alternatives: { product_id: 7, query: "milk", views: [] },
+    submission: {
+      submission_id: "12345678-1234-4234-8234-123456789abc",
+      status: "submitted",
+      review: {},
+    },
+  };
+  assert.equal(readPayload({ review: cached })?.kind, "review");
+});
+
+test("submission transition preserves a pending local fence until the correlated result", () => {
+  const draft = draftReview();
+  assert.equal(reviewSubmissionBlockTransition(undefined, draft, false), false);
+  assert.equal(reviewSubmissionBlockTransition(draft, draft, true), undefined);
+  const uncertain = {
+    ...draft,
+    submission: {
+      submission_id: "12345678-1234-4234-8234-123456789abc",
+      status: "uncertain" as const,
+      review: {},
+    },
+  };
+  assert.equal(reviewSubmissionBlockTransition(draft, uncertain, true), true);
+  assert.equal(
+    reviewSubmissionBlockTransition(
+      uncertain,
+      { ...uncertain, submissionAttempted: true },
+      true,
+    ),
+    true,
+  );
+  assert.equal(
+    reviewSubmissionBlockTransition(
+      uncertain,
+      {
+        ...uncertain,
+        submission: { ...uncertain.submission, status: "submitted" },
+      },
+      true,
+    ),
+    false,
+  );
+});
+
+test("review transition preserves partial list evidence until explicitly acknowledged", () => {
+  const partial: Review = {
+    ...draftReview(),
+    basketMode: "native-list",
+    draftId: undefined,
+    shoppingListId: 77,
+    saveStatus: "partial",
+    saveProgress: { completed: 1, total: 2 },
+    actionNotice: "One line was not confirmed",
+  };
+  const next: Review = {
+    ...partial,
+    saveStatus: "saved",
+    saveProgress: undefined,
+    actionNotice: undefined,
+  };
+  const input = {
+    previousVisible: partial,
+    previousConfirmed: partial,
+    next,
+    current: true,
+  };
+  const protectedState = reconcileReviewState({
+    ...input,
+    acknowledgePartialList: false,
+  });
+  assert.equal(protectedState.sameReview, true);
+  assert.equal(protectedState.state.review.saveStatus, "partial");
+  assert.deepEqual(protectedState.state.review.saveProgress, {
+    completed: 1,
+    total: 2,
+  });
+  assert.equal(protectedState.state.review.actionNotice, partial.actionNotice);
+  assert.equal(
+    reconcileReviewState({ ...input, acknowledgePartialList: true }).state
+      .review.saveStatus,
+    "saved",
+  );
+});
+
+test("review transition separates a new draft from an older submission", () => {
+  const submitted: Review = {
+    ...draftReview(),
+    submission: {
+      submission_id: "12345678-1234-4234-8234-123456789abc",
+      status: "submitted",
+      review: {},
+    },
+  };
+  assert.equal(
+    reconcileReviewState({
+      previousVisible: submitted,
+      previousConfirmed: submitted,
+      next: submitted,
+      current: true,
+      acknowledgePartialList: false,
+    }).preserveContinuation,
+    true,
+  );
+  const next = {
+    ...draftReview(),
+    draftId: "22345678-1234-4234-8234-123456789abc",
+  };
+  const result = reconcileReviewState({
+    previousVisible: submitted,
+    previousConfirmed: submitted,
+    next,
+    current: true,
+    acknowledgePartialList: false,
+  });
+  assert.equal(result.sameReview, false);
+  assert.equal(result.submitBlocked, false);
+  assert.equal(result.preserveContinuation, false);
+  assert.equal(result.state.active, true);
+  assert.equal(result.state.review, next);
+});
 
 test("viewer actions allow long native-list work and retain cancellation", () => {
   const controller = new AbortController();

@@ -4,7 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ProductView } from "../product-presentation.js";
 import { ProductFacts } from "./components/product.js";
-import { ViewerPage } from "./viewer-page.js";
+import { toggleReviewDisclosure, ViewerPage } from "./viewer-page.js";
 import type { ViewerPageProps } from "./viewer-page.js";
 
 const product: ProductView = {
@@ -30,6 +30,23 @@ const product: ProductView = {
   review: { kind: "review", quantity: 1, approved: false },
 };
 const noop = () => undefined;
+
+test("fact disclosure updates one product without mutating prior UI state", () => {
+  const before = new Map([[7, new Set(["ingredients"])]]);
+  const expanded = toggleReviewDisclosure(before, 8, "origin", true);
+  assert.deepEqual([...before], [[7, new Set(["ingredients"])]]);
+  assert.deepEqual(
+    [...expanded],
+    [
+      [7, new Set(["ingredients"])],
+      [8, new Set(["origin"])],
+    ],
+  );
+  const collapsed = toggleReviewDisclosure(expanded, 8, "origin", false);
+  assert.deepEqual([...collapsed.get(8)!], []);
+  assert.deepEqual([...expanded.get(8)!], ["origin"]);
+});
+
 const props = (thumbnail?: string): ViewerPageProps => ({
   model: {
     screen: {
