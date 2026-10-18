@@ -88,7 +88,7 @@ this includes existing basket rows and does not clear the basket.
   unchanged rows to the actual basket in one request. Confirmed unavailable
   rows are reported as skipped; price-only changes do not block submission.
   Existing basket rows are preserved and uncertain writes are never retried.
-- After verified submission, optionally save the whole current basket as a
+- After at least one verified addition, optionally save the whole current basket as a
   shopping list. This integration does not establish or return a verified
   new-list ID, so find it in the saved-list picker. This action never clears
   the basket.
