@@ -345,6 +345,15 @@ document.getElementById('run').onclick = async () => {
   check(summary,'Loaded source product row missing');
   summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
   await wait(()=>row.querySelector('.product-inline-actions'));
+  await wait(()=>doc().activeElement===row.querySelector('.product-inline-actions'));
+  row.querySelector('[aria-label="Close product actions"]').click();
+  await wait(()=>doc().activeElement===summary);
+  summary.click();
+  await wait(()=>doc().querySelector('[role="dialog"]'));
+  doc().querySelector('[role="dialog"] [aria-label="Back to shopping list"]').click();
+  await wait(()=>!doc().querySelector('[role="dialog"]')&&doc().activeElement===summary);
+  summary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
+  await wait(()=>row.querySelector('.product-inline-actions'));
   const plus=()=>[...doc().querySelectorAll('.product-action-row')].find(item=>item.textContent.includes('Smoke product 2'))?.querySelector('.product-inline-actions [data-viewer-component="quantity-control"] button[aria-label^="Increase quantity"]');
   await wait(()=>plus()&&!plus().disabled);
   plus().click();
@@ -413,6 +422,13 @@ document.getElementById('alternatives').onclick = async () => {
   query.dispatchEvent(new Event('input',{bubbles:true})); query.form.requestSubmit();
   await wait(()=>doc().querySelector('.alternative-options')?.textContent.includes('Smoke product 4'));
   const back=button('Back to draft'); check(back,'Back control missing'); back.click(); await wait(()=>title()==='Temporary basket draft');
+  const original=[...doc().querySelectorAll('.product-action-row')].find(item=>item.getAttribute('data-product-id')==='1');
+  const originalSummary=original?.querySelector('[data-viewer-component="product-summary"]'); check(originalSummary,'Original product summary missing after alternatives');
+  originalSummary.dispatchEvent(new KeyboardEvent('keydown',{key:'F10',shiftKey:true,bubbles:true,cancelable:true}));
+  await wait(()=>original.querySelector('.product-inline-actions'));
+  original.querySelector('[aria-label="Remove product"]').click();
+  await wait(()=>!doc().querySelector('.product-action-row[data-product-id="1"]'));
+  check(doc().activeElement?.isConnected&&doc().activeElement?.closest('.viewer'),'Removing a product lost focus outside the viewer');
   check((await fetch('/stats').then(r=>r.json())).basketWrites===0,'Alternative navigation wrote to Nemlig');
   status.textContent='PASS: alternative search/navigation leaves the temporary draft unchanged; provider basket writes 0';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | widget calls: '+JSON.stringify(widgetCalls);} finally{run.disabled=false;}
@@ -646,6 +662,18 @@ try {
   };
   await browserPage.locator("#run").click();
   await waitForResult("MCP adapter saved-list load flow");
+  await browserPage.emulateMedia({ reducedMotion: "reduce" });
+  const reducedMotionTransition = await browserPage
+    .frameLocator("#viewer")
+    .locator(".product-action-row > .product-card")
+    .first()
+    .evaluate((card) => getComputedStyle(card).transitionDuration);
+  if (reducedMotionTransition !== "0s") {
+    throw new Error(
+      `Product action motion ignored reduced-motion preference: ${reducedMotionTransition}`,
+    );
+  }
+  await browserPage.emulateMedia({ reducedMotion: "no-preference" });
   await browserPage.locator("#flow").click();
   await waitForResult("MCP adapter continuous flow");
   await browserPage.locator("#alternatives").click();
