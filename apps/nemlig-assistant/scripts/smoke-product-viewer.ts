@@ -1110,7 +1110,64 @@ try {
     true,
     "viewer overflows 320px viewport",
   );
+  const longFrame = await open("/host-long");
+  await longFrame.locator('.product-list [data-index="0"]').waitFor();
+  await longFrame.locator(".viewer").evaluate((viewer) => {
+    viewer.scrollTop = viewer.scrollHeight;
+  });
+  await longFrame.locator('.product-list [data-index="11"]').waitFor();
+  assert.equal(
+    await longFrame
+      .getByRole("group", { name: "Synthetic product 12" })
+      .count(),
+    1,
+    "virtualized list did not render its last product after scrolling",
+  );
+  const lastSummary = longFrame.locator(
+    '[data-product-id="12"] [data-viewer-component="product-summary"]',
+  );
+  const lastSummaryBox = await lastSummary.boundingBox();
+  assert.ok(lastSummaryBox);
+  const pointerX = lastSummaryBox.x + lastSummaryBox.width / 2;
+  const pointerY = lastSummaryBox.y + lastSummaryBox.height / 2;
+  await page.mouse.move(pointerX, pointerY);
+  await page.mouse.down();
+  await page.mouse.move(pointerX - 24, pointerY, { steps: 4 });
+  await page.mouse.up();
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  assert.equal(
+    await longFrame.locator(".product-inline-actions").count(),
+    0,
+    "a short swipe opened destructive product actions",
+  );
   await context.close();
+
+  const touchContext = await browser.newContext({
+    hasTouch: true,
+    viewport: { width: 375, height: 860 },
+  });
+  await installViewerAssetFixture(touchContext, viewerGeneration);
+  const touchPage = await touchContext.newPage();
+  await touchPage.goto(`${base}/host`);
+  const touchFrame = touchPage.frameLocator('iframe[title="viewer"]');
+  await touchFrame
+    .getByRole("button", { name: "Show details for Synthetic milk" })
+    .tap();
+  const details = touchFrame.getByRole("dialog", { name: "Synthetic milk" });
+  await details.waitFor();
+  await details.getByRole("button", { name: "Back to shopping list" }).tap();
+  await details.waitFor({ state: "detached" });
+  assert.equal(
+    await touchPage.evaluate(() => window.providerWrites),
+    0,
+    "opening product details by touch changed provider state",
+  );
+  await touchContext.close();
 } finally {
   await browser.close();
   await closeViewerSmokeServer(server);
