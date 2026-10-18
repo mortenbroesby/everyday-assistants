@@ -1382,7 +1382,7 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
       );
       assert.match(
         tools.get("submit_product_review_conversation") ?? "",
-        /After explicit user authorization, add all exact reviewed draft quantities in one request/u,
+        /Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities/u,
       );
       assert.equal(
         (await mcp.listResources()).resources[0]?.uri,
