@@ -39,9 +39,10 @@ Live checks remain separate from the automatic gate:
   list writes, proposal preparation/application, feature requests, or basket
   mutation. Obsolete usage/reset endpoints no longer exist; no tier or
   count-based admission evidence is required.
-- For the Rejoin connection recovery, verify the new app named
-  `Nemlig Assistant (Rejoin)` with authenticated seven-tool discovery before
-  retiring the previous Nemlig app. Complete the UI release acceptance below for later releases.
+- For the current private `Nemlig Assistant` connection, verify authenticated
+  seven-tool discovery and the current viewer resource. Complete the UI release
+  acceptance below for UI-bearing releases. Historical Rejoin recovery is
+  documented in the connector recovery record, not the current setup path.
 - The app has no live mutation acceptance command. Its basket contract is
   add-only; removals, decreases, replacement, clearing, and inverse restoration
   are prohibited.

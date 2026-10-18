@@ -9,6 +9,7 @@ import {
   ProductNotFoundError,
   type Basket,
   type BasketAddition,
+  type Product,
   type ShoppingList,
   type ShoppingListOverview,
   type ShoppingClient,
@@ -38,9 +39,6 @@ const reviewItemInputs = (items: ShoppingList["items"]) =>
     product_id: productId,
     quantity,
   }));
-const reviewOperationItems = (
-  items: ReadonlyArray<{ productId: number; quantity: number }>,
-) => items.map(({ productId, quantity }) => ({ productId, quantity }));
 const basketOperationItems = (basket: Basket) => {
   const seen = new Set<number>();
   const items: Array<{ productId: number; quantity: number }> = [];
@@ -134,7 +132,10 @@ type ReviewClient = ProductDiscoveryClient &
   Partial<
     Pick<
       ShoppingClient,
-      "getCart" | "addManyToCart" | "createShoppingListFromBasket"
+      | "getFreshProduct"
+      | "getCart"
+      | "addManyToCart"
+      | "createShoppingListFromBasket"
     >
   >;
 export type ReviewJournalCommand = Extract<
@@ -163,6 +164,52 @@ export interface ReviewOperationJournal {
 
 const validPositive = (value: number): boolean =>
   Number.isSafeInteger(value) && value > 0;
+
+const sameReviewedProduct = (reviewed: ProductView, fresh: ProductView) => {
+  if (reviewed.status !== "complete" || fresh.status !== "complete") {
+    return false;
+  }
+  return (
+    reviewed.product.id === fresh.product.id &&
+    reviewed.product.name === fresh.product.name &&
+    reviewed.product.brand === fresh.product.brand &&
+    reviewed.product.unit === fresh.product.unit &&
+    reviewed.product.unit_size === fresh.product.unit_size
+  );
+};
+
+const checkFreshReviewItem = (item: ReviewItem, current: Product) => {
+  const freshView = createProductView(current, { kind: "details" });
+  if (
+    current.id !== item.product_id ||
+    !sameReviewedProduct(item.view, freshView)
+  ) {
+    throw new NemligError(
+      "A reviewed product changed or could not be validated. Refresh and review it before submitting; no basket write was sent.",
+    );
+  }
+  if (current.available === false) {
+    return {
+      kind: "skip" as const,
+      product_id: item.product_id,
+      name:
+        (item.view.status === "complete"
+          ? item.view.product.name
+          : undefined) ??
+        current.name ??
+        `Product ${item.product_id}`,
+    };
+  }
+  if (current.available !== true) {
+    throw new NemligError(
+      "A reviewed product changed or could not be validated. Refresh and review it before submitting; no basket write was sent.",
+    );
+  }
+  return {
+    kind: "add" as const,
+    addition: { productId: item.product_id, quantity: item.quantity },
+  };
+};
 
 const directDraftItemsFromShoppingList = (
   items: ShoppingList["items"],
@@ -879,6 +926,7 @@ export class ProductReviewService {
     if (
       !journal ||
       !this.client.getCart ||
+      !this.client.getFreshProduct ||
       !this.client.providerIdentity ||
       !this.client.addManyToCart
     ) {
@@ -919,6 +967,8 @@ export class ProductReviewService {
             operation: "additions",
             replayed: true,
             basket: basketPayload(await this.client.getCart(signal)),
+            cleanup_warning:
+              "This submission was already completed. Inspect the current basket to confirm which approved products were added; no write was repeated.",
           },
         };
       }
@@ -961,46 +1011,84 @@ export class ProductReviewService {
           "Nemlig account changed while this draft was open. Refresh before submitting.",
         );
       }
-      const additions: BasketAddition[] = reviewedItems.map(
-        ({ product_id, quantity }) => ({ productId: product_id, quantity }),
-      );
-      const basket = await this.client.addManyToCart(additions, {
-        signal,
-        beforeDispatch: async (baseline) => {
-          if (this.client.providerIdentity!() !== accountIdentity) {
-            throw new NemligError(
-              "Nemlig account changed before direct basket submission. No basket write was sent.",
+      const checked = await runReadPool(
+        stored.snapshot.items,
+        async (item, readSignal) => {
+          let current;
+          try {
+            current = await this.client.getFreshProduct!(
+              item.product_id,
+              readSignal,
             );
+          } catch (error) {
+            if (error instanceof ProductNotFoundError) {
+              return {
+                kind: "skip" as const,
+                product_id: item.product_id,
+                name:
+                  (item.view.status === "complete"
+                    ? item.view.product.name
+                    : undefined) ?? `Product ${item.product_id}`,
+              };
+            }
+            throw error;
           }
-          const operation: DirectReviewOperationIntent = {
-            operationId,
-            generation: submissionId,
-            accountIdentity,
-            kind: "submit",
-            name: "Direct basket draft",
-            items: reviewOperationItems(additions),
-            baseline: basketOperationItems(baseline),
-          };
-          await journal.write(operation);
-          if (!(await journal.claim(operationId, submissionId))) {
-            throw new NativeTransferUnconfirmedError(
-              "This direct basket submission is already fenced. Inspect the basket; do not retry.",
-            );
-          }
-          dispatchClaimed = true;
+          return checkFreshReviewItem(item, current);
         },
-      });
+        { signal },
+      );
+      const additions: BasketAddition[] = checked.flatMap((item) =>
+        item.kind === "add" ? [item.addition] : [],
+      );
+      const skippedProducts = checked.flatMap((item) =>
+        item.kind === "skip"
+          ? [{ product_id: item.product_id, name: item.name }]
+          : [],
+      );
+      const basket = additions.length
+        ? await this.client.addManyToCart(additions, {
+            signal,
+            beforeDispatch: async (baseline) => {
+              if (this.client.providerIdentity!() !== accountIdentity) {
+                throw new NemligError(
+                  "Nemlig account changed before direct basket submission. No basket write was sent.",
+                );
+              }
+              const operation: DirectReviewOperationIntent = {
+                operationId,
+                generation: submissionId,
+                accountIdentity,
+                kind: "submit",
+                name: "Direct basket draft",
+                items: reviewedItems.map(({ product_id, quantity }) => ({
+                  productId: product_id,
+                  quantity,
+                })),
+                baseline: basketOperationItems(baseline),
+              };
+              await journal.write(operation);
+              if (!(await journal.claim(operationId, submissionId))) {
+                throw new NativeTransferUnconfirmedError(
+                  "This direct basket submission is already fenced. Inspect the basket; do not retry.",
+                );
+              }
+              dispatchClaimed = true;
+            },
+          })
+        : await this.client.getCart(signal);
       if (this.client.providerIdentity() !== accountIdentity) {
         throw new NativeTransferUnconfirmedError(
           "Nemlig account changed after the basket request. Its outcome is unconfirmed; inspect the original account and do not retry.",
         );
       }
-      await journal.complete(operationId, submissionId);
-      const receipt = await journal.read(operationId);
-      if (receipt?.generation !== submissionId || !receipt.completed) {
-        throw new NativeTransferUnconfirmedError(
-          "Basket addition was verified, but its no-replay receipt could not be confirmed. Inspect the basket; do not retry.",
-        );
+      if (additions.length) {
+        await journal.complete(operationId, submissionId);
+        const receipt = await journal.read(operationId);
+        if (receipt?.generation !== submissionId || !receipt.completed) {
+          throw new NativeTransferUnconfirmedError(
+            "Basket addition was verified, but its no-replay receipt could not be confirmed. Inspect the basket; do not retry.",
+          );
+        }
       }
       stored.snapshot.submission = {
         submission_id: submissionId,
@@ -1009,12 +1097,18 @@ export class ProductReviewService {
           (sum, item) => sum + item.quantity,
           0,
         ),
+        ...(skippedProducts.length
+          ? { skipped_products: skippedProducts }
+          : {}),
         expires_at: new Date(this.now() + 15 * 60 * 1000).toISOString(),
         review: {},
       };
       stored.snapshot.submissionAttempted = true;
-      stored.snapshot.actionNotice =
-        "Nemlig confirmed the direct basket addition. This draft cannot be submitted again.";
+      stored.snapshot.actionNotice = additions.length
+        ? skippedProducts.length
+          ? "Nemlig confirmed the available additions; unavailable products were skipped. This draft cannot be submitted again."
+          : "Nemlig confirmed the direct basket addition. This draft cannot be submitted again."
+        : "No products were added because Nemlig confirmed they are unavailable. This draft cannot be submitted again.";
       return {
         review: structuredClone(stored.snapshot),
         result: {
@@ -1022,6 +1116,13 @@ export class ProductReviewService {
           operation: "additions",
           replayed: false,
           basket: basketPayload(basket),
+          verified_additions: additions.reduce(
+            (sum, item) => sum + item.quantity,
+            0,
+          ),
+          ...(skippedProducts.length
+            ? { skipped_products: skippedProducts }
+            : {}),
         },
       };
     } catch (error) {
@@ -1091,6 +1192,7 @@ export class ProductReviewService {
     if (
       stored.snapshot.basketMode !== "direct-basket" ||
       stored.snapshot.submission?.status !== "submitted" ||
+      stored.snapshot.submission.verified_additions === 0 ||
       stored.accountIdentity !== accountIdentity
     ) {
       stored.busy = false;

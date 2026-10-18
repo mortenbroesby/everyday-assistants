@@ -1,6 +1,6 @@
 {
   "name": "nemlig-shopping",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Find Nemlig groceries, edit a temporary basket draft, and add its reviewed products to the Nemlig basket only when authorized.",
   "author": {
     "name": "Morten & Josephine Broesby-Olsen"

@@ -37,7 +37,7 @@ Draft actions SHALL use the exact active `draft_id` and `review_context_id`. Ano
 
 ### Requirement: Exact protected basket submission
 
-Only separately authorized Submit SHALL add the exact reviewed draft quantities to the real Nemlig basket. The request SHALL carry the exact draft and review context, a unique submission identity, and the reviewed name, product IDs, and positive quantities. The server SHALL compare that payload with the active draft, record a durable no-replay fence before dispatch, send the reviewed lines in one additive provider request, and independently validate basket readback while preserving unrelated rows. Search and draft editing SHALL NOT authorize submission.
+Only separately authorized Submit SHALL add the exact reviewed draft quantities to the real Nemlig basket. The request SHALL carry the exact draft and review context, a unique submission identity, and the reviewed name, product IDs, and positive quantities. The server SHALL compare that payload with the active draft, apply the fresh-product checks and confirmed-unavailable skip rule in the basket addition contract, record a durable no-replay fence before dispatch, send any remaining approved lines in one additive provider request, and independently validate basket readback while preserving unrelated rows. Search and draft editing SHALL NOT authorize submission.
 
 Separate user consent comes from a clear conversational instruction to add the exact reviewed products and quantities, explicit approval of that addition, or an explicit click in the viewer. Search, display, selection, and draft editing do not supply consent; a remembered ChatGPT tool approval does not authorize a new addition. The server authenticates the caller and validates the exact draft, account, and payload, but does not receive an independently verifiable consent receipt from the host. A matching draft or caller-supplied submission ID alone is not evidence of user consent.
 
@@ -62,10 +62,10 @@ Separate user consent comes from a clear conversational instruction to add the e
 
 ### Requirement: Optional whole-basket shopping-list save
 
-After verified basket submission, the viewer MAY offer a separate explicit action to save the entire current Nemlig basket as a shopping list. It SHALL include existing basket rows, preserve the basket, and SHALL NOT claim a saved-list ID unless the provider establishes one. An uncertain save SHALL NOT be retried. This action is app-only and SHALL NOT be advertised as a model-facing shopping tool.
+After at least one verified basket addition, the viewer MAY offer a separate explicit action to save the entire current Nemlig basket as a shopping list. It SHALL include existing basket rows, preserve the basket, and SHALL NOT claim a saved-list ID unless the provider establishes one. An uncertain save SHALL NOT be retried. This action is app-only and SHALL NOT be advertised as a model-facing shopping tool.
 
 #### Scenario: Save after verified addition
-- **WHEN** the user separately chooses the optional save action after verified submission
+- **WHEN** the user separately chooses the optional save action after at least one verified addition
 - **THEN** the whole current basket is sent for list saving without clearing the basket
 
 #### Scenario: No verified addition

@@ -1204,6 +1204,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
             )}
             {review.actionNotice && <p role="status">{review.actionNotice}</p>}
             {review.basketMode === "direct-basket" &&
+              review.submission.verified_additions !== 0 &&
               !review.actionNotice?.startsWith("Basket save acknowledged") &&
               !review.actionNotice?.startsWith(
                 "Basket save may have completed",

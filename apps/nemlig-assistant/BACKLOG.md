@@ -67,8 +67,8 @@ and [issue #81](https://github.com/mortenbroesby/everyday-assistants/issues/81)
 for the root cause, external correction, and sanitized production evidence.
 Provider-backed functionality and longer-term reliability remain separate
 work; do not infer them from this acceptance.
-Release 6.0.0 retires `get_profile`; authenticated MCP discovery replaces that
-historical connector check for new releases.
+The current seven-tool MCP catalog includes read-only `get_profile`; do not use
+this dated recovery story to infer its present tool availability.
 
 **Epic outcome:** Restore a repeatably reconnectable, cloud-only ChatGPT app and
 close the incident with privacy-safe evidence that identifies the last completed
@@ -133,11 +133,17 @@ This item does not authorize any Nemlig basket mutation.
 
 ## P0 — require fresh product data before an approved basket write
 
-**Status:** Active safety fix.
+**Status:** The original proposal-path fix shipped. PR #336 adapts its safety
+intent to the current direct-draft bulk Submit; the historical completed tasks
+below refer to the retired proposal path.
 
-**Epic outcome:** Ensure an approved addition or replacement cannot write from
-product details retained during discovery or review; every affected product must
-be freshly resolved after apply begins, or the proposal fails closed.
+**Current contract:** Once direct Submit starts, freshly resolve each reviewed
+product while holding the draft's operation lock. A changed identity or package
+and an ambiguous lookup stop before the one bulk write. Confirmed missing or
+unavailable products are skipped and reported; price-only changes do not block
+the approved additions. If all products are skipped, no basket write or
+basket-to-list save is offered. The old proposal rejected price changes and
+sequenced individual writes; those rules do not apply to the current flow.
 
 ### Story P0.F1 — separate reusable discovery from authoritative revalidation
 

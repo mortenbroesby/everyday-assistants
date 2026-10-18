@@ -1306,7 +1306,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Submit the reviewed products to Nemlig",
       description:
-        "Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities. Selection, display, and draft edits are not approval. Add those quantities in one request; the server checks the active draft and records a durable no-replay fence. Never retry an uncertain result.",
+        "Use only after the user clearly requests or explicitly approves adding the exact reviewed draft products and quantities. Selection, display, and draft edits are not approval. The server freshly checks product identity and package, skips confirmed unavailable products, and adds the remaining approved quantities in one request with a durable no-replay fence. Price changes alone do not block addition. Never retry an uncertain result.",
       inputSchema: submitReviewInputSchema(
         z
           .string()

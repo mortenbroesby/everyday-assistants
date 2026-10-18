@@ -26,6 +26,6 @@ Assistants repository and its configured providers.
 Installing the package does not prove that OAuth, tool discovery, or the
 interactive UI works. Verify those separately in a fresh ChatGPT Work
 conversation. Search and basket viewing are read-only. A real basket addition
-requires the server's exact preparation, authorization, apply, and readback
-flow. Never remove or reduce actual basket items, check out, or pay through
-this plugin.
+requires an exact reviewed draft, authorization, one protected additive Submit,
+and independent basket readback. Never remove or reduce actual basket items,
+check out, or pay through this plugin.

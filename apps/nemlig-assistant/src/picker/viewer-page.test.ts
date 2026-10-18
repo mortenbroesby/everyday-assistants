@@ -806,6 +806,7 @@ test("a submitted basket names skipped products without claiming they were added
   if (pageProps.model.screen.kind !== "review") {
     throw new Error("review fixture missing");
   }
+  pageProps.model.screen.review.basketMode = "direct-basket";
   pageProps.model.screen.review.submission = {
     status: "submitted",
     submission_id: "fixture-submission",
@@ -826,5 +827,6 @@ test("a submitted basket names skipped products without claiming they were added
   assert.doesNotMatch(html, /Only the prepared products were added/u);
   assert.doesNotMatch(html, /A previous addition needs checking/u);
   assert.match(html, /Choose saved shopping lists/u);
+  assert.doesNotMatch(html, /Save current basket as shopping list/u);
   assert.doesNotMatch(html, /Continue with shopping list/u);
 });
