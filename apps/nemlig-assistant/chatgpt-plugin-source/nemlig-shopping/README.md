@@ -14,11 +14,12 @@ server for portable clients. The skill under `skills/` describes the shopping
 flow and its add-only basket boundary. Selected products create a temporary
 process-local draft; edits stay local. An exact saved Nemlig shopping list can
 be loaded as a read-only source without changing or deleting that list. Drafts
-expire after two hours or a server restart. Only a separately authorized
-submission adds the exact reviewed draft in one request and verifies additive
-basket readback. After verified addition, the viewer can optionally save the
-entire current basket as a new list. An uncertain result must be inspected,
-never blindly retried. The source for
+expire after two hours of inactivity when unprotected; unresolved work remains
+available until resolved, and all process-local drafts disappear after restart.
+Only a separately authorized submission adds the exact reviewed draft in one
+request and verifies additive basket readback. After verified addition, the
+viewer can optionally save the entire current basket as a new list. An uncertain
+result must be inspected, never blindly retried. The source for
 the server, deployment, and OAuth configuration remains in the Everyday
 Assistants repository and its configured providers.
 

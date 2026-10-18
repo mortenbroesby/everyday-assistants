@@ -59,7 +59,9 @@ skill and default prompt; it does not replace that connection.
 Version 0.1.7 aligns the package with search → temporary draft → separately
 authorized basket addition → optional whole-basket list save. A saved Nemlig
 list can be loaded as a read-only draft source. Plain search remains read-only;
-draft edits are local and expire after two hours or a server restart. Its
+draft edits are local; unprotected drafts expire after two hours of inactivity,
+while unresolved work remains available until resolved. All process-local
+drafts disappear after a server restart. Its
 desktop compatibility manifest mirrors the root manifest. Build from this
 source and use a guarded Plugin Creator update of the existing private package;
 a repository merge alone does not update installed package instructions. After

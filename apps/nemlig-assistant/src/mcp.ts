@@ -505,7 +505,7 @@ export function createMcpServer(
     proposals,
   }),
 ): McpServer {
-  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Drafts expire after two hours and cannot be recovered after a server restart.
+  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
 
 Only explicit Submit may add products to the actual basket. It sends every exact reviewed line in one additive request, preserves existing basket items, independently validates readback, and never retries an uncertain request. The actual Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots.
 

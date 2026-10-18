@@ -24,7 +24,7 @@ Product selection SHALL create a principal- and conversation-bound process-local
 
 ### Requirement: Exact draft identity and bounded lifetime
 
-Draft actions SHALL use the exact active `draft_id` and `review_context_id`. Another principal or conversation SHALL NOT access or edit that draft. A draft SHALL expire after two hours or a server restart; the system SHALL NOT silently reconstruct it from a stale card or restore submission authority.
+Draft actions SHALL use the exact active `draft_id` and `review_context_id`. Another principal or conversation SHALL NOT access or edit that draft. An unprotected draft SHALL expire after two hours of inactivity; a draft with unresolved user or provider work SHALL remain available until that work is resolved. All process-local drafts disappear after a server restart. The system SHALL NOT silently reconstruct a draft from a stale card or restore submission authority.
 
 #### Scenario: Wrong or unavailable draft
 - **WHEN** a caller supplies missing, stale, or foreign draft identity, or acts after expiry or restart
@@ -38,6 +38,8 @@ Draft actions SHALL use the exact active `draft_id` and `review_context_id`. Ano
 ### Requirement: Exact protected basket submission
 
 Only separately authorized Submit SHALL add the exact reviewed draft quantities to the real Nemlig basket. The request SHALL carry the exact draft and review context, a unique submission identity, and the reviewed name, product IDs, and positive quantities. The server SHALL compare that payload with the active draft, record a durable no-replay fence before dispatch, send the reviewed lines in one additive provider request, and independently validate basket readback while preserving unrelated rows. Search and draft editing SHALL NOT authorize submission.
+
+Separate user consent comes from the ChatGPT interaction or an explicit click in the viewer. The server authenticates the caller and validates the exact draft, account, and payload, but does not receive an independently verifiable consent receipt from the host. A matching draft or caller-supplied submission ID alone is not evidence of user consent.
 
 #### Scenario: Authorized unchanged draft
 - **WHEN** the user clearly authorizes addition of the exact current reviewed lines

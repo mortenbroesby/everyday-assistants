@@ -143,9 +143,10 @@ saved list as a read-only source; its contents are copied into a new draft, and
 later edits or basket submission never update or delete that source.
 
 Explicit Submit sends all reviewed rows in one additive basket request and
-verifies the resulting basket independently. Drafts expire after two hours and
-cannot be recovered after restart. Uncertain basket writes retain a durable
-no-replay receipt. After a verified addition, the viewer offers a separate
+verifies the resulting basket independently. Unprotected drafts expire after
+two hours of inactivity; unresolved work keeps a draft available until resolved.
+No process-local draft can be recovered after restart. Uncertain basket writes
+retain a durable no-replay receipt. After a verified addition, the viewer offers a separate
 optional action to save the entire current basket. It preserves the basket and
 does not establish or return a verified saved-list ID, so the user can find the
 new list in the picker. Uncertain saves are not retried.
@@ -271,9 +272,10 @@ The MCP surface is organized around household actions:
 - Search and conversation-side edits return structured and text results without
   mounting a widget for every tool call. `start_product_review` opens the
   selected draft or saved-list picker. Cards carry the exact draft ID and
-  transient review context; drafts expire after two hours and cannot be restored
-  after restart. The viewer uses the MCP Apps bridge and never calls Nemlig
-  directly.
+  transient review context; unprotected drafts expire after two hours of
+  inactivity, while unresolved work remains available until resolved. No draft
+  can be restored after restart. The viewer uses the MCP Apps bridge and never
+  calls Nemlig directly.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers

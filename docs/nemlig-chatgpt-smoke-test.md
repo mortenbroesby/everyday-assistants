@@ -22,7 +22,7 @@ Product search and temporary-draft edits do not write a Nemlig shopping list or 
 
 1. In the rendered card, inspect details, alternatives, and close behavior. Check mobile long press or desktop Shift+F10 separately; a desktop shortcut does not prove mobile gesture support.
 2. Change an approved quantity, replace one product, and remove one product. Confirm the card reflects the exact result and the saved-list source and real basket remain unchanged.
-3. Reload the current card while the draft is active. Check the resulting state and error handling. Drafts expire after two hours and cannot recover after a server restart; do not claim persistent edits from this flow.
+3. Reload the current card while the draft is active. Check the resulting state and error handling. Unprotected drafts expire after two hours of inactivity; unresolved work remains available until resolved. No process-local draft survives a server restart; do not claim persistent edits from this flow.
 4. If a draft becomes unavailable, confirm the UI explains it without silently recreating a different draft or restoring submission authority. Start a new draft only from reconfirmed exact products.
 
 **Pass:** local changes remain associated with the exact active draft; an expired or unavailable draft is reported honestly. An error leaves understandable, recoverable UI rather than silently switching products.

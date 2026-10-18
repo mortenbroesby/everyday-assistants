@@ -90,9 +90,10 @@ visual editing, call `start_product_review` with `items` and positive
 quantities to create a temporary draft, without `creation_id`. Carry its exact
 `draft_id` and `review_context_id` through edits. To use a saved list, load its
 exact `shopping_list_id` as a read-only source into a new draft; do not mutate
-or delete the source. Drafts expire after two hours or a server restart and
-cannot be silently recovered from a stale card. Submit the exact reviewed
-draft with its IDs, a unique `submission_id`, and `reviewed_list` only after
+or delete the source. Unprotected drafts expire after two hours of inactivity;
+unresolved work remains available until resolved. No process-local draft survives
+a server restart or can be silently recovered from a stale card. Submit the exact
+reviewed draft with its IDs, a unique `submission_id`, and `reviewed_list` only after
 separate exact authorization. The server applies a durable no-replay fence and
 verifies additive basket readback. Never retry an indeterminate result; inspect
 the actual basket without replaying the write. Only after verified addition may
