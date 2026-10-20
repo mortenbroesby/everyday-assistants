@@ -7,9 +7,6 @@ const config: StorybookConfig = {
     options: {},
   },
   core: { disableTelemetry: true },
-  viteFinal: () => {
-    throw new Error("Storybook CI negative control");
-  },
 };
 
 export default config;
