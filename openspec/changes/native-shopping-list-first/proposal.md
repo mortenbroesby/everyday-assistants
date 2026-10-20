@@ -1,3 +1,8 @@
+> Status: Superseded by the owner-approved temporary-draft and direct bulk
+> Submit flow in #317, #318, and #336. Immediate native-list creation and
+> automatic edit persistence are historical decisions, not current work.
+> Unchecked tasks remain as historical evidence.
+
 ## Why
 
 A real ChatGPT editing test retained edits until reload, then displayed the original unsaved draft; reopening returned unavailable. The user approved replacing temporary drafts with native Nemlig shopping lists from the first selected products, so Nemlig owns the durable contents throughout editing.
