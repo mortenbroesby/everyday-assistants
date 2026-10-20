@@ -66,7 +66,7 @@
     "@cloudflare/containers": "0.3.7",
     "@inquirer/password": "^5.2.0",
     "@modelcontextprotocol/client": "2.0.0",
-    "@modelcontextprotocol/core": "2.0.0",
+    "@modelcontextprotocol/core": "2.3.1",
     "@modelcontextprotocol/express": "2.0.0",
     "@modelcontextprotocol/node": "2.0.0",
     "@modelcontextprotocol/server": "2.0.0",
@@ -102,7 +102,7 @@
     "storybook": "10.6.1",
     "tsdown": "0.22.14",
     "tsx": "4.23.13",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "8.3.4",
     "wrangler": "4.127.1"
   },
