@@ -2,6 +2,8 @@
 
 **Reviewed 2026-10-18.** This is the Step 6 repository integration record for [#319](https://github.com/mortenbroesby/everyday-assistants/issues/319). The original [Step 0 baseline](nemlig-architecture-refactor-baseline.md) remains a snapshot of `c514d3dbb4e4f0d4adc35b188e61a17562cd5646`; this report reviews integrated `origin/main` at `b351ca0ccde313f8c6d996d434dc1827cbdcb8ed`. It is source, package, synthetic-test and CI evidence. It does not establish the currently installed ChatGPT package or native UI behavior.
 
+**Post-merge status, 2026-10-21:** [PR #336](https://github.com/mortenbroesby/everyday-assistants/pull/336) is merged. [Main CI](https://github.com/mortenbroesby/everyday-assistants/actions/runs/39516568013) and the [normal production workflow](https://github.com/mortenbroesby/everyday-assistants/actions/runs/39516712264) passed at `df60781b33b22762acaa4e00c08ca38d0c8c25a8`; the connected `get_profile` tool reported app release `6.3.0`, not a served commit SHA. Main packages private plugin `0.1.8`, while Plugin Creator reports the owned `nemlig-shopping` release is still `0.1.5`. [#295](https://github.com/mortenbroesby/everyday-assistants/issues/295) was closed as a superseded direction, without deleting historical data. The separately authorized local one-product provider readback is recorded on [#326](https://github.com/mortenbroesby/everyday-assistants/issues/326); installed-plugin and native ChatGPT acceptance remain unverified. Keep #326 and #319 open pending that evidence or an explicit owner handoff decision. The sections below retain their October 18 review-time status.
+
 ## Delivery ledger and evidence planes
 
 | Stage | Merged output | Remaining boundary |
