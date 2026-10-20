@@ -384,6 +384,14 @@ the production `ViewerPage` with clearly labeled simulated host and provider
 responses; **AppTabWalkthroughChecks** runs the companion click-through. These
 fixtures demonstrate UI behavior only and do not verify live Nemlig responses.
 
+The [hosted Storybook](https://everyday-assistants-storybook.vercel.app/) serves
+the same static fixtures from `main`. Vercel's Git integration provides a
+distinct preview for each repository-branch PR; external-fork previews require
+maintainer authorization. The dedicated Vercel project builds from the
+repository root with `pnpm --filter nemlig-assistant build:storybook` and serves
+`apps/nemlig-assistant/.codex/storybook-static`. Keep the project free of
+credentials and real user data; it is a visual fixture site, not the MCP app.
+
 The MCP resource uses the permanent `ui://nemlig/shell.html` identity. Its
 small HTML shell fetches `/ui/nemlig/manifest.json` without credentials or
 cache, validates the manifest and fixed-origin content-addressed JS/CSS with
