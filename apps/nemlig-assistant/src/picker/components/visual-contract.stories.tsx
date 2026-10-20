@@ -1572,6 +1572,21 @@ export const ShoppingListAt320: Story = {
 export const ShoppingListAt375: Story = {
   render: () => activeReview(review, "ready", 375),
 };
+export const FailedThumbnailFallback: Story = {
+  render: () =>
+    activeReview({ ...review, items: [review.items[0]!] }, "ready", 375, {
+      model: {
+        thumbnails: new Map([[milk, "/storybook-intentionally-missing.png"]]),
+      },
+    }),
+  play: async ({ canvasElement }) => {
+    await waitFor(() =>
+      expect(
+        canvasElement.querySelector('[data-viewer-component="image-fallback"]'),
+      ).toBeTruthy(),
+    );
+  },
+};
 export const ScrollableShoppingList: Story = {
   decorators: [embeddedConversation],
   render: () => <ShoppingListWalkthroughStory initialReview={longBasket} />,
