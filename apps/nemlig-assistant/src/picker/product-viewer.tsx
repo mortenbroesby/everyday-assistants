@@ -1670,6 +1670,7 @@ export function ProductViewer() {
             kind: "alternatives",
             product_id: item.product_id,
             query,
+            suggested: true,
           });
         },
         onSearchAlternatives: (product_id, query) =>
