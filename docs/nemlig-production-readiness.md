@@ -70,7 +70,7 @@ completes these steps before handing the release to the owner for testing:
    `openai/outputTemplate` and `ui.resourceUri`, then read that exact advertised
    resource. Clicking Refresh or seeing an unchanged app Version Id is not
    evidence of completion.
-3. In the intended shopping conversation, open a Local basket using exact IDs
+3. In the intended shopping conversation, open a temporary draft using exact IDs
    from a read-only product result. A successful metadata Refresh does not prove
    that an already-open conversation replaced its installed widget HTML: verify
    the current advertised resource URI and rendered viewer in that conversation.
@@ -78,14 +78,14 @@ completes these steps before handing the release to the owner for testing:
    installed tool descriptor. If the rendered document is an inert retired card,
    capture the installed descriptor and the resource URI ChatGPT requested before
    retrying, redeploying, reconnecting, or bumping the viewer identity.
-4. Follow flows 1–4 of the [native ChatGPT smoke test](nemlig-chatgpt-smoke-test.md):
-   verify the single Local basket, tap details, right-to-left swipe replacement,
-   inline controls, alternatives, quantities, long-list scrolling, and recovery
-   across remounts and conversations. These flows do not write to Nemlig. The
-   separately authorized flows 5–6 cover a real addition of more than 50 distinct
-   products and exact basket readback; they are not implied by UI acceptance.
+4. Follow flows 1–2 of the [native ChatGPT smoke test](nemlig-chatgpt-smoke-test.md):
+   verify the temporary draft, product details, alternatives, quantities, and
+   recovery across remounts. Flows 3–4 optionally cover an exact saved-list
+   source and a larger draft. These flows do not write to Nemlig. Flow 5 is an
+   optional, separately authorized real-basket addition with exact readback;
+   it is not implied by UI acceptance.
 5. Reopen/remount a historical card: retired identities must be inert and expose
-   no shopping controls. The user reopens the current Draft list conversationally;
+   no shopping controls. The user starts a current temporary draft conversationally;
    a historical card must not reactivate itself or replay a prior edit. Verify the
    current stable resource and every retired resource are registered, and that
    retired resources render an inert document; report a host-cached or
