@@ -1,3 +1,10 @@
+> Status: Superseded. PR #280 introduced durable Local basket behavior, but
+> the owner-approved temporary-draft and direct bulk Submit flow
+> in #317, #318, and #336 replaced editable Local basket persistence. Unchecked
+> tasks remain historical, not current implementation instructions. Retained
+> storage and uncertain write evidence require a separate reviewed disposition;
+> this status does not authorize namespace or data deletion.
+
 ## Why
 
 Local baskets currently live only in MCP-container memory and are keyed to a
