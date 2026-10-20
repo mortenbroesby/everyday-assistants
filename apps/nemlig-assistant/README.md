@@ -74,6 +74,9 @@ this includes existing basket rows and does not clear the basket.
 - Compare product name, ID, package, price, unit price, discount, organic
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.
+- Default alternatives stay within the product's Nemlig subcategory (or category
+  when no subcategory is available); an explicit alternatives search can range
+  across categories.
 - Use one shared product presentation when the host supports it, with a
   structured and plain-text fallback for headless clients.
 

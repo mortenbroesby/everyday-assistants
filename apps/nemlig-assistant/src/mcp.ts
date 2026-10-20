@@ -146,6 +146,7 @@ const alternativesReviewActionSchema = z.object({
   product_id: z.number().int().positive(),
   query: z.string().trim().min(1).max(200),
   limit: z.number().int().positive().optional(),
+  suggested: z.boolean().optional(),
 });
 const replaceReviewActionSchema = z.object({
   kind: z.literal("replace"),

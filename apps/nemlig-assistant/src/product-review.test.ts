@@ -1795,6 +1795,69 @@ test("alternatives omit products already present in the local review", async () 
   );
 });
 
+test("suggested alternatives keep the source subcategory while explicit searches stay open", async () => {
+  const products = new Map([
+    [
+      1,
+      {
+        ...product(1),
+        name: "Havredrik",
+        category: "Kolonial",
+        subcategory: "Plantedrikke",
+      },
+    ],
+    [
+      2,
+      {
+        ...product(2),
+        name: "Another oat drink",
+        category: "Kolonial",
+        subcategory: "Plantedrikke",
+      },
+    ],
+    [
+      3,
+      {
+        ...product(3),
+        name: "M&M's",
+        category: "Kolonial",
+        subcategory: "Chokolade",
+      },
+    ],
+  ]);
+  const service = new ProductReviewService({
+    ...client,
+    getProduct: async (id: number) => products.get(id)!,
+    searchProducts: async () => [products.get(2)!, products.get(3)!],
+  });
+  await service.startDirectBasket("owner", [{ product_id: 1, quantity: 1 }]);
+
+  const suggested = await service.update("owner", {
+    kind: "alternatives",
+    product_id: 1,
+    query: "Plantedrikke",
+    suggested: true,
+  });
+  assert.deepEqual(
+    suggested.alternatives?.views.map((view) =>
+      view.status === "complete" ? view.product.id : view.product_id,
+    ),
+    [2],
+  );
+
+  const searched = await service.update("owner", {
+    kind: "alternatives",
+    product_id: 1,
+    query: "chokolade",
+  });
+  assert.deepEqual(
+    searched.alternatives?.views.map((view) =>
+      view.status === "complete" ? view.product.id : view.product_id,
+    ),
+    [2, 3],
+  );
+});
+
 test("alternatives preserve every unique provider result in order unless the user requests a count", async () => {
   const candidates = Array.from({ length: 12 }, (_, index) =>
     product(index + 10),

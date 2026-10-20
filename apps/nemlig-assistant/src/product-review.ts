@@ -98,7 +98,13 @@ export type ProductReviewAction =
   | { kind: "quantity"; product_id: number; quantity: number }
   | { kind: "discard_pending_update" }
   | { kind: "navigate"; destination: ReviewDestination }
-  | { kind: "alternatives"; product_id: number; query: string; limit?: number }
+  | {
+      kind: "alternatives";
+      product_id: number;
+      query: string;
+      limit?: number;
+      suggested?: boolean;
+    }
   | { kind: "replace"; product_id: number; replacement_id: number };
 interface StoredReview {
   busy: boolean;
@@ -800,6 +806,14 @@ export class ProductReviewService {
           const existingIds = new Set(
             draft.items.map((item) => item.product_id),
           );
+          const sourceProduct =
+            target.view.status === "complete" ? target.view.product : undefined;
+          const sourceSubcategory =
+            sourceProduct?.subcategory?.trim().toLocaleLowerCase("da-DK") ?? "";
+          const sourceGroup =
+            sourceSubcategory ||
+            sourceProduct?.category?.trim().toLocaleLowerCase("da-DK") ||
+            "";
           draft.alternatives = {
             product_id: target.product_id,
             origin: target.state,
@@ -809,6 +823,18 @@ export class ProductReviewService {
                 (item) =>
                   item.productId === undefined ||
                   !existingIds.has(item.productId),
+              )
+              .filter(
+                (item) =>
+                  !action.suggested ||
+                  !sourceGroup ||
+                  (item.status === "hydrated" &&
+                    (sourceSubcategory
+                      ? item.product.subcategory
+                      : item.product.category
+                    )
+                      ?.trim()
+                      .toLocaleLowerCase("da-DK") === sourceGroup),
               )
               .slice(0, action.limit)
               .map((item) => createProductView(item, { kind: "details" })),
