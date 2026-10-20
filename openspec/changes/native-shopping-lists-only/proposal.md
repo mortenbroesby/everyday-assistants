@@ -1,7 +1,9 @@
-> Editing-flow update: [native-shopping-list-first](../native-shopping-list-first/proposal.md)
-> supersedes this change's unsaved drafts and manual Save/Update stages with
-> immediate native-list creation and automatically persisted edits. This document
-> retains the earlier decisions and separately scoped storage-retirement work.
+> Status: Superseded by the owner-approved temporary-draft and direct bulk
+> Submit flow in #317, #318, and #336. This proposal's native-list Save/Update,
+> transfer, and source-list deletion are historical decisions, not the current
+> product contract. Unchecked tasks remain historical. Retained storage and
+> uncertain write evidence still need separately reviewed disposition; this
+> status does not authorize namespace or data deletion.
 
 ## Why
 
