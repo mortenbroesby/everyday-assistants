@@ -17,6 +17,15 @@ Present exact returned product names, brands, package sizes, DKK package prices,
 
 When the user chooses exact products and quantities for visual editing, call `start_product_review` with `items: [{product_id, quantity}]`. This creates a temporary process-local draft, not a saved Nemlig shopping list. Draft edits do not change the real basket. Plain search/comparison stays read-only. Respect a display-only request: use text and read-only search instead of creating a draft. Do not make an imitation card or claim that a widget rendered merely because a tool returned data.
 
+To show, display, open, browse, review, or compare an existing temporary draft,
+call `show_product_review` with its exact `draft_id` and `review_context_id`, or
+only when the current trusted conversation owns the active draft. It is
+read-only and does not create a draft, approve Submit, or prove a host rendered
+a card. Use `view: "saved_lists"` only for the read-only saved-list picker;
+selecting a source remains a separate explicit action. Do not use it for the
+actual basket, a text-only explanation, unrelated display, or an ambiguous
+target.
+
 To load a saved list as a read-only source, call `start_product_review` with its exact `shopping_list_id` and no `items`. To discover lists, omit both inputs, then select by exact ID; never infer a target from its name or another conversation's card. The source list is never edited or deleted by draft actions or submission. Do not supply `creation_id` or `shopping_list_name` for temporary drafts, or combine `items` with `shopping_list_id`.
 
 Continue the active draft through `update_product_review_conversation`, passing its exact `draft_id`, `review_context_id`, and `action` (for example `{kind: "quantity", product_id, quantity}`). Add, remove, replace, and quantity actions change only this draft. Searching alternatives and viewing details are read-only. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain available until resolved. All process-local drafts disappear after a server restart. If a draft is unavailable, explain the loss and start a new one only from newly confirmed exact products; never silently reuse a stale card or restore submission authority.

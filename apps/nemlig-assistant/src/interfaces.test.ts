@@ -30,7 +30,10 @@ import {
   assertProductionInventory,
   productionToolInventory,
 } from "./production-acceptance.js";
-import { type ProductReviewSnapshot } from "./product-review.js";
+import {
+  ProductReviewService,
+  type ProductReviewSnapshot,
+} from "./product-review.js";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -424,6 +427,13 @@ const friendlyCatalog = [
   ["get_profile", "Get my Nemlig profile", true, false, []],
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   [
+    "show_product_review",
+    "Show my temporary draft",
+    true,
+    false,
+    ["draft_id", "review_context_id", "view"],
+  ],
+  [
     "start_product_review",
     "Review products before a basket addition",
     false,
@@ -559,7 +569,11 @@ test("direct draft catalog exposes its input contract and loading status", async
       const tool = (await mcp.listTools()).tools.find(
         ({ name }) => name === "start_product_review",
       );
+      const display = (await mcp.listTools()).tools.find(
+        ({ name }) => name === "show_product_review",
+      );
       assert.ok(tool);
+      assert.ok(display);
       assert.deepEqual(tool.inputSchema.anyOf, [
         {
           required: ["items"],
@@ -594,8 +608,32 @@ test("direct draft catalog exposes its input contract and loading status", async
       );
       assert.equal(
         tool._meta?.["openai/toolInvocation/invoked"],
-        "Draft ready for review",
+        "Draft prepared; display it to review",
       );
+      assert.deepEqual(display.inputSchema.anyOf, [
+        {
+          properties: { view: { const: "draft" } },
+          required: ["draft_id", "review_context_id"],
+        },
+        {
+          properties: { view: { const: "draft" } },
+          not: {
+            anyOf: [
+              { required: ["draft_id"] },
+              { required: ["review_context_id"] },
+            ],
+          },
+        },
+        {
+          properties: { view: { const: "saved_lists" } },
+          not: {
+            anyOf: [
+              { required: ["draft_id"] },
+              { required: ["review_context_id"] },
+            ],
+          },
+        },
+      ]);
       const tools = (await mcp.listTools()).tools;
       const modelTools = tools.filter((candidate) =>
         (
@@ -648,7 +686,7 @@ test("direct draft catalog exposes its input contract and loading status", async
   );
 });
 
-test("hosted conversation show exposes the existing review UI without replacing the draft", async () => {
+test("hosted display is the only review renderer and returns exact read-only draft data", async () => {
   let productReads = 0;
   let basketWrites = 0;
   let listWrites = 0;
@@ -687,18 +725,24 @@ test("hosted conversation show exposes the existing review UI without replacing 
       const update = tools.find(
         ({ name }) => name === "update_product_review_conversation",
       );
+      const show = tools.find(({ name }) => name === "show_product_review");
       const appUpdate = tools.find(
         ({ name }) => name === "update_product_review",
       );
       assert.ok(start);
       assert.ok(update);
+      assert.ok(show);
       assert.ok(appUpdate);
+      assert.deepEqual(start._meta?.ui, { visibility: ["model"] });
       assert.deepEqual(update._meta?.ui, {
+        visibility: ["model"],
+      });
+      assert.deepEqual(show._meta?.ui, {
         resourceUri: PRODUCT_VIEWER_RESOURCE_URI,
         visibility: ["model"],
       });
       assert.equal(
-        update._meta?.["openai/outputTemplate"],
+        show._meta?.["openai/outputTemplate"],
         PRODUCT_VIEWER_RESOURCE_URI,
       );
       assert.deepEqual(appUpdate._meta?.ui, {
@@ -716,11 +760,10 @@ test("hosted conversation show exposes the existing review UI without replacing 
       ).review;
       const readsAfterCreate = productReads;
       const shown = await mcp.callTool({
-        name: "update_product_review_conversation",
+        name: "show_product_review",
         arguments: {
           draft_id: review.draftId,
           review_context_id: review.reviewContextId,
-          action: { kind: "show" },
         },
       });
       assert.equal(shown.isError, undefined, toolText(shown));
@@ -731,10 +774,13 @@ test("hosted conversation show exposes the existing review UI without replacing 
       assert.equal(
         productReads,
         readsAfterCreate,
-        "show does not recreate a draft",
+        "display does not recreate a draft",
       );
       assert.equal(basketWrites, 0, "show does not change the basket");
       assert.equal(listWrites, 0, "show does not create or edit a saved list");
+      assert.ok(review.draftId);
+      assert.match(toolText(shown), new RegExp(review.draftId, "u"));
+      assert.match(toolText(shown), /"quantity":2/u);
     },
   );
 
@@ -746,23 +792,121 @@ test("hosted conversation show exposes the existing review UI without replacing 
       const update = tools.find(
         ({ name }) => name === "update_product_review_conversation",
       );
+      const show = tools.find(({ name }) => name === "show_product_review");
       const appUpdate = tools.find(
         ({ name }) => name === "update_product_review",
       );
       assert.ok(start);
       assert.ok(update);
+      assert.ok(show);
       assert.ok(appUpdate);
       const startUi = start._meta?.ui as { resourceUri?: string } | undefined;
       const updateUi = update._meta?.ui as { resourceUri?: string } | undefined;
+      const showUi = show._meta?.ui as { resourceUri?: string } | undefined;
       assert.equal(startUi?.resourceUri, undefined);
       assert.equal(updateUi?.resourceUri, undefined);
+      assert.equal(showUi?.resourceUri, undefined);
       assert.equal(start._meta?.["openai/outputTemplate"], undefined);
       assert.equal(update._meta?.["openai/outputTemplate"], undefined);
+      assert.equal(show._meta?.["openai/outputTemplate"], undefined);
       assert.deepEqual(appUpdate._meta?.ui, {
         visibility: ["app"],
       });
     },
   );
+});
+
+test("display reads exact cached drafts without provider login and rejects unsafe targets", async () => {
+  let providerCalls = 0;
+  const source = fakeClient({ getFreshProduct: async () => product });
+  const reviews = new ProductReviewService(source);
+  const requestContext = {
+    principalKey: "auth0|cached-display-owner",
+    policyRevision: "test-v1",
+  };
+  let review: ProductReviewSnapshot | undefined;
+  await withMcpClient(
+    createMcpServer(
+      source,
+      testCredentials,
+      undefined,
+      requestContext,
+      reviews,
+    ),
+    async (mcp) => {
+      const created = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 2 }] },
+      });
+      assert.equal(created.isError, undefined, toolText(created));
+      review = (created.structuredContent as { review: ProductReviewSnapshot })
+        .review;
+    },
+  );
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Could not create an exact draft for cached-display test");
+  }
+  const exactReview = review;
+  const unavailableProvider = fakeClient({
+    isLoggedIn: () => {
+      providerCalls += 1;
+      throw new Error("display must not authenticate");
+    },
+    listShoppingLists: async () => {
+      providerCalls += 1;
+      throw new Error("display must not read saved lists");
+    },
+  });
+  await withMcpClient(
+    createMcpServer(
+      unavailableProvider,
+      async () => {
+        providerCalls += 1;
+        throw new Error("display must not load credentials");
+      },
+      undefined,
+      requestContext,
+      reviews,
+    ),
+    async (mcp) => {
+      const shown = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(shown.isError, undefined, toolText(shown));
+      assert.equal(
+        (shown.structuredContent as { review: ProductReviewSnapshot }).review
+          .draftId,
+        exactReview.draftId,
+      );
+      const partial = await mcp.callTool({
+        name: "show_product_review",
+        arguments: { draft_id: exactReview.draftId },
+      });
+      assert.equal(partial.isError, true);
+      const mismatched = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exactReview.draftId,
+          review_context_id: randomUUID(),
+        },
+      });
+      assert.equal(mismatched.isError, true);
+      const savedWithDraft = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          view: "saved_lists",
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(savedWithDraft.isError, true);
+    },
+  );
+  assert.equal(providerCalls, 0);
 });
 
 test("conversation guidance skips unsupported preparation and binds fresh submit IDs", async () => {
@@ -847,7 +991,9 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
             ...(name === "start_product_review" ||
             name === "update_product_review_conversation"
               ? { idempotentHint: false }
-              : {}),
+              : name === "show_product_review"
+                ? { idempotentHint: true }
+                : {}),
             openWorldHint: name !== "get_profile",
           },
           name,
@@ -1482,19 +1628,19 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
             httpTools.tools.map(({ name }) => name),
             stdioTools.tools.map(({ name }) => name),
           );
-          const stdioStart = stdioTools.tools.find(
-            ({ name }) => name === "start_product_review",
+          const stdioShow = stdioTools.tools.find(
+            ({ name }) => name === "show_product_review",
           );
-          const httpStart = httpTools.tools.find(
-            ({ name }) => name === "start_product_review",
+          const httpShow = httpTools.tools.find(
+            ({ name }) => name === "show_product_review",
           );
           assert.equal(
-            (stdioStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+            (stdioShow?._meta as { ui?: { resourceUri?: string } } | undefined)
               ?.ui?.resourceUri,
             undefined,
           );
           assert.equal(
-            (httpStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+            (httpShow?._meta as { ui?: { resourceUri?: string } } | undefined)
               ?.ui?.resourceUri,
             PRODUCT_VIEWER_RESOURCE_URI,
           );

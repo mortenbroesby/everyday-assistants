@@ -383,6 +383,7 @@ function hasUnselectedReview(value: unknown) {
   return (
     isRecord(value) &&
     isReview(value) &&
+    value.basketMode !== "direct-basket" &&
     !isPositiveSafeInteger(value.shoppingListId) &&
     value.items.length === 0 &&
     value.actionNotice === undefined &&

@@ -25,6 +25,7 @@ export const productionToolInventory = {
     "check_nemlig_connection",
     "get_profile",
     "show_my_basket",
+    "show_product_review",
   ],
   externalState: [
     "start_product_review",
@@ -159,6 +160,7 @@ export function assertProductionInventory(
   }
   const metadata = new Map(tools.map(({ name, _meta }) => [name, _meta]));
   for (const name of [
+    "show_product_review",
     "start_product_review",
     "update_product_review_conversation",
     "submit_product_review_conversation",
@@ -169,9 +171,7 @@ export function assertProductionInventory(
       `Production ${name} metadata drifted`,
     );
     const value = actual as Record<string, unknown>;
-    const advertisesViewer =
-      name === "start_product_review" ||
-      name === "update_product_review_conversation";
+    const advertisesViewer = name === "show_product_review";
     const expectedUi = advertisesViewer
       ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
       : { visibility: ["model"] };

@@ -13,8 +13,8 @@ Product search and temporary-draft edits do not write a Nemlig shopping list or 
 ## Flow 1 — Search and temporary draft
 
 1. Search for exact products with `find_groceries`; check returned names, sizes, prices, availability, and IDs. Verify that search alone does not create a draft or provider list.
-2. Request visual editing of the chosen exact products. Confirm the tool call is `start_product_review` with `items: [{product_id, quantity}]`, no `creation_id`, and no `shopping_list_id`.
-3. Confirm the current card renders those products and quantities as a temporary draft. Record the loading feedback and time to render; the tool result alone does not prove the card rendered.
+2. Request visual editing of the chosen exact products. Confirm the tool call is `start_product_review` with `items: [{product_id, quantity}]`, no `creation_id`, and no `shopping_list_id`, then `show_product_review` with the exact returned `draft_id` and `review_context_id`.
+3. Confirm the current card renders those products and quantities as a temporary draft from the display result. Record the loading feedback and time to render; the tool result alone does not prove the card rendered.
 
 **Pass:** one editable temporary draft appears, no native list is created, and no basket write occurs. Missing or uncertain UI is reported rather than replaced with an imitation card.
 
@@ -22,7 +22,7 @@ Product search and temporary-draft edits do not write a Nemlig shopping list or 
 
 1. In the rendered card, inspect details, alternatives, and close behavior. Check mobile long press or desktop Shift+F10 separately; a desktop shortcut does not prove mobile gesture support.
 2. Change an approved quantity, replace one product, and remove one product. Confirm the card reflects the exact result and the saved-list source and real basket remain unchanged.
-3. Reload the current card while the draft is active. Check the resulting state and error handling. Unprotected drafts expire after two hours of inactivity; unresolved work remains available until resolved. No process-local draft survives a server restart; do not claim persistent edits from this flow.
+3. Reload the current card while the draft is active with `show_product_review`. Check the resulting state and error handling. Unprotected drafts expire after two hours of inactivity; unresolved work remains available until resolved. No process-local draft survives a server restart; do not claim persistent edits from this flow.
 4. If a draft becomes unavailable, confirm the UI explains it without silently recreating a different draft or restoring submission authority. Start a new draft only from reconfirmed exact products.
 
 **Pass:** local changes remain associated with the exact active draft; an expired or unavailable draft is reported honestly. An error leaves understandable, recoverable UI rather than silently switching products.
@@ -66,5 +66,23 @@ Optional whole-basket save: PASS | FAIL | NOT RUN — separately authorized?
 Mobile long press: PASS | FAIL | NOT RUN — device
 Provider writes / unresolved uncertainty / follow-up defects:
 ```
+
+## Display-routing prompt matrix
+
+Record expected routing separately from what ChatGPT actually selected. For an
+unpublished candidate, all observed columns are **NOT RUN**: deterministic
+strings and synthetic smoke are not model evaluations.
+
+| Prompt type | Expected tool / outcome | Observed host result |
+| --- | --- | --- |
+| Direct: “Show my draft” | `show_product_review` | NOT RUN |
+| Indirect: “Let me compare them” | display exact active draft | NOT RUN |
+| Danish: “Vis mig listen” / “Åbn kladden” | `show_product_review` | NOT RUN |
+| Follow-up after edit | display same exact handles | NOT RUN |
+| Actual basket: “Show my Nemlig basket” | `show_my_basket` | NOT RUN |
+| Text-only explanation | no renderer required | NOT RUN |
+| Ambiguous/unrelated display | clarify; do not create or submit | NOT RUN |
+| Stale draft | actionable unavailable; no reconstruction | NOT RUN |
+| Uncertain submission | display state only; no replay | NOT RUN |
 
 Keep implementation, deployment, native ChatGPT interaction, and provider readback evidence separate. A blocked login makes dependent flows **NOT RUN**.

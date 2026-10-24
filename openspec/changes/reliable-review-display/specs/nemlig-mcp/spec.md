@@ -60,6 +60,18 @@ The system SHALL expose `show_product_review` to display an existing temporary d
 - **WHEN** an existing draft contains a submission result or uncertainty
 - **THEN** display preserves that state and does not replay, reset, or authorize submission
 
+#### Scenario: Provider access is unavailable
+- **WHEN** an authenticated MCP user displays an existing cached draft while Nemlig access is unavailable
+- **THEN** the draft is returned without provider login or reads, retaining exact owner checks; saved-list discovery still requires authenticated provider access
+
+#### Scenario: Last draft row was removed
+- **WHEN** the user displays a valid direct-basket draft with zero rows
+- **THEN** the same empty draft remains in the editor with its identity intact rather than being replaced by a saved-list picker
+
+#### Scenario: Client reads only text content
+- **WHEN** a client consumes display text without structured content or UI support
+- **THEN** the text contains the returned draft identities, rows, quantities and relevant state, or saved-list identities and names, rather than only a generic display acknowledgement
+
 ### Requirement: Safe conversational display target
 Display SHALL accept an exact draft/context pair or an existing active draft selected only through a trustworthy current session. It SHALL NOT guess by account-wide recency, name, or reconstructed chat text. Explicit invalid targets SHALL NOT fall back to another draft. No-target unavailable context SHALL return actionable guidance without creating a draft.
 

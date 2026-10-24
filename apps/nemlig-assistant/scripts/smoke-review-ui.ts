@@ -294,9 +294,14 @@ let transcript, offline = false, initialized = false, conversationMessages = 0;
 const widgetCalls = [], widgetResults = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
+const display = async prepared => {
+ const review=prepared.structuredContent?.review;
+ if(!review?.draftId||!review?.reviewContextId)return prepared;
+ return call({name:'show_product_review',arguments:{draft_id:review.draftId,review_context_id:review.reviewContextId}});
+};
 const waitForStats=async predicate=>{const until=Date.now()+15000;while(Date.now()<until){const stats=await fetch('/stats').then(r=>r.json());if(predicate(stats))return stats;await new Promise(r=>setTimeout(r,25));}throw new Error('Timed out waiting for provider stats');};
 document.getElementById('start').onclick = async () => {
- transcript = await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}],creation_id:'00000000-0000-4000-8000-000000000001'}});
+ transcript = await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}],creation_id:'00000000-0000-4000-8000-000000000001'}}));
  publish();
  status.textContent='Selection shown';
 };
@@ -328,7 +333,7 @@ document.getElementById('run').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{shopping_list_id:77}});
+  transcript=await display(await call({name:'start_product_review',arguments:{shopping_list_id:77}}));
   frame.src='/viewer'; await wait(()=>initialized); publish();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===transcript.structuredContent.review.draftId));
   await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);
@@ -406,7 +411,7 @@ document.getElementById('alternatives').onclick = async () => {
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}}); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
+  transcript=await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}})); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
   await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
   const draft=transcript.structuredContent.review;
   const targetArgs={draft_id:draft.draftId,review_context_id:draft.reviewContextId};
@@ -441,7 +446,7 @@ document.getElementById('uncertain').onclick = async () => {
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1}]}});
+  transcript=await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1}]}}));
   frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
   await wait(()=>doc()?.querySelectorAll('.product-list .product-card').length===1&&text().includes('Smoke product 1'));
   const stale=transcript;
@@ -595,6 +600,7 @@ const server = createServer((req, res) => {
       if (
         ![
           "start_product_review",
+          "show_product_review",
           "update_product_review",
           "submit_product_review",
           "update_product_review_conversation",
@@ -701,8 +707,30 @@ try {
     arguments: { items: [{ product_id: 7, quantity: 2 }] },
     _meta: { "openai/session": "review-ui-smoke-conversation" },
   });
-  const review = (
+  const startedReview = (
     started.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!startedReview?.draftId || !startedReview.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const displayed = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: startedReview.draftId,
+      review_context_id: startedReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const review = (
+    displayed.structuredContent as
       | {
           review?: {
             draftId: string;
