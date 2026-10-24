@@ -86,3 +86,31 @@ strings and synthetic smoke are not model evaluations.
 | Uncertain submission | display state only; no replay | NOT RUN |
 
 Keep implementation, deployment, native ChatGPT interaction, and provider readback evidence separate. A blocked login makes dependent flows **NOT RUN**.
+
+## Local tool-catalog measurement
+
+The bounded local measurement uses a loopback MCP client in the hosted request
+context, captures the actual JSON `tools/list` response bytes, and separately
+counts model-visible tools. It performs no provider, credential, network, or
+model call:
+
+```sh
+pnpm --filter nemlig-assistant exec tsx scripts/measure-tool-catalog.ts
+```
+
+For the pre-change baseline, archive only
+`254789f61bfc73b7791e950e45691c5293ce0a85`, copy the same measurement script
+into that archive, link its `apps/nemlig-assistant/node_modules` to this
+worktree's already-installed package dependencies, and run the command through
+this worktree's `tsx`. This keeps the harness and hosted context constant while
+loading the baseline runtime source; remove that bounded temporary archive after
+the measurement.
+
+| Revision | Serialized `tools/list` bytes | Model-visible tools | Total tools |
+| --- | ---: | ---: | ---: |
+| `254789f61bfc73b7791e950e45691c5293ce0a85` baseline | 120,136 | 7 | 10 |
+| `codex/nemlig-review-display` candidate worktree | 137,824 | 8 | 11 |
+
+The candidate adds 17,688 serialized bytes (14.72%) and one model-visible tool.
+This is deterministic catalog evidence only; it does not establish native
+ChatGPT routing or rendering.

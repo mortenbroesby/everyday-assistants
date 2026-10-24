@@ -729,7 +729,7 @@ try {
     },
     _meta: { "openai/session": "review-ui-smoke-conversation" },
   });
-  const review = (
+  const displayedReview = (
     displayed.structuredContent as
       | {
           review?: {
@@ -740,8 +740,53 @@ try {
         }
       | undefined
   )?.review;
-  if (!review?.draftId || !review.reviewContextId) {
+  if (!displayedReview?.draftId || !displayedReview.reviewContextId) {
     throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const edited = await client.callTool({
+    name: "update_product_review_conversation",
+    arguments: {
+      draft_id: displayedReview.draftId,
+      review_context_id: displayedReview.reviewContextId,
+      action: { kind: "quantity", product_id: 7, quantity: 3 },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const editedReview = (
+    edited.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!editedReview?.draftId || !editedReview.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not edit a draft");
+  }
+  const redisplayed = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: editedReview.draftId,
+      review_context_id: editedReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const review = (
+    redisplayed.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not redisplay a draft");
   }
   const submit = () =>
     client.callTool({
@@ -752,7 +797,7 @@ try {
         submission_id: "77777777-7777-4777-8777-777777777777",
         reviewed_list: {
           name: review.shoppingListName ?? "Smoke draft",
-          items: [{ product_id: 7, quantity: 2 }],
+          items: [{ product_id: 7, quantity: 3 }],
         },
       },
       _meta: { "openai/session": "review-ui-smoke-conversation" },
@@ -770,7 +815,7 @@ try {
     ) !==
       JSON.stringify([
         [90, 3],
-        [7, 2],
+        [7, 3],
       ])
   ) {
     throw new Error(

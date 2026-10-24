@@ -260,11 +260,12 @@ The MCP surface is organized around household actions:
   draft without creating a Nemlig list. Pass `shopping_list_id` to load that
   exact saved list as a read-only source into a new draft; omit both to discover
   saved lists.
-- Display an existing temporary draft with `show_product_review`. It accepts an
-  exact `draft_id` and `review_context_id` pair, or uses only the current
-  trusted conversation; `view: "saved_lists"` opens the read-only saved-list
-  picker without loading a source. It never creates, changes, submits, or
-  authorizes a draft.
+- Use `show_product_review` when someone wants to show, display, open, browse,
+  review, or compare an existing temporary draft. It accepts an exact
+  `draft_id` and `review_context_id` pair, or uses only the current trusted
+  conversation; `view: "saved_lists"` opens the read-only saved-list picker
+  without loading a source. It never creates, changes, submits, or authorizes
+  a draft.
 - Edit or find alternatives with `update_product_review_conversation`. Carry
   the exact `draft_id` and `review_context_id` from the card. Edits are local;
   use `show_product_review` for a hosted visual review;
