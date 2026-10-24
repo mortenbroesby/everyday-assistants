@@ -24,7 +24,9 @@ Delivery status and user-facing stories: [epic #347](https://github.com/mortenbr
 ## 4. Integration and handoff
 
 - [x] 4.1 Format changed executable files, run fast lint and focused tests, and review the final diff; record passing commands and concrete safety findings without duplicating comprehensive CI suites locally.
-- [ ] 4.2 Commit/push with normal hooks, reconcile current main, and inspect exact-head CI and review findings; keep failures/pending checks explicit.
-- [ ] 4.3 Reconcile epic, OpenSpec, README and PR status; report exact commit, automated evidence, migration notes and remaining release/native-host gates. No version bump, merge or deployment is part of this implementation task.
+- [x] 4.2 Commit/push with normal hooks, reconcile current main, and inspect exact-head CI and review findings; keep failures/pending checks explicit.
+- [x] 4.3 Reconcile epic, OpenSpec, README and PR status; report exact commit, automated evidence, migration notes and remaining release/native-host gates. No version bump, merge or deployment is part of this implementation task.
+
+Implementation evidence: code checkpoint `2fb2e7f` passed exact-head [CI run 40091765096](https://github.com/mortenbroesby/everyday-assistants/actions/runs/40091765096), including verify, Fallow, 443 app tests, build/type checks, and both browser smoke suites. Normal hooks passed, current main remains `254789f`, and Astra's integration review plus independent source review findings were addressed. Epic #347 and PR #348 track final-head checks and the additional manual CodeRabbit review; its earlier automatic success status represented a skipped review. Native-host acceptance is not inferred from any automated result.
 
 Native-host release acceptance remains a separate open epic gate until the candidate can be accessed through an approved connection. The implementation must deliver its repeatable procedure and honest evidence status; it must not claim this gate from local metadata or synthetic browser tests.
