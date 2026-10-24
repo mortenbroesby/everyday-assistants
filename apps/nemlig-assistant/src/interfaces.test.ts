@@ -648,6 +648,169 @@ test("direct draft catalog exposes its input contract and loading status", async
   );
 });
 
+test("hosted conversation show exposes the existing review UI without replacing the draft", async () => {
+  let productReads = 0;
+  let basketWrites = 0;
+  let listWrites = 0;
+  const client = fakeClient({
+    getFreshProduct: async () => {
+      productReads += 1;
+      return product;
+    },
+    getCart: async () => basket,
+    addToCart: async () => {
+      basketWrites += 1;
+      return basket;
+    },
+    addManyToCart: async () => {
+      basketWrites += 1;
+      return basket;
+    },
+    createShoppingList: async () => {
+      listWrites += 1;
+      return 1001;
+    },
+    updateShoppingListProduct: async () => {
+      listWrites += 1;
+    },
+  });
+  const requestContext = {
+    principalKey: "hosted-review-owner",
+    policyRevision: "test-v1",
+  };
+
+  await withMcpClient(
+    createMcpServer(client, testCredentials, undefined, requestContext),
+    async (mcp) => {
+      const tools = (await mcp.listTools()).tools;
+      const start = tools.find(({ name }) => name === "start_product_review");
+      const update = tools.find(
+        ({ name }) => name === "update_product_review_conversation",
+      );
+      const appUpdate = tools.find(
+        ({ name }) => name === "update_product_review",
+      );
+      assert.ok(start);
+      assert.ok(update);
+      assert.ok(appUpdate);
+      assert.deepEqual(update._meta?.ui, {
+        resourceUri: PRODUCT_VIEWER_RESOURCE_URI,
+        visibility: ["model"],
+      });
+      assert.equal(
+        update._meta?.["openai/outputTemplate"],
+        PRODUCT_VIEWER_RESOURCE_URI,
+      );
+      assert.deepEqual(appUpdate._meta?.ui, {
+        visibility: ["app"],
+      });
+      assert.equal(appUpdate._meta?.["openai/widgetAccessible"], true);
+
+      const created = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 2 }] },
+      });
+      assert.equal(created.isError, undefined, toolText(created));
+      const review = (
+        created.structuredContent as { review: ProductReviewSnapshot }
+      ).review;
+      const readsAfterCreate = productReads;
+      const shown = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+          action: { kind: "show" },
+        },
+      });
+      assert.equal(shown.isError, undefined, toolText(shown));
+      assert.deepEqual(
+        (shown.structuredContent as { review: ProductReviewSnapshot }).review,
+        review,
+      );
+      assert.equal(
+        productReads,
+        readsAfterCreate,
+        "show does not recreate a draft",
+      );
+      assert.equal(basketWrites, 0, "show does not change the basket");
+      assert.equal(listWrites, 0, "show does not create or edit a saved list");
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(fakeClient(), testCredentials),
+    async (mcp) => {
+      const tools = (await mcp.listTools()).tools;
+      const start = tools.find(({ name }) => name === "start_product_review");
+      const update = tools.find(
+        ({ name }) => name === "update_product_review_conversation",
+      );
+      const appUpdate = tools.find(
+        ({ name }) => name === "update_product_review",
+      );
+      assert.ok(start);
+      assert.ok(update);
+      assert.ok(appUpdate);
+      const startUi = start._meta?.ui as { resourceUri?: string } | undefined;
+      const updateUi = update._meta?.ui as { resourceUri?: string } | undefined;
+      assert.equal(startUi?.resourceUri, undefined);
+      assert.equal(updateUi?.resourceUri, undefined);
+      assert.equal(start._meta?.["openai/outputTemplate"], undefined);
+      assert.equal(update._meta?.["openai/outputTemplate"], undefined);
+      assert.deepEqual(appUpdate._meta?.ui, {
+        visibility: ["app"],
+      });
+    },
+  );
+});
+
+test("conversation guidance skips unsupported preparation and binds fresh submit IDs", async () => {
+  await withMcpClient(
+    createMcpServer(fakeClient(), testCredentials),
+    async (mcp) => {
+      const tools = (await mcp.listTools()).tools;
+      const update = tools.find(
+        ({ name }) => name === "update_product_review_conversation",
+      );
+      const submit = tools.find(
+        ({ name }) => name === "submit_product_review_conversation",
+      );
+      const appUpdate = tools.find(
+        ({ name }) => name === "update_product_review",
+      );
+      assert.ok(update);
+      assert.ok(submit);
+      assert.ok(appUpdate);
+      const modelProperties = update.inputSchema.properties;
+      const appProperties = appUpdate.inputSchema.properties;
+      const submitProperties = submit.inputSchema.properties;
+      assert.ok(modelProperties);
+      assert.ok(appProperties);
+      assert.ok(submitProperties);
+      const modelAction = JSON.stringify(modelProperties.action);
+      assert.doesNotMatch(modelAction, /prepare_submission/u);
+      assert.doesNotMatch(modelAction, /discard_pending_update/u);
+      assert.doesNotMatch(update.description ?? "", /submission preparation/u);
+      const appAction = JSON.stringify(appProperties.action);
+      assert.match(appAction, /prepare_submission/u);
+      assert.match(appAction, /discard_pending_update/u);
+      const submitId = submitProperties.submission_id as {
+        description?: string;
+      };
+      assert.match(submitId.description ?? "", /fresh.*UUID/iu);
+      assert.doesNotMatch(
+        submitId.description ?? "",
+        /prepared submission reference/iu,
+      );
+      assert.match(
+        submit.description ?? "",
+        /never retry an uncertain result/iu,
+      );
+    },
+  );
+});
+
 test("MCP exposes the complete friendly catalog and clean missing-credential errors", async () => {
   const client = fakeClient({ isLoggedIn: () => false });
   await withMcpClient(

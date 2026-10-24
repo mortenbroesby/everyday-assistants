@@ -46,7 +46,10 @@ const userToolMetadata = {
     ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] },
     "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI,
   },
-  update_product_review_conversation: { ui: { visibility: ["model"] } },
+  update_product_review_conversation: {
+    ui: { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] },
+    "openai/outputTemplate": PRODUCT_VIEWER_RESOURCE_URI,
+  },
   submit_product_review_conversation: { ui: { visibility: ["model"] } },
   update_product_review: {
     ui: { visibility: ["app"] },

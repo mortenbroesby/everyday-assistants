@@ -169,10 +169,12 @@ export function assertProductionInventory(
       `Production ${name} metadata drifted`,
     );
     const value = actual as Record<string, unknown>;
-    const expectedUi =
-      name === "start_product_review"
-        ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
-        : { visibility: ["model"] };
+    const advertisesViewer =
+      name === "start_product_review" ||
+      name === "update_product_review_conversation";
+    const expectedUi = advertisesViewer
+      ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI, visibility: ["model"] }
+      : { visibility: ["model"] };
     assert.deepEqual(
       value.ui,
       expectedUi,
@@ -180,7 +182,7 @@ export function assertProductionInventory(
     );
     assert.equal(
       value["openai/outputTemplate"],
-      name === "start_product_review" ? PRODUCT_VIEWER_RESOURCE_URI : undefined,
+      advertisesViewer ? PRODUCT_VIEWER_RESOURCE_URI : undefined,
       `Production ${name} output template metadata drifted`,
     );
     assert.equal(

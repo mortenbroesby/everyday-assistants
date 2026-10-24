@@ -157,9 +157,7 @@ const modelReviewActionSchema = z.discriminatedUnion("kind", [
   showReviewActionSchema,
   ...localActionSchema.options,
   addReviewActionSchema,
-  discardPendingUpdateActionSchema,
   abandonDraftActionSchema,
-  prepareReviewActionSchema,
   removeReviewActionSchema,
   quantityReviewActionSchema,
   navigateReviewActionSchema,
@@ -1206,13 +1204,19 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         "Update the exact temporary draft identified by draft_id and review_context_id. Product edits remain local; they do not change Nemlig until explicit Submit.",
       inputSchema: reviewInputSchema(
         modelReviewActionSchema.describe(
-          "The requested product-review change, navigation, refresh, or submission preparation.",
+          "Show or edit the exact temporary draft. After the user clearly approves adding its exact reviewed contents, submit it with submit_product_review_conversation.",
         ),
       ),
       outputSchema: draftActionOutputSchema,
       annotations: reviewActionAnnotations,
       _meta: {
-        ui: { visibility: ["model"] },
+        ...(requestContext ? PRODUCT_VIEWER_RESOURCE_METADATA : {}),
+        ui: {
+          ...(requestContext
+            ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }
+            : {}),
+          visibility: ["model"],
+        },
         "openai/toolInvocation/invoking":
           "Updating your temporary basket draft…",
         "openai/toolInvocation/invoked": "Draft result received",
@@ -1313,7 +1317,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
           .string()
           .uuid()
           .describe(
-            "The exact prepared submission reference bound to the user's clear add instruction or explicit approval.",
+            "A fresh unique UUID for this exact submission after the user's clear add instruction or explicit approval. If the result is uncertain, inspect the basket and do not retry with this or a new ID.",
           ),
       ),
       outputSchema: durableReviewResultSchema,
