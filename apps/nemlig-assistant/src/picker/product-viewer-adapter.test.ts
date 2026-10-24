@@ -57,6 +57,37 @@ test("viewer decodes the current shared review contract without losing draft exp
   });
 });
 
+test("an empty direct draft stays in its editor instead of opening saved-list picker", () => {
+  const review = { ...draftReview(), items: [] };
+  assert.deepEqual(readPayload({ structuredContent: { review } }), {
+    kind: "review",
+    review,
+    active: true,
+  });
+});
+
+test("viewer recognizes a verified result-only replay receipt", () => {
+  assert.deepEqual(
+    readPayload({
+      result: {
+        status: "completed",
+        operation: "additions",
+        replayed: true,
+        basket: { items: [] },
+      },
+    }),
+    {
+      kind: "replayed",
+      result: {
+        status: "completed",
+        operation: "additions",
+        replayed: true,
+        basket: { items: [] },
+      },
+    },
+  );
+});
+
 test("viewer rejects corrupt review data and keeps cached optional fields compatible", () => {
   const review = draftReview();
   assert.equal(

@@ -88,7 +88,11 @@ remove or reduce anything, direct them to manage that directly on Nemlig.com.
 Search and browse products read-only. When the user chooses exact products for
 visual editing, call `start_product_review` with `items` and positive
 quantities to create a temporary draft, without `creation_id`. Carry its exact
-`draft_id` and `review_context_id` through edits. To use a saved list, load its
+`draft_id` and `review_context_id` through edits. To display that draft, call
+`show_product_review` with the exact pair (or only in its trustworthy current
+conversation); it is read-only and never authorizes Submit. Use
+`show_product_review` with `view: "saved_lists"` only to display the saved-list
+picker. To use a saved list, load its
 exact `shopping_list_id` as a read-only source into a new draft; do not mutate
 or delete the source. Unprotected drafts expire after two hours of inactivity;
 unresolved work remains available until resolved. No process-local draft survives

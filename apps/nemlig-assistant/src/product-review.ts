@@ -108,6 +108,7 @@ export type ProductReviewAction =
   | { kind: "replace"; product_id: number; replacement_id: number };
 interface StoredReview {
   busy: boolean;
+  operationStatus?: "editing" | "submitting";
   lastActivityAt?: number;
   accountIdentity?: string;
   directBasketSaveAttempted?: boolean;
@@ -424,7 +425,11 @@ export class ProductReviewService {
       );
     }
     this.touch(owner, stored);
-    return structuredClone(stored.snapshot);
+    const snapshot = structuredClone(stored.snapshot);
+    if (stored.operationStatus) {
+      snapshot.operationStatus = stored.operationStatus;
+    }
+    return snapshot;
   }
 
   reviewContextOwner(reviewContextId: string):
@@ -455,7 +460,7 @@ export class ProductReviewService {
   end(owner: string, expectedDraftId?: string): void {
     const stored = this.lock(owner, expectedDraftId);
     this.drafts.delete(owner);
-    stored.busy = false;
+    this.unlock(stored);
   }
 
   // Keep expiry, exact-intent reuse, and unresolved-write protection together.
@@ -674,14 +679,14 @@ export class ProductReviewService {
     signal?: AbortSignal,
     expectedDraftId?: string,
   ): Promise<ProductReviewSnapshot> {
-    const stored = this.lock(owner, expectedDraftId);
+    const stored = this.lock(owner, expectedDraftId, "editing");
     if (
       stored.snapshot.basketMode === "direct-basket" &&
       stored.snapshot.submissionAttempted === true &&
       stored.snapshot.submission?.status === "submitted" &&
       action.kind !== "navigate"
     ) {
-      stored.busy = false;
+      this.unlock(stored);
       throw new NemligError(
         "This direct basket draft has already been submitted. Start a new draft before making further changes.",
       );
@@ -916,11 +921,15 @@ export class ProductReviewService {
       this.touch(owner, stored);
       return structuredClone(draft);
     } finally {
-      stored.busy = false;
+      this.unlock(stored);
     }
   }
 
-  private lock(owner: string, expectedDraftId?: string): StoredReview {
+  private lock(
+    owner: string,
+    expectedDraftId?: string,
+    operationStatus?: StoredReview["operationStatus"],
+  ): StoredReview {
     if (this.startingOwners.has(owner)) {
       throw new NemligError("A review is opening. Refresh after it finishes.");
     }
@@ -931,8 +940,17 @@ export class ProductReviewService {
       );
     }
     stored.busy = true;
+    stored.operationStatus =
+      stored.snapshot.basketMode === "direct-basket"
+        ? operationStatus
+        : undefined;
     this.touch(owner, stored);
     return stored;
+  }
+
+  private unlock(stored: StoredReview): void {
+    stored.busy = false;
+    stored.operationStatus = undefined;
   }
 
   // Keep review binding, dispatch claim, account check, receipt, and uncertainty
@@ -1002,7 +1020,7 @@ export class ProductReviewService {
         "A previous direct basket submission may have completed. Inspect the actual basket; this draft will not be submitted again.",
       );
     }
-    const stored = this.lock(owner, draftId);
+    const stored = this.lock(owner, draftId, "submitting");
     let dispatchClaimed = false;
     try {
       if (stored.snapshot.submissionAttempted) {
@@ -1162,7 +1180,7 @@ export class ProductReviewService {
       }
       throw error;
     } finally {
-      stored.busy = false;
+      this.unlock(stored);
     }
   }
 

@@ -40,7 +40,7 @@ Live checks remain separate from the automatic gate:
   mutation. Obsolete usage/reset endpoints no longer exist; no tier or
   count-based admission evidence is required.
 - For the current private `Nemlig Assistant` connection, verify authenticated
-  seven-tool discovery and the current viewer resource. Complete the UI release
+  eight-tool discovery and the current viewer resource. Complete the UI release
   acceptance below for UI-bearing releases. Historical Rejoin recovery is
   documented in the connector recovery record, not the current setup path.
 - The app has no live mutation acceptance command. Its basket contract is
@@ -58,15 +58,15 @@ completes these steps before handing the release to the owner for testing:
 
 1. Verify the exact deployed SHA and automated service acceptance, including the
    candidate's exact viewer HTML and resource CSP. Read the current stable
-   viewer URI from `start_product_review` metadata; do not infer it from an old
+   viewer URI from `show_product_review` metadata; do not infer it from an old
    runbook, card title, or app Version Id. Published identities older than the
    current viewer remain registered only as inert, read-only documents. The
    machine fixture catalog deliberately excludes local-review and provider-write
    tools.
 2. In ChatGPT Settings → Plugins → Nemlig Assistant, select Refresh and wait for
-   completion. Read back the actual actions: `start_product_review`,
+   completion. Read back the actual actions: `show_product_review`, `start_product_review`,
    `update_product_review`, and `submit_product_review` must exist, with the
-   current schemas and resource metadata. For `start_product_review`, record both
+   current schemas and resource metadata. For `show_product_review`, record both
    `openai/outputTemplate` and `ui.resourceUri`, then read that exact advertised
    resource. Clicking Refresh or seeing an unchanged app Version Id is not
    evidence of completion.

@@ -191,6 +191,7 @@ try {
       "find_groceries",
       "get_profile",
       "show_my_basket",
+      "show_product_review",
       "start_product_review",
       "submit_product_review_conversation",
       "update_product_review_conversation",

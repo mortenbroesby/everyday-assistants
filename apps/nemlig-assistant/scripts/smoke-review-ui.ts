@@ -11,6 +11,7 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
 import type { Basket, Product, ShoppingClient } from "../src/client.js";
+import { ProductReviewService } from "../src/product-review.js";
 import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -36,6 +37,14 @@ let shoppingListCreates = 0,
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
+let providerAvailable = true;
+let providerAuthCalls = 0;
+let providerReads = 0;
+let deferProductRead = false;
+let notifyProductRead: (() => void) | undefined;
+let releaseProductRead: (() => void) | undefined;
+let deferredEdit: Promise<unknown> | undefined;
+let deferredEditFailure: unknown;
 let nextShoppingListId = 1;
 const shoppingLists = new Map<
   number,
@@ -89,13 +98,41 @@ const product = (id: number): Product => ({
   isVegan: false,
   isOnDiscount: false,
 });
+const requireProvider = () => {
+  if (!providerAvailable) {
+    throw new Error("Synthetic provider authentication unavailable");
+  }
+};
 const catalogue = {
-  isLoggedIn: () => true,
+  isLoggedIn: () => {
+    providerAuthCalls++;
+    requireProvider();
+    return true;
+  },
   providerIdentity: () => "smoke-account",
-  login: async () => {},
-  getProduct: async (id: number) => product(id),
-  getFreshProduct: async (id: number) => product(id),
+  login: async () => {
+    providerAuthCalls++;
+    requireProvider();
+  },
+  getProduct: async (id: number) => {
+    providerReads++;
+    requireProvider();
+    if (deferProductRead && id === 2) {
+      notifyProductRead?.();
+      await new Promise<void>((resolve) => {
+        releaseProductRead = resolve;
+      });
+    }
+    return product(id);
+  },
+  getFreshProduct: async (id: number) => {
+    providerReads++;
+    requireProvider();
+    return product(id);
+  },
   searchProducts: async (query: string) => {
+    providerReads++;
+    requireProvider();
     if (query === "search-error") {
       throw new Error("Synthetic alternative search failure");
     }
@@ -108,6 +145,8 @@ const catalogue = {
     return [product(1), product(2), product(3), product(6)];
   },
   getCart: async () => {
+    providerReads++;
+    requireProvider();
     basketReads++;
     return structuredClone(currentBasket);
   },
@@ -151,12 +190,14 @@ const catalogue = {
   createShoppingListFromBasket: async (options: {
     beforeDispatch: (baseline: Basket) => Promise<void>;
   }) => {
+    requireProvider();
     const baseline = structuredClone(currentBasket);
     await options.beforeDispatch(baseline);
     shoppingListCreates++;
     return structuredClone(currentBasket);
   },
   createShoppingList: async (name: string) => {
+    requireProvider();
     shoppingListCreates++;
     nativeListWrites++;
     const id = nextShoppingListId++;
@@ -168,6 +209,7 @@ const catalogue = {
     productId: number,
     quantity: number,
   ) => {
+    requireProvider();
     shoppingListUpdates++;
     nativeListWrites++;
     const list = shoppingLists.get(listId);
@@ -181,13 +223,19 @@ const catalogue = {
     list.items.set(productId, quantity);
   },
   listShoppingLists: async () =>
-    [...shoppingLists.values()].map((list) => ({
-      id: list.id,
-      name: list.name,
-      productCount: list.items.size,
-      totalAmount: 0,
-    })),
+    (() => {
+      providerReads++;
+      requireProvider();
+      return [...shoppingLists.values()].map((list) => ({
+        id: list.id,
+        name: list.name,
+        productCount: list.items.size,
+        totalAmount: 0,
+      }));
+    })(),
   getShoppingList: async (listId: number) => {
+    providerReads++;
+    requireProvider();
     const list = shoppingLists.get(listId);
     if (!list) {
       throw new Error("Synthetic shopping list is missing");
@@ -202,10 +250,12 @@ const catalogue = {
     };
   },
   deleteShoppingList: async (listId: number) => {
+    requireProvider();
     nativeListWrites++;
     shoppingLists.delete(listId);
   },
   addShoppingListToCart: async (listId: number) => {
+    requireProvider();
     const list = shoppingLists.get(listId);
     if (!list) {
       throw new Error("Synthetic shopping list is missing");
@@ -272,31 +322,48 @@ globalThis.fetch = (async (input, init) => {
       capability === "smoke-capability" ? "smoke-owner" : undefined,
   );
 }) as typeof fetch;
+let reviews = new ProductReviewService(catalogue);
 const makeServer = () =>
-  createMcpServer(catalogue, async () => undefined, process.env, {
-    principalKey: "smoke-owner",
-    policyRevision: "smoke-policy",
-    localBasketCapability: "smoke-capability",
-  });
+  createMcpServer(
+    catalogue,
+    async () => undefined,
+    process.env,
+    {
+      principalKey: "smoke-owner",
+      policyRevision: "smoke-policy",
+      localBasketCapability: "smoke-capability",
+    },
+    reviews,
+  );
 let current = makeServer();
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
+const concurrentHandler = createMcpHandler(() => makeServer(), {
+  legacy: "reject",
+});
+const concurrentMcpHandler = toNodeHandler(concurrentHandler);
 const client = new Client(
   { name: "review-ui-smoke", version: "1" },
   { versionNegotiation: { mode: { pin: "2026-07-28" } } },
 );
-const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
+const page = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="cached">Run cached draft outage smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
+window.setSmokeTranscript = value => { transcript = value; };
 const widgetCalls = [], widgetResults = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
+const display = async prepared => {
+ const review=prepared.structuredContent?.review;
+ if(!review?.draftId||!review?.reviewContextId)return prepared;
+ return call({name:'show_product_review',arguments:{draft_id:review.draftId,review_context_id:review.reviewContextId}});
+};
 const waitForStats=async predicate=>{const until=Date.now()+15000;while(Date.now()<until){const stats=await fetch('/stats').then(r=>r.json());if(predicate(stats))return stats;await new Promise(r=>setTimeout(r,25));}throw new Error('Timed out waiting for provider stats');};
 document.getElementById('start').onclick = async () => {
- transcript = await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}],creation_id:'00000000-0000-4000-8000-000000000001'}});
+ transcript = await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1},{product_id:2,quantity:2}],creation_id:'00000000-0000-4000-8000-000000000001'}}));
  publish();
  status.textContent='Selection shown';
 };
@@ -306,21 +373,51 @@ window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin)return;
  const m=event.data;
  if(m.method==='ui/initialize')frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion,hostInfo:{name:'synthetic-mcp-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}},location.origin);
- if(m.method==='ui/notifications/initialized'){ initialized=true; if(transcript)publish(); }
+ if(m.method==='ui/notifications/initialized'){ initialized=true; frame.dataset.initialized='true'; if(transcript)publish(); }
  if(m.method==='ui/message'){ conversationMessages++; status.textContent='Retired current-list message received'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
  if(m.method==='tools/call'){
-  widgetCalls.push(m.params);
-  const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
-  widgetResults.push({name:m.params.name,isError:result.isError===true,structuredContent:result.structuredContent,text:(result.content||[]).filter(content=>content.type==='text').map(content=>content.text).join(' ')});
-  // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
-  const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
-  frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
-  if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
+  frame.dataset.toolCallInFlight='true';
+  try {
+   widgetCalls.push(m.params);
+   const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
+   widgetResults.push({name:m.params.name,isError:result.isError===true,structuredContent:result.structuredContent,text:(result.content||[]).filter(content=>content.type==='text').map(content=>content.text).join(' ')});
+   // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
+   const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
+   frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
+   if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
+  } finally { frame.dataset.toolCallInFlight='false'; }
  }
 });
+document.getElementById('cached').onclick = async () => {
+ const run=document.getElementById('cached'); run.disabled=true;
+ const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
+ const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ const quantityText=id=>[...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].find(quantity=>quantity.closest('.product-action-row[data-product-id="'+id+'"]'))?.textContent?.trim();
+ const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
+ try {
+  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
+  const prepared=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2}]}});
+  const exact=prepared.structuredContent?.review;
+  check(exact?.draftId&&exact?.reviewContextId,'Could not prepare exact cached draft');
+  const before=await fetch('/stats').then(r=>r.json());
+  await fetch('/provider-unavailable',{method:'POST'});
+  transcript=await display(prepared);
+  check(!transcript.isError&&transcript.structuredContent?.review?.draftId===exact.draftId&&transcript.structuredContent.review.reviewContextId===exact.reviewContextId,'Cached display did not preserve the exact draft');
+  frame.src='/viewer'; await wait(()=>initialized); publish();
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===exact.draftId&&result.structuredContent.review.reviewContextId===exact.reviewContextId));
+  await wait(()=>title()==='Temporary basket draft'&&quantityText(1)==='2 ×');
+  const wrong=await call({name:'update_product_review',arguments:{action:{kind:'show'},draft_id:'00000000-0000-4000-8000-000000000099',review_context_id:exact.reviewContextId}});
+  check(wrong.isError===true,'Wrong cached draft target was accepted');
+  const after=await fetch('/stats').then(r=>r.json());
+  check(after.providerAuthCalls===before.providerAuthCalls&&after.providerReads===before.providerReads,'Cached display attempted a provider authentication or read');
+  check(after.basketWrites===before.basketWrites&&after.nativeListWrites===before.nativeListWrites,'Cached display wrote to the provider');
+  status.textContent='PASS: cached direct draft and widget refresh survive provider outage without provider access';
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,draft_id:call.arguments.draft_id})))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text})));} finally{run.disabled=false;}
+};
 // Runs against the actual iframe DOM, MCP transport, and fake native-list provider.
 document.getElementById('run').onclick = async () => {
  const run=document.getElementById('run'); run.disabled=true;
+ status.textContent='Checking saved-list draft loading';
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const text=()=>doc()?.querySelector('main')?.textContent||'';
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
@@ -328,7 +425,7 @@ document.getElementById('run').onclick = async () => {
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{shopping_list_id:77}});
+  transcript=await display(await call({name:'start_product_review',arguments:{shopping_list_id:77}}));
   frame.src='/viewer'; await wait(()=>initialized); publish();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===transcript.structuredContent.review.draftId));
   await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2&&button('Add to Nemlig basket')&&!button('Add to Nemlig basket').disabled);
@@ -370,11 +467,19 @@ document.getElementById('flow').onclick = async () => {
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ const quantityText=id=>[...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].find(quantity=>quantity.closest('.product-action-row[data-product-id="'+id+'"]'))?.textContent?.trim();
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
   check(transcript?.structuredContent?.review?.draftId,'Run source-load smoke first');
   const draft=transcript.structuredContent.review;
+  const edited=await call({name:'update_product_review_conversation',arguments:{draft_id:draft.draftId,review_context_id:draft.reviewContextId,action:{kind:'quantity',product_id:1,quantity:2}}});
+  check(!edited.isError&&edited.structuredContent?.review?.draftId===draft.draftId&&edited.structuredContent.review.reviewContextId===draft.reviewContextId,'Conversation edit did not retain the exact draft identity');
+  const redisplayed=await call({name:'show_product_review',arguments:{draft_id:edited.structuredContent.review.draftId,review_context_id:edited.structuredContent.review.reviewContextId}});
+  check(!redisplayed.isError&&redisplayed.structuredContent?.review?.draftId===draft.draftId&&redisplayed.structuredContent.review.reviewContextId===draft.reviewContextId,'Exact conversation draft could not be shown again');
+  transcript=redisplayed; initialized=false; frame.src='/viewer'; await wait(()=>initialized); publish();
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.items?.some(item=>item.product_id===1&&item.quantity===2)));
+  await wait(()=>quantityText(1)==='2 ×');
   const before=await fetch('/stats').then(r=>r.json());
   click('Add to Nemlig basket');
   await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
@@ -383,7 +488,7 @@ document.getElementById('flow').onclick = async () => {
   let stats=await waitForStats(value=>value.basketWrites===1);
   check(stats.nativeListWrites===0&&stats.nativeTransfers===0,'Submit mutated a saved shopping list');
   check(stats.shoppingListCreates===0,'Submit implicitly created a shopping list');
-  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Single bulk submit did not preserve old basket rows and add the exact reviewed rows');
+  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,2],[2,3]]),'Single bulk submit did not preserve old basket rows and add the exact reviewed rows');
   check(before.basketWrites===0&&stats.basketWrites===1,'Submit did not use exactly one bulk mutation');
   const save=button('Save current basket as shopping list');
   check(save&&!save.disabled,'Verified submit did not offer an explicit separate basket save');
@@ -391,7 +496,7 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>widgetResults.some(result=>result.name==='save_basket_as_shopping_list'&&!result.isError));
   stats=await fetch('/stats').then(r=>r.json());
   check(stats.shoppingListCreates===1&&stats.nativeListWrites===0,'Explicit save did not call only the basket-to-list endpoint');
-  check(stats.basketWrites===1&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Saving the whole basket changed or cleared its contents');
+  check(stats.basketWrites===1&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,2],[2,3]]),'Saving the whole basket changed or cleared its contents');
   check(JSON.stringify(stats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Submission or save changed the loaded source list');
   status.textContent='PASS: one additive bulk submit preserved the basket; separate save preserved it again';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.body?.innerText||'unavailable')+' | calls: '+JSON.stringify(widgetCalls.map(call=>call.name))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text,review:result.structuredContent?.review?.submission})));} finally{run.disabled=false;}
@@ -406,7 +511,7 @@ document.getElementById('alternatives').onclick = async () => {
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}}); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
+  transcript=await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2},{product_id:2,quantity:1}]}})); frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
   await wait(()=>title()==='Temporary basket draft'&&doc().querySelectorAll('.product-list .product-card').length===2);
   const draft=transcript.structuredContent.review;
   const targetArgs={draft_id:draft.draftId,review_context_id:draft.reviewContextId};
@@ -441,7 +546,7 @@ document.getElementById('uncertain').onclick = async () => {
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
-  transcript=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1}]}});
+  transcript=await display(await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:1}]}}));
   frame.src='/viewer'; await wait(()=>initialized&&doc()?.querySelector('main.viewer')); publish();
   await wait(()=>doc()?.querySelectorAll('.product-list .product-card').length===1&&text().includes('Smoke product 1'));
   const stale=transcript;
@@ -480,11 +585,15 @@ const server = createServer((req, res) => {
     void mcpHandler(req, res);
     return;
   }
+  if (req.url === "/mcp-concurrent") {
+    void concurrentMcpHandler(req, res);
+    return;
+  }
   // Fixture routes share reset counters and durable storage; MCP owns the behavior under test.
   // fallow-ignore-next-line complexity
   void (async () => {
     if (req.url === "/") {
-      res.setHeader("content-type", "text/html");
+      res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(page);
       return;
     }
@@ -499,17 +608,28 @@ const server = createServer((req, res) => {
       return;
     }
     if (req.url === "/restart" && req.method === "POST") {
+      reviews = new ProductReviewService(catalogue);
       current = makeServer();
       basketReads = 0;
       directWrites = 0;
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
+      providerAvailable = true;
+      providerAuthCalls = 0;
+      providerReads = 0;
       res.end("restart");
       return;
     }
     if (req.url === "/reset" && req.method === "POST") {
       stored.clear();
+      releaseProductRead?.();
+      deferProductRead = false;
+      notifyProductRead = undefined;
+      releaseProductRead = undefined;
+      deferredEdit = undefined;
+      deferredEditFailure = undefined;
+      reviews = new ProductReviewService(catalogue);
       current = makeServer();
       basketReads = 0;
       directWrites = 0;
@@ -520,6 +640,9 @@ const server = createServer((req, res) => {
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
+      providerAvailable = true;
+      providerAuthCalls = 0;
+      providerReads = 0;
       nextShoppingListId = 1;
       shoppingLists.clear();
       shoppingLists.set(77, {
@@ -540,6 +663,98 @@ const server = createServer((req, res) => {
         deliveryTime: "smoke",
       };
       res.end("reset");
+      return;
+    }
+    if (req.url === "/defer-edit" && req.method === "POST") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.from(chunk));
+        if (Buffer.concat(chunks).length > 16384) {
+          throw new Error("Input too large");
+        }
+      }
+      const input = JSON.parse(Buffer.concat(chunks).toString()) as {
+        name: string;
+        arguments: Record<string, unknown>;
+      };
+      const started = new Promise<void>((resolve) => {
+        notifyProductRead = resolve;
+      });
+      const failBeforeHydration = (failure: unknown) => {
+        if (deferredEditFailure !== undefined) {
+          return;
+        }
+        deferredEditFailure = failure;
+        notifyProductRead?.();
+      };
+      const startTimeout = setTimeout(() => {
+        failBeforeHydration(
+          new Error("Deferred edit did not begin product hydration"),
+        );
+      }, 5_000);
+      deferProductRead = true;
+      deferredEdit = callConcurrentTool(input);
+      void deferredEdit.then(
+        (result) => {
+          const toolResult = result as {
+            content?: Array<{ text?: unknown; type?: unknown }>;
+            isError?: unknown;
+          };
+          if (toolResult.isError === true) {
+            const detail = toolResult.content
+              ?.filter((entry) => entry.type === "text")
+              .map((entry) =>
+                typeof entry.text === "string" ? entry.text : "",
+              )
+              .filter(Boolean)
+              .join(" ");
+            failBeforeHydration(
+              new Error(
+                `Deferred edit MCP error: ${detail || "unknown error"}`,
+              ),
+            );
+            return;
+          }
+          if (releaseProductRead === undefined) {
+            failBeforeHydration(
+              new Error("Deferred edit completed before product hydration"),
+            );
+          }
+        },
+        (error: unknown) => {
+          failBeforeHydration(error);
+        },
+      );
+      await started;
+      clearTimeout(startTimeout);
+      if (deferredEditFailure) {
+        deferProductRead = false;
+        notifyProductRead = undefined;
+        releaseProductRead = undefined;
+        res.statusCode = 500;
+        res.end(
+          `Deferred edit failed before hydration: ${deferredEditFailure instanceof Error ? deferredEditFailure.message : "unknown error"}`,
+        );
+        return;
+      }
+      res.end("deferred");
+      return;
+    }
+    if (req.url === "/release-edit" && req.method === "POST") {
+      releaseProductRead?.();
+      const result = await deferredEdit;
+      deferProductRead = false;
+      notifyProductRead = undefined;
+      releaseProductRead = undefined;
+      deferredEdit = undefined;
+      deferredEditFailure = undefined;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(result));
+      return;
+    }
+    if (req.url === "/provider-unavailable" && req.method === "POST") {
+      providerAvailable = false;
+      res.end("disabled");
       return;
     }
     if (req.url === "/unknown-price" && req.method === "POST") {
@@ -576,6 +791,8 @@ const server = createServer((req, res) => {
           shoppingListUpdates,
           nativeListWrites,
           simulatedSubmissions,
+          providerAuthCalls,
+          providerReads,
         }),
       );
       return;
@@ -595,6 +812,7 @@ const server = createServer((req, res) => {
       if (
         ![
           "start_product_review",
+          "show_product_review",
           "update_product_review",
           "submit_product_review",
           "update_product_review_conversation",
@@ -622,6 +840,59 @@ const server = createServer((req, res) => {
 server.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => server.once("listening", resolve));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const isSmokeCallResponse = (response: {
+  request(): { method(): string };
+  url(): string;
+}) =>
+  [
+    response.url() === `${origin}/call`,
+    response.request().method() === "POST",
+  ].every(Boolean);
+type SmokeReviewTarget = {
+  draftId: string;
+  reviewContextId: string;
+};
+type SmokeToolCallRequest = {
+  arguments?: {
+    action?: { kind?: unknown };
+    draft_id?: unknown;
+    review_context_id?: unknown;
+  };
+  name?: unknown;
+};
+const isExactDraftShowRequest = (
+  request: SmokeToolCallRequest,
+  target: SmokeReviewTarget,
+) => {
+  if (request.name !== "update_product_review" || !request.arguments) {
+    return false;
+  }
+  return [
+    request.arguments.action?.kind === "show",
+    request.arguments.draft_id === target.draftId,
+    request.arguments.review_context_id === target.reviewContextId,
+  ].every(Boolean);
+};
+const callConcurrentTool = async (input: {
+  name: string;
+  arguments: Record<string, unknown>;
+}) => {
+  const concurrentClient = new Client(
+    { name: "review-ui-smoke-concurrent", version: "1" },
+    { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+  );
+  await concurrentClient.connect(
+    new StreamableHTTPClientTransport(new URL("/mcp-concurrent", origin)),
+  );
+  try {
+    return await concurrentClient.callTool({
+      ...input,
+      _meta: { "openai/session": "review-ui-smoke-conversation" },
+    });
+  } finally {
+    await concurrentClient.close();
+  }
+};
 await client.connect(
   new StreamableHTTPClientTransport(new URL("/mcp", origin)),
 );
@@ -660,6 +931,8 @@ try {
     }
     console.log(`${phase}: ${result}`);
   };
+  await browserPage.locator("#cached").click();
+  await waitForResult("MCP adapter cached direct-draft outage flow");
   await browserPage.locator("#run").click();
   await waitForResult("MCP adapter saved-list load flow");
   await browserPage.emulateMedia({ reducedMotion: "reduce" });
@@ -695,13 +968,231 @@ try {
   await browserPage.locator("#uncertain").click();
   await waitForResult("MCP adapter uncertain submission");
   await fetch(new URL("/reset", origin), { method: "POST" });
+  const directReview = (result: { structuredContent?: unknown }) =>
+    (
+      result.structuredContent as
+        | {
+            review?: {
+              draftId?: string;
+              reviewContextId?: string;
+              operationStatus?: "editing" | "submitting";
+              items?: Array<{ product_id: number; quantity: number }>;
+            };
+          }
+        | undefined
+    )?.review;
+  const mountViewer = async (result: unknown) => {
+    await browserPage.evaluate((toolOutput) => {
+      const frame = document.querySelector<HTMLIFrameElement>("#viewer");
+      if (!frame) {
+        throw new Error("Viewer iframe is missing");
+      }
+      (
+        window as typeof window & {
+          setSmokeTranscript?: (value: unknown) => void;
+        }
+      ).setSmokeTranscript?.(toolOutput);
+      frame.dataset.initialized = "";
+      frame.src = "/viewer";
+    }, result);
+    await browserPage.waitForFunction(
+      () =>
+        document.querySelector<HTMLIFrameElement>("#viewer")?.dataset
+          .initialized === "true",
+    );
+    await browserPage.frameLocator("#viewer").locator("main.viewer").waitFor();
+  };
+  const startedBusy = await client.callTool({
+    name: "start_product_review",
+    arguments: { items: [{ product_id: 1, quantity: 1 }] },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const startedBusyReview = directReview(startedBusy);
+  if (!startedBusyReview?.draftId || !startedBusyReview.reviewContextId) {
+    throw new Error("In-progress display smoke could not start a direct draft");
+  }
+  const emptiedBusy = await client.callTool({
+    name: "update_product_review_conversation",
+    arguments: {
+      draft_id: startedBusyReview.draftId,
+      review_context_id: startedBusyReview.reviewContextId,
+      action: { kind: "remove", product_ids: [1] },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const busyReview = directReview(emptiedBusy);
+  if (!busyReview?.draftId || !busyReview.reviewContextId) {
+    throw new Error(
+      "In-progress display smoke could not empty the exact draft",
+    );
+  }
+  const busyTarget: SmokeReviewTarget = {
+    draftId: busyReview.draftId,
+    reviewContextId: busyReview.reviewContextId,
+  };
+  const shownBusy = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  await mountViewer(shownBusy);
+  const deferredResponse = await fetch(new URL("/defer-edit", origin), {
+    method: "POST",
+    body: JSON.stringify({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: busyReview.draftId,
+        review_context_id: busyReview.reviewContextId,
+        action: { kind: "add", items: [{ product_id: 2, quantity: 1 }] },
+      },
+    }),
+  });
+  if (!deferredResponse.ok) {
+    throw new Error(await deferredResponse.text());
+  }
+  const duringEdit = await client.callTool({
+    name: "update_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+      action: { kind: "show" },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  if (directReview(duringEdit)?.draftId !== busyReview.draftId) {
+    throw new Error("In-progress display returned a different draft");
+  }
+  await mountViewer(duringEdit);
+  const busyFrame = browserPage.frameLocator("#viewer");
+  await busyFrame.getByText("Draft update in progress").waitFor();
+  const pendingAdd = busyFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  if ((await pendingAdd.count()) !== 0) {
+    throw new Error("Empty in-progress draft rendered a basket addition");
+  }
+  const refresh = busyFrame.getByRole("button", { name: "Refresh this draft" });
+  if (await refresh.isDisabled()) {
+    throw new Error("In-progress draft hid its exact refresh action");
+  }
+  const firstRefreshResponse = browserPage.waitForResponse(
+    (response) => {
+      if (!isSmokeCallResponse(response)) {
+        return false;
+      }
+      return isExactDraftShowRequest(
+        response.request().postDataJSON() as SmokeToolCallRequest,
+        busyTarget,
+      );
+    },
+    { timeout: 10_000 },
+  );
+  await refresh.click();
+  const firstRefresh = (await firstRefreshResponse).json() as Promise<{
+    structuredContent?: unknown;
+  }>;
+  const pendingRefresh = directReview(await firstRefresh);
+  if (pendingRefresh?.operationStatus !== "editing") {
+    throw new Error(
+      "First exact refresh did not return the pending edit state",
+    );
+  }
+  await browserPage.waitForFunction(
+    () =>
+      document.querySelector<HTMLIFrameElement>("#viewer")?.dataset
+        .toolCallInFlight === "false",
+  );
+  await fetch(new URL("/release-edit", origin), { method: "POST" });
+  await refresh.click();
+  await busyFrame.locator('.product-action-row[data-product-id="2"]').waitFor();
+  const settledSubmit = busyFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  if (
+    (await settledSubmit.count()) !== 1 ||
+    (await settledSubmit.isDisabled())
+  ) {
+    throw new Error(
+      "Completed exact refresh did not enable the single Add action",
+    );
+  }
+  const settled = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const settledReview = directReview(settled);
+  if (!settledReview?.items) {
+    throw new Error(
+      "In-progress display smoke could not refresh the exact draft",
+    );
+  }
+  const completedElsewhere = await client.callTool({
+    name: "submit_product_review_conversation",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+      submission_id: "88888888-8888-4888-8888-888888888888",
+      reviewed_list: {
+        name: "Smoke draft",
+        items: settledReview.items.map(({ product_id, quantity }) => ({
+          product_id,
+          quantity,
+        })),
+      },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  if (
+    directReview(completedElsewhere) === undefined ||
+    (
+      completedElsewhere.structuredContent as {
+        result?: { replayed?: boolean };
+      }
+    ).result?.replayed !== false
+  ) {
+    throw new Error("Second-card direct submission was not confirmed");
+  }
+  await busyFrame.getByRole("button", { name: "Add to Nemlig basket" }).click();
+  await busyFrame
+    .getByText("Previous submission completed; nothing was added again.")
+    .waitFor();
+  if (
+    await busyFrame
+      .getByText("We could not verify the addition")
+      .isVisible()
+      .catch(() => false)
+  ) {
+    throw new Error("Verified replay opened uncertain submission recovery");
+  }
+  const replayStats = (await fetch(new URL("/stats", origin)).then((response) =>
+    response.json(),
+  )) as { basketWrites: number; simulatedSubmissions: number };
+  if (
+    replayStats.basketWrites !== 1 ||
+    replayStats.simulatedSubmissions !== 1
+  ) {
+    throw new Error(
+      `Verified replay repeated the provider write: ${JSON.stringify(replayStats)}`,
+    );
+  }
+  console.log(
+    "MCP adapter in-progress display and durable replay: disabled conflicting controls, exact refresh, one provider write",
+  );
+  await fetch(new URL("/reset", origin), { method: "POST" });
   await fetch(new URL("/uncertain-next", origin), { method: "POST" });
   const started = await client.callTool({
     name: "start_product_review",
     arguments: { items: [{ product_id: 7, quantity: 2 }] },
     _meta: { "openai/session": "review-ui-smoke-conversation" },
   });
-  const review = (
+  const startedReview = (
     started.structuredContent as
       | {
           review?: {
@@ -712,8 +1203,75 @@ try {
         }
       | undefined
   )?.review;
-  if (!review?.draftId || !review.reviewContextId) {
+  if (!startedReview?.draftId || !startedReview.reviewContextId) {
     throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const displayed = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: startedReview.draftId,
+      review_context_id: startedReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const displayedReview = (
+    displayed.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!displayedReview?.draftId || !displayedReview.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not start a draft");
+  }
+  const edited = await client.callTool({
+    name: "update_product_review_conversation",
+    arguments: {
+      draft_id: displayedReview.draftId,
+      review_context_id: displayedReview.reviewContextId,
+      action: { kind: "quantity", product_id: 7, quantity: 3 },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const editedReview = (
+    edited.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!editedReview?.draftId || !editedReview.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not edit a draft");
+  }
+  const redisplayed = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: editedReview.draftId,
+      review_context_id: editedReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const review = (
+    redisplayed.structuredContent as
+      | {
+          review?: {
+            draftId: string;
+            reviewContextId: string;
+            shoppingListName?: string;
+          };
+        }
+      | undefined
+  )?.review;
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Ambiguous submission smoke could not redisplay a draft");
   }
   const submit = () =>
     client.callTool({
@@ -724,7 +1282,7 @@ try {
         submission_id: "77777777-7777-4777-8777-777777777777",
         reviewed_list: {
           name: review.shoppingListName ?? "Smoke draft",
-          items: [{ product_id: 7, quantity: 2 }],
+          items: [{ product_id: 7, quantity: 3 }],
         },
       },
       _meta: { "openai/session": "review-ui-smoke-conversation" },
@@ -742,7 +1300,7 @@ try {
     ) !==
       JSON.stringify([
         [90, 3],
-        [7, 2],
+        [7, 3],
       ])
   ) {
     throw new Error(

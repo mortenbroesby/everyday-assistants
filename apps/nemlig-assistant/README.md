@@ -260,9 +260,15 @@ The MCP surface is organized around household actions:
   draft without creating a Nemlig list. Pass `shopping_list_id` to load that
   exact saved list as a read-only source into a new draft; omit both to discover
   saved lists.
+- Use `show_product_review` when someone wants to show, display, open, browse,
+  review, or compare an existing temporary draft. It accepts an exact
+  `draft_id` and `review_context_id` pair, or uses only the current trusted
+  conversation; `view: "saved_lists"` opens the read-only saved-list picker
+  without loading a source. It never creates, changes, submits, or authorizes
+  a draft.
 - Edit or find alternatives with `update_product_review_conversation`. Carry
   the exact `draft_id` and `review_context_id` from the card. Edits are local;
-  hosted `show` returns that exact draft with the review UI resource;
+  use `show_product_review` for a hosted visual review;
   `list` and `select` inspect saved lists or copy one into a fresh draft.
 - Submit only after explicit authorization with
   `submit_product_review_conversation`. It sends the reviewed quantities in
@@ -279,10 +285,10 @@ The MCP surface is organized around household actions:
   replace, swap, clear, check out, pay, order, or select delivery slots. The
   provider offers no established atomicity guarantee; concurrent Nemlig changes
   may race the independent baseline and readback checks.
-- Search remains text-only. In hosted MCP, `start_product_review` and
-  conversation-side show/edit advertise the same review UI resource, which the
-  host may render for those results. `start_product_review` opens the selected
-  draft or saved-list picker. Cards carry the exact draft ID and transient
+- Search remains text-only. In hosted MCP, only `show_product_review`
+  advertises the review UI resource; a successful tool result does not by
+  itself prove that a host rendered it. `start_product_review` returns draft
+  data or saved-list discovery data. Cards carry the exact draft ID and transient
   review context; unprotected drafts expire after two hours of inactivity, while
   unresolved work remains available until resolved. No draft can be restored
   after restart. The viewer uses the MCP Apps bridge and never calls Nemlig
