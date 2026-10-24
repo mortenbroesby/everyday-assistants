@@ -30,7 +30,10 @@ import {
   assertProductionInventory,
   productionToolInventory,
 } from "./production-acceptance.js";
-import { type ProductReviewSnapshot } from "./product-review.js";
+import {
+  ProductReviewService,
+  type ProductReviewSnapshot,
+} from "./product-review.js";
 import { handleLocalBasketStateRequest } from "./local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -424,6 +427,13 @@ const friendlyCatalog = [
   ["get_profile", "Get my Nemlig profile", true, false, []],
   ["show_my_basket", "Show my Nemlig basket", true, false, []],
   [
+    "show_product_review",
+    "Show my temporary draft",
+    true,
+    false,
+    ["draft_id", "review_context_id", "view"],
+  ],
+  [
     "start_product_review",
     "Review products before a basket addition",
     false,
@@ -559,7 +569,11 @@ test("direct draft catalog exposes its input contract and loading status", async
       const tool = (await mcp.listTools()).tools.find(
         ({ name }) => name === "start_product_review",
       );
+      const display = (await mcp.listTools()).tools.find(
+        ({ name }) => name === "show_product_review",
+      );
       assert.ok(tool);
+      assert.ok(display);
       assert.deepEqual(tool.inputSchema.anyOf, [
         {
           required: ["items"],
@@ -588,14 +602,44 @@ test("direct draft catalog exposes its input contract and loading status", async
       ]);
       assert.match(tool.description ?? "", /temporary process-local draft/u);
       assert.doesNotMatch(tool.description ?? "", /creation_id UUID/u);
+      assert.match(
+        display.description ?? "",
+        /^Use this when the user wants to show, display, open, browse, review, or compare/u,
+      );
+      assert.match(display.description ?? "", /vis mig listen|åbn kladden/u);
+      assert.match(display.description ?? "", /actual Nemlig basket/u);
       assert.equal(
         tool._meta?.["openai/toolInvocation/invoking"],
         "Preparing your Nemlig basket draft…",
       );
       assert.equal(
         tool._meta?.["openai/toolInvocation/invoked"],
-        "Draft ready for review",
+        "Draft prepared; display it to review",
       );
+      assert.deepEqual(display.inputSchema.anyOf, [
+        {
+          properties: { view: { const: "draft" } },
+          required: ["draft_id", "review_context_id"],
+        },
+        {
+          properties: { view: { const: "draft" } },
+          not: {
+            anyOf: [
+              { required: ["draft_id"] },
+              { required: ["review_context_id"] },
+            ],
+          },
+        },
+        {
+          properties: { view: { const: "saved_lists" } },
+          not: {
+            anyOf: [
+              { required: ["draft_id"] },
+              { required: ["review_context_id"] },
+            ],
+          },
+        },
+      ]);
       const tools = (await mcp.listTools()).tools;
       const modelTools = tools.filter((candidate) =>
         (
@@ -648,7 +692,7 @@ test("direct draft catalog exposes its input contract and loading status", async
   );
 });
 
-test("hosted conversation show exposes the existing review UI without replacing the draft", async () => {
+test("hosted display is the only review renderer and returns exact read-only draft data", async () => {
   let productReads = 0;
   let basketWrites = 0;
   let listWrites = 0;
@@ -687,18 +731,24 @@ test("hosted conversation show exposes the existing review UI without replacing 
       const update = tools.find(
         ({ name }) => name === "update_product_review_conversation",
       );
+      const show = tools.find(({ name }) => name === "show_product_review");
       const appUpdate = tools.find(
         ({ name }) => name === "update_product_review",
       );
       assert.ok(start);
       assert.ok(update);
+      assert.ok(show);
       assert.ok(appUpdate);
+      assert.deepEqual(start._meta?.ui, { visibility: ["model"] });
       assert.deepEqual(update._meta?.ui, {
+        visibility: ["model"],
+      });
+      assert.deepEqual(show._meta?.ui, {
         resourceUri: PRODUCT_VIEWER_RESOURCE_URI,
         visibility: ["model"],
       });
       assert.equal(
-        update._meta?.["openai/outputTemplate"],
+        show._meta?.["openai/outputTemplate"],
         PRODUCT_VIEWER_RESOURCE_URI,
       );
       assert.deepEqual(appUpdate._meta?.ui, {
@@ -716,11 +766,10 @@ test("hosted conversation show exposes the existing review UI without replacing 
       ).review;
       const readsAfterCreate = productReads;
       const shown = await mcp.callTool({
-        name: "update_product_review_conversation",
+        name: "show_product_review",
         arguments: {
           draft_id: review.draftId,
           review_context_id: review.reviewContextId,
-          action: { kind: "show" },
         },
       });
       assert.equal(shown.isError, undefined, toolText(shown));
@@ -731,10 +780,13 @@ test("hosted conversation show exposes the existing review UI without replacing 
       assert.equal(
         productReads,
         readsAfterCreate,
-        "show does not recreate a draft",
+        "display does not recreate a draft",
       );
       assert.equal(basketWrites, 0, "show does not change the basket");
       assert.equal(listWrites, 0, "show does not create or edit a saved list");
+      assert.ok(review.draftId);
+      assert.match(toolText(shown), new RegExp(review.draftId, "u"));
+      assert.match(toolText(shown), /"quantity":2/u);
     },
   );
 
@@ -746,23 +798,539 @@ test("hosted conversation show exposes the existing review UI without replacing 
       const update = tools.find(
         ({ name }) => name === "update_product_review_conversation",
       );
+      const show = tools.find(({ name }) => name === "show_product_review");
       const appUpdate = tools.find(
         ({ name }) => name === "update_product_review",
       );
       assert.ok(start);
       assert.ok(update);
+      assert.ok(show);
       assert.ok(appUpdate);
       const startUi = start._meta?.ui as { resourceUri?: string } | undefined;
       const updateUi = update._meta?.ui as { resourceUri?: string } | undefined;
+      const showUi = show._meta?.ui as { resourceUri?: string } | undefined;
       assert.equal(startUi?.resourceUri, undefined);
       assert.equal(updateUi?.resourceUri, undefined);
+      assert.equal(showUi?.resourceUri, undefined);
       assert.equal(start._meta?.["openai/outputTemplate"], undefined);
       assert.equal(update._meta?.["openai/outputTemplate"], undefined);
+      assert.equal(show._meta?.["openai/outputTemplate"], undefined);
       assert.deepEqual(appUpdate._meta?.ui, {
         visibility: ["app"],
       });
     },
   );
+});
+
+test("display reads exact cached drafts without provider login and rejects unsafe targets", async () => {
+  let providerCalls = 0;
+  const source = fakeClient({ getFreshProduct: async () => product });
+  const reviews = new ProductReviewService(source);
+  const requestContext = {
+    principalKey: "auth0|cached-display-owner",
+    policyRevision: "test-v1",
+  };
+  let review: ProductReviewSnapshot | undefined;
+  await withMcpClient(
+    createMcpServer(
+      source,
+      testCredentials,
+      undefined,
+      requestContext,
+      reviews,
+    ),
+    async (mcp) => {
+      const created = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 2 }] },
+      });
+      assert.equal(created.isError, undefined, toolText(created));
+      review = (created.structuredContent as { review: ProductReviewSnapshot })
+        .review;
+    },
+  );
+  if (!review?.draftId || !review.reviewContextId) {
+    throw new Error("Could not create an exact draft for cached-display test");
+  }
+  const exactReview = review;
+  const unavailableProvider = fakeClient({
+    isLoggedIn: () => {
+      providerCalls += 1;
+      throw new Error("display must not authenticate");
+    },
+    listShoppingLists: async () => {
+      providerCalls += 1;
+      throw new Error("display must not read saved lists");
+    },
+  });
+  await withMcpClient(
+    createMcpServer(
+      unavailableProvider,
+      async () => {
+        providerCalls += 1;
+        throw new Error("display must not load credentials");
+      },
+      undefined,
+      requestContext,
+      reviews,
+    ),
+    async (mcp) => {
+      const shown = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(shown.isError, undefined, toolText(shown));
+      assert.equal(
+        (shown.structuredContent as { review: ProductReviewSnapshot }).review
+          .draftId,
+        exactReview.draftId,
+      );
+      const refreshed = await mcp.callTool({
+        name: "update_product_review",
+        arguments: {
+          action: { kind: "show" },
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      assert.deepEqual(
+        (refreshed.structuredContent as { review: ProductReviewSnapshot })
+          .review,
+        exactReview,
+      );
+      const wrongRefreshTarget = await mcp.callTool({
+        name: "update_product_review",
+        arguments: {
+          action: { kind: "show" },
+          draft_id: randomUUID(),
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(wrongRefreshTarget.isError, true);
+      const partial = await mcp.callTool({
+        name: "show_product_review",
+        arguments: { draft_id: exactReview.draftId },
+      });
+      assert.equal(partial.isError, true);
+      const mismatched = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exactReview.draftId,
+          review_context_id: randomUUID(),
+        },
+      });
+      assert.equal(mismatched.isError, true);
+      const savedWithDraft = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          view: "saved_lists",
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(savedWithDraft.isError, true);
+    },
+  );
+  assert.equal(providerCalls, 0);
+});
+
+test("display preserves an exact direct draft while another request hydrates an edit", async () => {
+  let deferProductRead = false;
+  let productReadStarted: (() => void) | undefined;
+  let releaseProductRead: (() => void) | undefined;
+  let providerReads = 0;
+  let providerWrites = 0;
+  const source = fakeClient({
+    getProduct: async (id) => {
+      providerReads++;
+      if (deferProductRead && id === 8) {
+        productReadStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseProductRead = resolve;
+        });
+      }
+      return { ...product, id, name: `Exact product ${id}` };
+    },
+    addManyToCart: async () => {
+      providerWrites++;
+      return basket;
+    },
+  });
+  const reviews = new ProductReviewService(source);
+  const context = {
+    principalKey: "auth0|deferred-edit-owner",
+    policyRevision: "test-v1",
+  };
+  // Each HTTP request gets its own MCP server while sharing the review service.
+  const server = () =>
+    createMcpServer(source, testCredentials, undefined, context, reviews);
+
+  await withMcpClient(server(), async (editor) => {
+    const created = await editor.callTool({
+      name: "start_product_review",
+      arguments: { items: [{ product_id: 7, quantity: 1 }] },
+    });
+    assert.equal(created.isError, undefined, toolText(created));
+    const createdReview = (
+      created.structuredContent as {
+        review: ProductReviewSnapshot;
+      }
+    ).review;
+    const emptied = await editor.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: createdReview.draftId,
+        review_context_id: createdReview.reviewContextId,
+        action: { kind: "remove", product_ids: [7] },
+      },
+    });
+    assert.equal(emptied.isError, undefined, toolText(emptied));
+    const initial = (
+      emptied.structuredContent as { review: ProductReviewSnapshot }
+    ).review;
+    assert.deepEqual(initial.items, []);
+    const hydrated = new Promise<void>((resolve) => {
+      productReadStarted = resolve;
+    });
+    deferProductRead = true;
+    const pendingEdit = editor.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: initial.draftId,
+        review_context_id: initial.reviewContextId,
+        action: { kind: "add", items: [{ product_id: 8, quantity: 1 }] },
+      },
+    });
+    await hydrated;
+    const readsBeforeDisplay = providerReads;
+    await withMcpClient(server(), async (display) => {
+      const shown = await display.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+        },
+      });
+      assert.equal(shown.isError, undefined, toolText(shown));
+      const snapshot = (
+        shown.structuredContent as {
+          review: ProductReviewSnapshot;
+        }
+      ).review;
+      assert.equal(snapshot.draftId, initial.draftId);
+      assert.equal(snapshot.reviewContextId, initial.reviewContextId);
+      assert.equal(snapshot.operationStatus, "editing");
+      assert.deepEqual(
+        snapshot.items.map(({ product_id, quantity }) => [
+          product_id,
+          quantity,
+        ]),
+        [],
+      );
+      const refreshed = await display.callTool({
+        name: "update_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+          action: { kind: "show" },
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      assert.equal(
+        (refreshed.structuredContent as { review: ProductReviewSnapshot })
+          .review.operationStatus,
+        "editing",
+      );
+    });
+    assert.equal(providerReads, readsBeforeDisplay, "display did not hydrate");
+    assert.equal(providerWrites, 0, "display did not write to the provider");
+    releaseProductRead?.();
+    const edited = await pendingEdit;
+    assert.equal(edited.isError, undefined, toolText(edited));
+    assert.deepEqual(
+      (
+        edited.structuredContent as { review: ProductReviewSnapshot }
+      ).review.items.map(({ product_id, quantity }) => [product_id, quantity]),
+      [[8, 1]],
+    );
+    await withMcpClient(server(), async (display) => {
+      const refreshed = await display.callTool({
+        name: "update_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+          action: { kind: "show" },
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      const settled = (
+        refreshed.structuredContent as { review: ProductReviewSnapshot }
+      ).review;
+      assert.equal(settled.draftId, initial.draftId);
+      assert.equal(settled.reviewContextId, initial.reviewContextId);
+      assert.equal(settled.operationStatus, undefined);
+      assert.deepEqual(
+        settled.items.map(({ product_id, quantity }) => [product_id, quantity]),
+        [[8, 1]],
+      );
+    });
+    assert.equal(providerWrites, 0, "local edit did not write to the provider");
+  });
+});
+
+test("display only selects an omitted target from its trusted current session", async () => {
+  let providerCalls = 0;
+  const source = fakeClient({
+    isLoggedIn: () => {
+      providerCalls += 1;
+      return true;
+    },
+    getProduct: async () => {
+      providerCalls += 1;
+      return product;
+    },
+    getCart: async () => {
+      providerCalls += 1;
+      return basket;
+    },
+  });
+  const reviews = new ProductReviewService(source);
+  const context = {
+    principalKey: "auth0|display-owner",
+    policyRevision: "test-v1",
+  };
+  let exact: ProductReviewSnapshot | undefined;
+  await withMcpClient(
+    createMcpServer(source, testCredentials, undefined, context, reviews),
+    async (mcp) => {
+      const sessionA = { "openai/session": "display-session-a" };
+      const created = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 2 }] },
+        _meta: sessionA,
+      });
+      assert.equal(created.isError, undefined, toolText(created));
+      exact = (created.structuredContent as { review: ProductReviewSnapshot })
+        .review;
+      providerCalls = 0;
+
+      const currentSession = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {},
+        _meta: sessionA,
+      });
+      assert.equal(currentSession.isError, undefined, toolText(currentSession));
+      assert.deepEqual(
+        (currentSession.structuredContent as { review: ProductReviewSnapshot })
+          .review,
+        exact,
+      );
+
+      for (const _meta of [
+        undefined,
+        { "openai/session": "display-session-b" },
+      ]) {
+        const unavailable = await mcp.callTool({
+          name: "show_product_review",
+          arguments: {},
+          ...(_meta ? { _meta } : {}),
+        });
+        assert.equal(unavailable.isError, undefined, toolText(unavailable));
+        assert.deepEqual(unavailable.structuredContent, { unavailable: true });
+      }
+
+      const exactStateless = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exact.draftId,
+          review_context_id: exact.reviewContextId,
+        },
+      });
+      assert.equal(exactStateless.isError, undefined, toolText(exactStateless));
+      assert.deepEqual(
+        (exactStateless.structuredContent as { review: ProductReviewSnapshot })
+          .review,
+        exact,
+      );
+    },
+  );
+  assert.equal(providerCalls, 0, "display did not perform provider work");
+  if (!exact?.draftId || !exact.reviewContextId) {
+    throw new Error("Could not create an exact draft for owner isolation");
+  }
+  const foreignExact = exact;
+
+  await withMcpClient(
+    createMcpServer(
+      source,
+      testCredentials,
+      undefined,
+      { principalKey: "auth0|foreign-owner", policyRevision: "test-v1" },
+      reviews,
+    ),
+    async (mcp) => {
+      const foreign = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: foreignExact.draftId,
+          review_context_id: foreignExact.reviewContextId,
+        },
+        _meta: { "openai/session": "display-session-a" },
+      });
+      assert.equal(foreign.isError, true, toolText(foreign));
+      assert.doesNotMatch(toolText(foreign), /Økologisk mælk/u);
+    },
+  );
+  assert.equal(providerCalls, 0, "foreign display did not fall back or read");
+});
+
+test("display preserves empty drafts and reports expired or restarted drafts without recreation", async () => {
+  let now = 0;
+  let providerCalls = 0;
+  const source = fakeClient({
+    isLoggedIn: () => {
+      providerCalls += 1;
+      return true;
+    },
+    getProduct: async () => {
+      providerCalls += 1;
+      return product;
+    },
+  });
+  const context = {
+    principalKey: "auth0|display-expiry-owner",
+    policyRevision: "test-v1",
+  };
+  const reviews = new ProductReviewService(source, { now: () => now });
+  let exact: ProductReviewSnapshot | undefined;
+  await withMcpClient(
+    createMcpServer(source, testCredentials, undefined, context, reviews),
+    async (mcp) => {
+      const session = { "openai/session": "display-expiry-session" };
+      const created = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { items: [{ product_id: 7, quantity: 1 }] },
+        _meta: session,
+      });
+      assert.equal(created.isError, undefined, toolText(created));
+      exact = (created.structuredContent as { review: ProductReviewSnapshot })
+        .review;
+      const removed = await mcp.callTool({
+        name: "update_product_review_conversation",
+        arguments: {
+          draft_id: exact.draftId,
+          review_context_id: exact.reviewContextId,
+          action: { kind: "remove", product_ids: [7] },
+        },
+        _meta: session,
+      });
+      assert.equal(removed.isError, undefined, toolText(removed));
+      const shownEmpty = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: exact.draftId,
+          review_context_id: exact.reviewContextId,
+        },
+        _meta: session,
+      });
+      assert.equal(shownEmpty.isError, undefined, toolText(shownEmpty));
+      const empty = (
+        shownEmpty.structuredContent as {
+          review: ProductReviewSnapshot;
+        }
+      ).review;
+      assert.equal(empty.draftId, exact.draftId);
+      assert.equal(empty.reviewContextId, exact.reviewContextId);
+      assert.deepEqual(empty.items, []);
+      providerCalls = 0;
+    },
+  );
+  if (!exact?.draftId || !exact.reviewContextId) {
+    throw new Error("Could not create an exact draft for expiry display");
+  }
+  const expiredExact = exact;
+
+  now += 2 * 60 * 60 * 1000;
+  await withMcpClient(
+    createMcpServer(source, testCredentials, undefined, context, reviews),
+    async (mcp) => {
+      const expired = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: expiredExact.draftId,
+          review_context_id: expiredExact.reviewContextId,
+        },
+      });
+      assert.equal(expired.isError, true, toolText(expired));
+      assert.match(toolText(expired), /expired|unavailable/iu);
+    },
+  );
+
+  await withMcpClient(
+    createMcpServer(
+      source,
+      testCredentials,
+      undefined,
+      context,
+      new ProductReviewService(source, { now: () => now }),
+    ),
+    async (mcp) => {
+      const restarted = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {},
+        _meta: { "openai/session": "display-expiry-session" },
+      });
+      assert.equal(restarted.isError, undefined, toolText(restarted));
+      assert.deepEqual(restarted.structuredContent, { unavailable: true });
+    },
+  );
+  assert.equal(providerCalls, 0, "display loss never recreates a draft");
+});
+
+test("saved-list display returns readable names and exact identities without loading a draft", async () => {
+  let listReads = 0;
+  let writes = 0;
+  const source = fakeClient({
+    listShoppingLists: async () => {
+      listReads += 1;
+      return [
+        { id: 12, name: "Weekend breakfast", productCount: 2 },
+        { id: 34, name: "School lunch", productCount: 3 },
+      ];
+    },
+    createShoppingList: async () => {
+      writes += 1;
+      return 99;
+    },
+    updateShoppingListProduct: async () => {
+      writes += 1;
+    },
+  });
+  await withMcpClient(createMcpServer(source, testCredentials), async (mcp) => {
+    const displayed = await mcp.callTool({
+      name: "show_product_review",
+      arguments: { view: "saved_lists" },
+    });
+    assert.equal(displayed.isError, undefined, toolText(displayed));
+    assert.deepEqual(displayed.structuredContent, {
+      shoppingLists: [
+        { id: 12, name: "Weekend breakfast", productCount: 2 },
+        { id: 34, name: "School lunch", productCount: 3 },
+      ],
+      selectedShoppingListId: null,
+      selectionRequired: true,
+    });
+    assert.match(toolText(displayed), /Weekend breakfast/u);
+    assert.match(toolText(displayed), /School lunch/u);
+    assert.match(toolText(displayed), /"id":12/u);
+    assert.match(toolText(displayed), /"id":34/u);
+  });
+  assert.equal(listReads, 1);
+  assert.equal(writes, 0);
 });
 
 test("conversation guidance skips unsupported preparation and binds fresh submit IDs", async () => {
@@ -847,7 +1415,9 @@ test("MCP exposes the complete friendly catalog and clean missing-credential err
             ...(name === "start_product_review" ||
             name === "update_product_review_conversation"
               ? { idempotentHint: false }
-              : {}),
+              : name === "show_product_review"
+                ? { idempotentHint: true }
+                : {}),
             openWorldHint: name !== "get_profile",
           },
           name,
@@ -1482,19 +2052,19 @@ test("authenticated HTTP request context preserves stdio tool and resource metad
             httpTools.tools.map(({ name }) => name),
             stdioTools.tools.map(({ name }) => name),
           );
-          const stdioStart = stdioTools.tools.find(
-            ({ name }) => name === "start_product_review",
+          const stdioShow = stdioTools.tools.find(
+            ({ name }) => name === "show_product_review",
           );
-          const httpStart = httpTools.tools.find(
-            ({ name }) => name === "start_product_review",
+          const httpShow = httpTools.tools.find(
+            ({ name }) => name === "show_product_review",
           );
           assert.equal(
-            (stdioStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+            (stdioShow?._meta as { ui?: { resourceUri?: string } } | undefined)
               ?.ui?.resourceUri,
             undefined,
           );
           assert.equal(
-            (httpStart?._meta as { ui?: { resourceUri?: string } } | undefined)
+            (httpShow?._meta as { ui?: { resourceUri?: string } } | undefined)
               ?.ui?.resourceUri,
             PRODUCT_VIEWER_RESOURCE_URI,
           );
@@ -1968,6 +2538,10 @@ test("legacy raw visual chooser is unavailable", async () => {
 test("direct draft loads a read-only source, submits once, and saves the basket separately", async () => {
   let basketWrites = 0;
   let basketListSaves = 0;
+  let deferFreshProduct = false;
+  let releaseFreshProduct: (() => void) | undefined;
+  let notifyFreshProduct: (() => void) | undefined;
+  let uncertainNextSubmission = false;
   const sourceItems = new Map([[7, 2]]);
   let current: Basket = {
     items: [{ id: 99, name: "Existing", quantity: 1, total: 2 }],
@@ -2022,6 +2596,15 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
   const provider = Object.assign(
     fakeClient({
       getCart: async () => structuredClone(current),
+      getFreshProduct: async () => {
+        if (deferFreshProduct) {
+          notifyFreshProduct?.();
+          await new Promise<void>((resolve) => {
+            releaseFreshProduct = resolve;
+          });
+        }
+        return product;
+      },
       addManyToCart: async (
         additions: Array<{ productId: number; quantity: number }>,
         options?: { beforeDispatch?: (baseline: Basket) => Promise<void> },
@@ -2040,6 +2623,10 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
           });
         }
         current = { ...current, items: [...lines.values()] };
+        if (uncertainNextSubmission) {
+          uncertainNextSubmission = false;
+          throw new Error("Synthetic uncertain direct submission");
+        }
         return structuredClone(current);
       },
       listShoppingLists: async () => [
@@ -2063,15 +2650,22 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
     }),
     { providerIdentity: () => "account-1" },
   );
-  const server = () =>
-    createMcpServer(provider, testCredentials, undefined, {
-      principalKey: "direct-review-owner",
-      policyRevision: "direct-review-test",
-      localBasketCapability: "direct-review-capability",
-    });
+  const server = (reviews?: ProductReviewService) =>
+    createMcpServer(
+      provider,
+      testCredentials,
+      undefined,
+      {
+        principalKey: "direct-review-owner",
+        policyRevision: "direct-review-test",
+        localBasketCapability: "direct-review-capability",
+      },
+      reviews,
+    );
   let submittedDraftId: string | undefined;
   try {
-    await withMcpClient(server(), async (mcp) => {
+    const sharedReviews = new ProductReviewService(provider);
+    await withMcpClient(server(sharedReviews), async (mcp) => {
       const loaded = await mcp.callTool({
         name: "start_product_review",
         arguments: { shopping_list_id: 55 },
@@ -2099,7 +2693,11 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
       assert.deepEqual([...sourceItems], [[7, 2]]);
       assert.equal(basketWrites, 0);
       const submissionId = randomUUID();
-      const submitted = await mcp.callTool({
+      const freshProductStarted = new Promise<void>((resolve) => {
+        notifyFreshProduct = resolve;
+      });
+      deferFreshProduct = true;
+      const pendingSubmission = mcp.callTool({
         name: "submit_product_review_conversation",
         arguments: {
           draft_id: review.draftId,
@@ -2114,6 +2712,51 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
           },
         },
       });
+      await freshProductStarted;
+      await withMcpClient(server(sharedReviews), async (displayClient) => {
+        const displayedDuringSubmit = await displayClient.callTool({
+          name: "show_product_review",
+          arguments: {
+            draft_id: review.draftId,
+            review_context_id: review.reviewContextId,
+          },
+        });
+        assert.equal(
+          displayedDuringSubmit.isError,
+          undefined,
+          toolText(displayedDuringSubmit),
+        );
+        const pending = (
+          displayedDuringSubmit.structuredContent as {
+            review: ProductReviewSnapshot;
+          }
+        ).review;
+        assert.equal(pending.draftId, review.draftId);
+        assert.equal(pending.reviewContextId, review.reviewContextId);
+        assert.equal(pending.operationStatus, "submitting");
+        const refreshed = await displayClient.callTool({
+          name: "update_product_review",
+          arguments: {
+            draft_id: review.draftId,
+            review_context_id: review.reviewContextId,
+            action: { kind: "show" },
+          },
+        });
+        assert.equal(refreshed.isError, undefined, toolText(refreshed));
+        assert.equal(
+          (refreshed.structuredContent as { review: ProductReviewSnapshot })
+            .review.operationStatus,
+          "submitting",
+        );
+      });
+      assert.equal(
+        basketWrites,
+        0,
+        "display did not dispatch a pending submit",
+      );
+      deferFreshProduct = false;
+      releaseFreshProduct?.();
+      const submitted = await pendingSubmission;
       assert.equal(submitted.isError, undefined, toolText(submitted));
       assert.equal(basketWrites, 1);
       assert.equal(basketListSaves, 0);
@@ -2125,6 +2768,44 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         ],
       );
       assert.deepEqual([...sourceItems], [[7, 2]]);
+      const displayedAfterSubmit = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+        },
+      });
+      assert.equal(
+        displayedAfterSubmit.isError,
+        undefined,
+        toolText(displayedAfterSubmit),
+      );
+      const confirmed = (
+        displayedAfterSubmit.structuredContent as {
+          review: ProductReviewSnapshot;
+        }
+      ).review;
+      assert.equal(confirmed.draftId, review.draftId);
+      assert.equal(confirmed.reviewContextId, review.reviewContextId);
+      assert.equal(confirmed.operationStatus, undefined);
+      assert.equal(confirmed.submission?.status, "submitted");
+      const displayedAgain = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+        },
+      });
+      assert.deepEqual(
+        (displayedAgain.structuredContent as { review: ProductReviewSnapshot })
+          .review,
+        confirmed,
+      );
+      assert.equal(
+        basketWrites,
+        1,
+        "display did not renew submission authority",
+      );
       const replayedSave = await mcp.callTool({
         name: "save_basket_as_shopping_list",
         arguments: {
@@ -2163,6 +2844,108 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         ],
       );
       assert.deepEqual([...sourceItems], [[7, 2]]);
+      const replayedAfterDraftLoss = await mcp.callTool({
+        name: "submit_product_review",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+          submission_id: randomUUID(),
+          reviewed_list: {
+            name: review.shoppingListName ?? "Read-only source",
+            items: review.items.map(({ product_id, quantity }) => ({
+              product_id,
+              quantity,
+            })),
+          },
+        },
+      });
+      assert.equal(
+        replayedAfterDraftLoss.isError,
+        undefined,
+        toolText(replayedAfterDraftLoss),
+      );
+      const replayReceipt = replayedAfterDraftLoss.structuredContent as {
+        review?: ProductReviewSnapshot;
+        result?: { status: string; operation: string; replayed: boolean };
+      };
+      assert.equal(replayReceipt.review, undefined);
+      assert.equal(replayReceipt.result?.status, "completed");
+      assert.equal(replayReceipt.result?.operation, "additions");
+      assert.equal(replayReceipt.result?.replayed, true);
+      assert.equal(
+        basketWrites,
+        1,
+        "a durable completed receipt did not repeat the provider write",
+      );
+    });
+    await withMcpClient(server(), async (mcp) => {
+      const loaded = await mcp.callTool({
+        name: "start_product_review",
+        arguments: { shopping_list_id: 55 },
+      });
+      assert.equal(loaded.isError, undefined, toolText(loaded));
+      const review = (
+        loaded.structuredContent as { review: ProductReviewSnapshot }
+      ).review;
+      uncertainNextSubmission = true;
+      const uncertain = await mcp.callTool({
+        name: "submit_product_review_conversation",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+          submission_id: randomUUID(),
+          reviewed_list: {
+            name: review.shoppingListName ?? "Read-only source",
+            items: review.items.map(({ product_id, quantity }) => ({
+              product_id,
+              quantity,
+            })),
+          },
+        },
+      });
+      assert.equal(uncertain.isError, true, toolText(uncertain));
+      assert.equal(
+        basketWrites,
+        2,
+        "synthetic uncertain submit attempted once",
+      );
+      const displayed = await mcp.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+        },
+      });
+      assert.equal(displayed.isError, undefined, toolText(displayed));
+      const uncertainReview = (
+        displayed.structuredContent as {
+          review: ProductReviewSnapshot;
+        }
+      ).review;
+      assert.equal(uncertainReview.draftId, review.draftId);
+      assert.equal(uncertainReview.reviewContextId, review.reviewContextId);
+      assert.equal(uncertainReview.submission?.status, "uncertain");
+      const replay = await mcp.callTool({
+        name: "submit_product_review_conversation",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+          submission_id: randomUUID(),
+          reviewed_list: {
+            name: review.shoppingListName ?? "Read-only source",
+            items: review.items.map(({ product_id, quantity }) => ({
+              product_id,
+              quantity,
+            })),
+          },
+        },
+      });
+      assert.equal(replay.isError, true, toolText(replay));
+      assert.equal(
+        basketWrites,
+        2,
+        "display did not permit an uncertain replay",
+      );
     });
     await withMcpClient(server(), async (mcp) => {
       const loadedAgain = await mcp.callTool({
@@ -2179,7 +2962,7 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         fresh.items.map(({ product_id, quantity }) => [product_id, quantity]),
         [[7, 2]],
       );
-      assert.equal(basketWrites, 1);
+      assert.equal(basketWrites, 2);
       assert.equal(basketListSaves, 1);
       assert.deepEqual([...sourceItems], [[7, 2]]);
     });

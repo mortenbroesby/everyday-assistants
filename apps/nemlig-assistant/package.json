@@ -44,6 +44,7 @@
     "check:version-bump": "tsx release/check-version-bump.ts",
     "check:release-note": "tsx release/release-note.ts",
     "lint": "oxlint src scripts release .storybook tsdown.config.ts vite.config.ts --deny-warnings",
+    "measure:tool-catalog": "tsx scripts/measure-tool-catalog.ts",
     "mcp": "pnpm build && node dist/mcp.js",
     "prepack": "pnpm build",
     "production:probe": "tsx scripts/production-acceptance.ts --edge-only",

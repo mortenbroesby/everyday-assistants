@@ -209,6 +209,61 @@ const reviewTargetFields = {
     .optional()
     .describe("Opaque temporary handle for this card's exact draft review."),
 };
+const showProductReviewInputSchema = z
+  .object({
+    view: z
+      .enum(["draft", "saved_lists"])
+      .default("draft")
+      .describe(
+        "Display the current temporary draft, or explicitly open the read-only saved-list picker.",
+      ),
+    draft_id: reviewTargetFields.draft_id,
+    review_context_id: reviewTargetFields.review_context_id,
+  })
+  .strict()
+  .superRefine(({ view, draft_id, review_context_id }, ctx) => {
+    if ((draft_id === undefined) !== (review_context_id === undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Provide draft_id and review_context_id together.",
+      });
+    }
+    if (
+      view === "saved_lists" &&
+      (draft_id !== undefined || review_context_id !== undefined)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Saved-list display does not accept a draft target.",
+      });
+    }
+  })
+  .meta({
+    anyOf: [
+      {
+        properties: { view: { const: "draft" } },
+        required: ["draft_id", "review_context_id"],
+      },
+      {
+        properties: { view: { const: "draft" } },
+        not: {
+          anyOf: [
+            { required: ["draft_id"] },
+            { required: ["review_context_id"] },
+          ],
+        },
+      },
+      {
+        properties: { view: { const: "saved_lists" } },
+        not: {
+          anyOf: [
+            { required: ["draft_id"] },
+            { required: ["review_context_id"] },
+          ],
+        },
+      },
+    ],
+  });
 const reviewInputSchema = <Action extends z.ZodTypeAny>(action: Action) =>
   z
     .object({ ...reviewTargetFields, action })
@@ -439,7 +494,7 @@ export function createMcpServer(
   requestContext?: McpRequestContext,
   reviews: ProductReviewService = new ProductReviewService(client),
 ): McpServer {
-  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. Submit to the real basket only when the user clearly directs addition of the exact reviewed products and quantities, or explicitly approves them. Search, display, selection, draft edits, and a remembered ChatGPT tool approval are not authorization for a new addition. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
+  const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. Submit to the real basket only when the user clearly directs addition of the exact reviewed products and quantities, or explicitly approves them. Search, display, selection, draft edits, and a remembered ChatGPT tool approval are not authorization for a new addition. When users ask to show, display, open, browse, review, or compare their current temporary draft (for example “show my draft”, “open the list”, “let me compare them”, “vis mig listen”, or “åbn kladden”), use show_product_review. It is read-only and may use an exact draft_id/review_context_id pair or a trustworthy current conversation. For saved-list discovery, use show_product_review with view=saved_lists; it does not load a list into a draft. Do not use it for the actual Nemlig basket, a text-only explanation, unrelated displays, or an ambiguous target. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft, then use show_product_review when a visual review is wanted. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
 
 Only explicit Submit may add products to the actual basket. It sends every exact reviewed line in one additive request, preserves existing basket items, independently validates readback, and never retries an uncertain request. The actual Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots.
 
@@ -720,18 +775,22 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     unavailable: z.literal(true).optional(),
     ended: z.literal(true).optional(),
   });
-  const listNativeShoppingLists = async (
-    signal: AbortSignal,
-    message = "Select a saved Nemlig shopping list to load a temporary basket draft, or choose exact products in conversation.",
-  ) =>
-    success(
-      {
-        shoppingLists: await reviews.getShoppingLists(signal),
-        selectedShoppingListId: null,
-        selectionRequired: true,
-      },
-      message,
-    );
+  const listNativeShoppingLists = async (signal: AbortSignal) =>
+    success({
+      shoppingLists: await reviews.getShoppingLists(signal),
+      selectedShoppingListId: null,
+      selectionRequired: true,
+    });
+  const showProductReview = (owner: string, draftId: string | undefined) => {
+    const review = reviews.active(owner, draftId);
+    if (!review || review.basketMode !== "direct-basket") {
+      return success(
+        { unavailable: true as const },
+        "This temporary draft is unavailable. Start a new draft from exact products, or display saved lists to choose a source.",
+      );
+    }
+    return success({ review, selectedShoppingListId: null });
+  };
   // Target routing keeps stale cards, account scope, and list identity checks together.
   // fallow-ignore-next-line complexity
   const updateReviewTarget = async (
@@ -978,7 +1037,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Search Nemlig products",
       description:
-        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use update_product_review_conversation show; use start_product_review with an exact shopping_list_id to load a saved list as a read-only draft source.",
+        "Search the current Nemlig catalogue independently with a concise Danish grocery phrase translated or normalized from the request. This is not tied to the current temporary draft or an alternative target. Preserve a distinctive brand and Danish category when useful (for example 'Prince biscuits' becomes 'prince kiks'); use an open phrase such as 'salmiak' or a broad category phrase such as 'smør' when the user wants matching products generally. With result_count omitted, return all unique detailed candidates from the one provider response actually received, without an application cap; this does not enumerate or guarantee completeness of the entire catalogue. A successful empty result means no matches from this response only; an error means the search failed and must not be presented as no matches. Inspect results before making a deliberate related follow-up search; do not automatically repeat a failing query, launch a synonym cascade, or silently equate categories. Read-only: does not change the temporary draft or real Nemlig basket. To show the current review, use show_product_review; use start_product_review with an exact shopping_list_id to load a saved list as a read-only draft source.",
       inputSchema: z.object({
         search_term: z
           .string()
@@ -1034,7 +1093,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Show my Nemlig basket",
       description:
-        "Show the actual Nemlig basket, not a saved shopping list. Use update_product_review_conversation with action=list to inspect native shopping lists. This read-only tool shows current real-basket items and totals.",
+        "Show the actual Nemlig basket, not a temporary draft or saved shopping list. Use show_product_review with view=saved_lists to inspect native shopping lists. This read-only tool shows current real-basket items and totals.",
       outputSchema: basketResultSchema,
       annotations: {
         readOnlyHint: true,
@@ -1141,15 +1200,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         openWorldHint: true,
       },
       _meta: {
-        ...(requestContext ? PRODUCT_VIEWER_RESOURCE_METADATA : {}),
         "openai/toolInvocation/invoking": "Preparing your Nemlig basket draft…",
-        "openai/toolInvocation/invoked": "Draft ready for review",
-        ui: {
-          ...(requestContext
-            ? { resourceUri: PRODUCT_VIEWER_RESOURCE_URI }
-            : {}),
-          visibility: ["model"],
-        },
+        "openai/toolInvocation/invoked": "Draft prepared; display it to review",
+        ui: { visibility: ["model"] },
       },
     },
     ({ items, shopping_list_id }, ctx) => {
@@ -1197,18 +1250,19 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
   };
 
   registerTool(
-    "update_product_review_conversation",
+    "show_product_review",
     {
-      title: "Edit the temporary basket draft",
+      title: "Show my temporary draft",
       description:
-        "Update the exact temporary draft identified by draft_id and review_context_id. Product edits remain local; they do not change Nemlig until explicit Submit.",
-      inputSchema: reviewInputSchema(
-        modelReviewActionSchema.describe(
-          "Show or edit the exact temporary draft. After the user clearly approves adding its exact reviewed contents, submit it with submit_product_review_conversation.",
-        ),
-      ),
-      outputSchema: draftActionOutputSchema,
-      annotations: reviewActionAnnotations,
+        "Use this when the user wants to show, display, open, browse, review, or compare an existing current draft, including Danish requests such as “vis mig listen” or “åbn kladden”. It displays the draft without changing it. Use view=saved_lists only to display the read-only saved-list picker. Do not use for the actual Nemlig basket, text-only explanations, unrelated displays, or to create, edit, load, submit, or authorize a draft.",
+      inputSchema: showProductReviewInputSchema,
+      outputSchema: durableReviewResultSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: true,
+      },
       _meta: {
         ...(requestContext ? PRODUCT_VIEWER_RESOURCE_METADATA : {}),
         ui: {
@@ -1217,6 +1271,41 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
             : {}),
           visibility: ["model"],
         },
+        "openai/toolInvocation/invoking": "Opening your temporary draft…",
+        "openai/toolInvocation/invoked": "Draft ready to review",
+      },
+    },
+    ({ view, draft_id, review_context_id }, ctx) => {
+      if (view === "saved_lists") {
+        return runAuthenticatedRead("show_product_review", () =>
+          listNativeShoppingLists(ctx.mcpReq.signal),
+        );
+      }
+      return runMcpOperation("show_product_review", async () => {
+        const owner = reviewOwner(ctx, {
+          draftId: draft_id,
+          reviewContextId: review_context_id,
+        });
+        return showProductReview(owner, draft_id);
+      });
+    },
+  );
+
+  registerTool(
+    "update_product_review_conversation",
+    {
+      title: "Edit the temporary basket draft",
+      description:
+        "Update the exact temporary draft identified by draft_id and review_context_id. Product edits remain local; they do not change Nemlig until explicit Submit. Use show_product_review when a visual review is wanted.",
+      inputSchema: reviewInputSchema(
+        modelReviewActionSchema.describe(
+          "Edit the exact temporary draft. Use show_product_review to display it. After the user clearly approves adding its exact reviewed contents, submit it with submit_product_review_conversation.",
+        ),
+      ),
+      outputSchema: draftActionOutputSchema,
+      annotations: reviewActionAnnotations,
+      _meta: {
+        ui: { visibility: ["model"] },
         "openai/toolInvocation/invoking":
           "Updating your temporary basket draft…",
         "openai/toolInvocation/invoked": "Draft result received",
@@ -1297,12 +1386,18 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         "quantity",
         "replace",
       ].includes(action.kind);
+      const readsCachedDirectDraft =
+        action.kind === "show" &&
+        draft_id !== undefined &&
+        shopping_list_id === undefined;
       return writesShoppingList
         ? runMcpOperation("update_product_review", async () => {
             await ensureLoggedIn(client, loadCredentials);
             return perform();
           })
-        : runAuthenticatedRead("update_product_review", perform);
+        : readsCachedDirectDraft
+          ? runMcpOperation("update_product_review", perform)
+          : runAuthenticatedRead("update_product_review", perform);
     },
   );
 
