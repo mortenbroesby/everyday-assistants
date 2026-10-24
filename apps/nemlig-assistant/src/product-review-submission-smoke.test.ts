@@ -93,6 +93,12 @@ const withMcpClient = async <T>(
   }
 };
 
+const toolText = (result: unknown): string =>
+  (
+    (result as { content?: unknown })?.content as
+      Array<{ type?: string; text?: string }> | undefined
+  )?.find(({ type }) => type === "text")?.text ?? "";
+
 test("MCP submits one exact direct draft and never changes a saved list", async () => {
   const chosen = product(7, "Chosen oats", 4.25);
   const unresolved = product(8, "Unresolved tea", 6.5);
@@ -305,6 +311,41 @@ test("MCP submits one exact direct draft and never changes a saved list", async 
           quantity,
         }));
         assert.equal(listUpdates, 0, "draft edits do not write a list");
+        const staleContext = await mcp.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            draft_id: editedReview.draftId,
+            review_context_id: randomUUID(),
+            submission_id: randomUUID(),
+            reviewed_list: {
+              name: "Reviewed draft",
+              items: submittedItems,
+            },
+          },
+        });
+        assert.equal(staleContext.isError, true);
+        assert.match(
+          toolText(staleContext),
+          /review context|expired|unavailable/iu,
+        );
+        assert.equal(providerWrites, 0, "stale context cannot submit");
+        const changedContents = await mcp.callTool({
+          name: "submit_product_review_conversation",
+          arguments: {
+            draft_id: editedReview.draftId,
+            review_context_id: editedReview.reviewContextId,
+            submission_id: randomUUID(),
+            reviewed_list: {
+              name: "Reviewed draft",
+              items: submittedItems.map((line, index) =>
+                index === 0 ? { ...line, quantity: line.quantity + 1 } : line,
+              ),
+            },
+          },
+        });
+        assert.equal(changedContents.isError, true);
+        assert.match(toolText(changedContents), /changed after review/u);
+        assert.equal(providerWrites, 0, "changed contents cannot submit");
         const submitted = await mcp.callTool({
           name: "submit_product_review_conversation",
           arguments: {

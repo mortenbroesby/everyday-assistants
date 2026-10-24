@@ -262,11 +262,14 @@ The MCP surface is organized around household actions:
   saved lists.
 - Edit or find alternatives with `update_product_review_conversation`. Carry
   the exact `draft_id` and `review_context_id` from the card. Edits are local;
+  hosted `show` returns that exact draft with the review UI resource;
   `list` and `select` inspect saved lists or copy one into a fresh draft.
 - Submit only after explicit authorization with
   `submit_product_review_conversation`. It sends the reviewed quantities in
-  one additive request, verifies basket readback, preserves existing rows, and
-  never retries an uncertain write.
+  one additive request using the exact draft, review context, and reviewed
+  product IDs and quantities, verifies basket readback, preserves existing
+  rows, and never retries an uncertain write. No separate preparation action
+  is required; every authorized submission uses a fresh unique UUID.
 - After verified Submit, the viewer offers `save_basket_as_shopping_list` as a
   separate optional action. It saves the whole current basket, including
   existing rows, and preserves the basket. The endpoint response has no
@@ -276,13 +279,14 @@ The MCP surface is organized around household actions:
   replace, swap, clear, check out, pay, order, or select delivery slots. The
   provider offers no established atomicity guarantee; concurrent Nemlig changes
   may race the independent baseline and readback checks.
-- Search and conversation-side edits return structured and text results without
-  mounting a widget for every tool call. `start_product_review` opens the
-  selected draft or saved-list picker. Cards carry the exact draft ID and
-  transient review context; unprotected drafts expire after two hours of
-  inactivity, while unresolved work remains available until resolved. No draft
-  can be restored after restart. The viewer uses the MCP Apps bridge and never
-  calls Nemlig directly.
+- Search remains text-only. In hosted MCP, `start_product_review` and
+  conversation-side show/edit advertise the same review UI resource, which the
+  host may render for those results. `start_product_review` opens the selected
+  draft or saved-list picker. Cards carry the exact draft ID and transient
+  review context; unprotected drafts expire after two hours of inactivity, while
+  unresolved work remains available until resolved. No draft can be restored
+  after restart. The viewer uses the MCP Apps bridge and never calls Nemlig
+  directly. Local stdio MCP remains text-only.
 
 After this connection recovery, use the app named `Nemlig Assistant`.
 For ordinary later releases, use **Refresh** on that app so ChatGPT rediscovers
@@ -502,6 +506,7 @@ This README is the user-facing inventory of shipped feature sets:
 - native Nemlig shopping-list discovery
 - temporary drafts and read-only saved-list loading
 - local draft edits that leave saved shopping lists unchanged
+- hosted conversation show/edit actions that advertise the shared review resource
 - owner-scoped durable no-replay fences for uncertain direct writes, with
   bounded retention for completed receipts
 - shared product presentation with tap-to-open details, press-and-hold actions, and alternatives
@@ -519,6 +524,9 @@ Update this inventory whenever shipped behavior changes. Planned work belongs in
 
 The [architecture integration record](../../docs/nemlig-architecture-refactor-closeout.md)
 tracks the #319 refactor evidence and the separate hosted and ChatGPT acceptance gates.
+The [#345 conversation incident record](../../docs/nemlig-conversation-issue-345.md)
+separates reproduced MCP contract defects from historical host behavior and
+product-selection observations.
 
 ## 🗂️ Project map
 
