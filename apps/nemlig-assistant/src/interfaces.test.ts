@@ -752,8 +752,10 @@ test("hosted conversation show exposes the existing review UI without replacing 
       assert.ok(start);
       assert.ok(update);
       assert.ok(appUpdate);
-      assert.equal(start._meta?.ui && "resourceUri" in start._meta.ui, false);
-      assert.equal(update._meta?.ui && "resourceUri" in update._meta.ui, false);
+      const startUi = start._meta?.ui as { resourceUri?: string } | undefined;
+      const updateUi = update._meta?.ui as { resourceUri?: string } | undefined;
+      assert.equal(startUi?.resourceUri, undefined);
+      assert.equal(updateUi?.resourceUri, undefined);
       assert.equal(start._meta?.["openai/outputTemplate"], undefined);
       assert.equal(update._meta?.["openai/outputTemplate"], undefined);
       assert.deepEqual(appUpdate._meta?.ui, {
@@ -780,14 +782,20 @@ test("conversation guidance skips unsupported preparation and binds fresh submit
       assert.ok(update);
       assert.ok(submit);
       assert.ok(appUpdate);
-      const modelAction = JSON.stringify(update.inputSchema.properties.action);
+      const modelProperties = update.inputSchema.properties;
+      const appProperties = appUpdate.inputSchema.properties;
+      const submitProperties = submit.inputSchema.properties;
+      assert.ok(modelProperties);
+      assert.ok(appProperties);
+      assert.ok(submitProperties);
+      const modelAction = JSON.stringify(modelProperties.action);
       assert.doesNotMatch(modelAction, /prepare_submission/u);
       assert.doesNotMatch(modelAction, /discard_pending_update/u);
       assert.doesNotMatch(update.description ?? "", /submission preparation/u);
-      const appAction = JSON.stringify(appUpdate.inputSchema.properties.action);
+      const appAction = JSON.stringify(appProperties.action);
       assert.match(appAction, /prepare_submission/u);
       assert.match(appAction, /discard_pending_update/u);
-      const submitId = submit.inputSchema.properties.submission_id as {
+      const submitId = submitProperties.submission_id as {
         description?: string;
       };
       assert.match(submitId.description ?? "", /fresh.*UUID/iu);
