@@ -36,6 +36,9 @@ let shoppingListCreates = 0,
 let simulatedSubmissions = 0;
 let nextSubmissionStatus: "submitted" | "uncertain" = "submitted";
 let unknownPriceScenario = false;
+let providerAvailable = true;
+let providerAuthCalls = 0;
+let providerReads = 0;
 let nextShoppingListId = 1;
 const shoppingLists = new Map<
   number,
@@ -89,13 +92,35 @@ const product = (id: number): Product => ({
   isVegan: false,
   isOnDiscount: false,
 });
+const requireProvider = () => {
+  if (!providerAvailable) {
+    throw new Error("Synthetic provider authentication unavailable");
+  }
+};
 const catalogue = {
-  isLoggedIn: () => true,
+  isLoggedIn: () => {
+    providerAuthCalls++;
+    requireProvider();
+    return true;
+  },
   providerIdentity: () => "smoke-account",
-  login: async () => {},
-  getProduct: async (id: number) => product(id),
-  getFreshProduct: async (id: number) => product(id),
+  login: async () => {
+    providerAuthCalls++;
+    requireProvider();
+  },
+  getProduct: async (id: number) => {
+    providerReads++;
+    requireProvider();
+    return product(id);
+  },
+  getFreshProduct: async (id: number) => {
+    providerReads++;
+    requireProvider();
+    return product(id);
+  },
   searchProducts: async (query: string) => {
+    providerReads++;
+    requireProvider();
     if (query === "search-error") {
       throw new Error("Synthetic alternative search failure");
     }
@@ -108,6 +133,8 @@ const catalogue = {
     return [product(1), product(2), product(3), product(6)];
   },
   getCart: async () => {
+    providerReads++;
+    requireProvider();
     basketReads++;
     return structuredClone(currentBasket);
   },
@@ -151,12 +178,14 @@ const catalogue = {
   createShoppingListFromBasket: async (options: {
     beforeDispatch: (baseline: Basket) => Promise<void>;
   }) => {
+    requireProvider();
     const baseline = structuredClone(currentBasket);
     await options.beforeDispatch(baseline);
     shoppingListCreates++;
     return structuredClone(currentBasket);
   },
   createShoppingList: async (name: string) => {
+    requireProvider();
     shoppingListCreates++;
     nativeListWrites++;
     const id = nextShoppingListId++;
@@ -168,6 +197,7 @@ const catalogue = {
     productId: number,
     quantity: number,
   ) => {
+    requireProvider();
     shoppingListUpdates++;
     nativeListWrites++;
     const list = shoppingLists.get(listId);
@@ -181,13 +211,19 @@ const catalogue = {
     list.items.set(productId, quantity);
   },
   listShoppingLists: async () =>
-    [...shoppingLists.values()].map((list) => ({
-      id: list.id,
-      name: list.name,
-      productCount: list.items.size,
-      totalAmount: 0,
-    })),
+    (() => {
+      providerReads++;
+      requireProvider();
+      return [...shoppingLists.values()].map((list) => ({
+        id: list.id,
+        name: list.name,
+        productCount: list.items.size,
+        totalAmount: 0,
+      }));
+    })(),
   getShoppingList: async (listId: number) => {
+    providerReads++;
+    requireProvider();
     const list = shoppingLists.get(listId);
     if (!list) {
       throw new Error("Synthetic shopping list is missing");
@@ -202,10 +238,12 @@ const catalogue = {
     };
   },
   deleteShoppingList: async (listId: number) => {
+    requireProvider();
     nativeListWrites++;
     shoppingLists.delete(listId);
   },
   addShoppingListToCart: async (listId: number) => {
+    requireProvider();
     const list = shoppingLists.get(listId);
     if (!list) {
       throw new Error("Synthetic shopping list is missing");
@@ -287,7 +325,7 @@ const client = new Client(
 );
 const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
-<button id="run">Run regression smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
+<button id="run">Run regression smoke</button><button id="cached">Run cached draft outage smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
@@ -323,9 +361,35 @@ window.addEventListener('message',async event=>{
   if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
  }
 });
+document.getElementById('cached').onclick = async () => {
+ const run=document.getElementById('cached'); run.disabled=true;
+ const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
+ const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
+ try {
+  await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
+  const prepared=await call({name:'start_product_review',arguments:{items:[{product_id:1,quantity:2}]}});
+  const exact=prepared.structuredContent?.review;
+  check(exact?.draftId&&exact?.reviewContextId,'Could not prepare exact cached draft');
+  const before=await fetch('/stats').then(r=>r.json());
+  await fetch('/provider-unavailable',{method:'POST'});
+  transcript=await display(prepared);
+  check(!transcript.isError&&transcript.structuredContent?.review?.draftId===exact.draftId&&transcript.structuredContent.review.reviewContextId===exact.reviewContextId,'Cached display did not preserve the exact draft');
+  frame.src='/viewer'; await wait(()=>initialized); publish();
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===exact.draftId&&result.structuredContent.review.reviewContextId===exact.reviewContextId));
+  await wait(()=>title()==='Temporary basket draft'&&doc().querySelector('.product-action-row[data-product-id="1"]')?.textContent.includes('2'));
+  const wrong=await call({name:'update_product_review',arguments:{action:{kind:'show'},draft_id:'00000000-0000-4000-8000-000000000099',review_context_id:exact.reviewContextId}});
+  check(wrong.isError===true,'Wrong cached draft target was accepted');
+  const after=await fetch('/stats').then(r=>r.json());
+  check(after.providerAuthCalls===before.providerAuthCalls&&after.providerReads===before.providerReads,'Cached display attempted a provider authentication or read');
+  check(after.basketWrites===before.basketWrites&&after.nativeListWrites===before.nativeListWrites,'Cached display wrote to the provider');
+  status.textContent='PASS: cached direct draft and widget refresh survive provider outage without provider access';
+ } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(title()||'unavailable')+' | calls: '+JSON.stringify(widgetCalls.map(call=>({name:call.name,action:call.arguments.action?.kind,draft_id:call.arguments.draft_id})))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text})));} finally{run.disabled=false;}
+};
 // Runs against the actual iframe DOM, MCP transport, and fake native-list provider.
 document.getElementById('run').onclick = async () => {
  const run=document.getElementById('run'); run.disabled=true;
+ status.textContent='Checking saved-list draft loading';
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const text=()=>doc()?.querySelector('main')?.textContent||'';
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
@@ -380,6 +444,13 @@ document.getElementById('flow').onclick = async () => {
  try {
   check(transcript?.structuredContent?.review?.draftId,'Run source-load smoke first');
   const draft=transcript.structuredContent.review;
+  const edited=await call({name:'update_product_review_conversation',arguments:{draft_id:draft.draftId,review_context_id:draft.reviewContextId,action:{kind:'quantity',product_id:1,quantity:2}}});
+  check(!edited.isError&&edited.structuredContent?.review?.draftId===draft.draftId&&edited.structuredContent.review.reviewContextId===draft.reviewContextId,'Conversation edit did not retain the exact draft identity');
+  const redisplayed=await call({name:'show_product_review',arguments:{draft_id:edited.structuredContent.review.draftId,review_context_id:edited.structuredContent.review.reviewContextId}});
+  check(!redisplayed.isError&&redisplayed.structuredContent?.review?.draftId===draft.draftId&&redisplayed.structuredContent.review.reviewContextId===draft.reviewContextId,'Exact conversation draft could not be shown again');
+  transcript=redisplayed; initialized=false; frame.src='/viewer'; await wait(()=>initialized); publish();
+  await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.items?.some(item=>item.product_id===1&&item.quantity===2)));
+  await wait(()=>doc().querySelector('.product-action-row[data-product-id="1"]')?.textContent.includes('2'));
   const before=await fetch('/stats').then(r=>r.json());
   click('Add to Nemlig basket');
   await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
@@ -388,7 +459,7 @@ document.getElementById('flow').onclick = async () => {
   let stats=await waitForStats(value=>value.basketWrites===1);
   check(stats.nativeListWrites===0&&stats.nativeTransfers===0,'Submit mutated a saved shopping list');
   check(stats.shoppingListCreates===0,'Submit implicitly created a shopping list');
-  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Single bulk submit did not preserve old basket rows and add the exact reviewed rows');
+  check(JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,2],[2,3]]),'Single bulk submit did not preserve old basket rows and add the exact reviewed rows');
   check(before.basketWrites===0&&stats.basketWrites===1,'Submit did not use exactly one bulk mutation');
   const save=button('Save current basket as shopping list');
   check(save&&!save.disabled,'Verified submit did not offer an explicit separate basket save');
@@ -396,7 +467,7 @@ document.getElementById('flow').onclick = async () => {
   await wait(()=>widgetResults.some(result=>result.name==='save_basket_as_shopping_list'&&!result.isError));
   stats=await fetch('/stats').then(r=>r.json());
   check(stats.shoppingListCreates===1&&stats.nativeListWrites===0,'Explicit save did not call only the basket-to-list endpoint');
-  check(stats.basketWrites===1&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,1],[2,3]]),'Saving the whole basket changed or cleared its contents');
+  check(stats.basketWrites===1&&JSON.stringify(stats.basketItems.map(item=>[item.id,item.quantity]))===JSON.stringify([[90,3],[1,2],[2,3]]),'Saving the whole basket changed or cleared its contents');
   check(JSON.stringify(stats.sourceItems)===JSON.stringify([[1,1],[2,2]]),'Submission or save changed the loaded source list');
   status.textContent='PASS: one additive bulk submit preserved the basket; separate save preserved it again';
  } catch(error){status.textContent='FAIL: '+error.message+' | screen: '+(doc()?.body?.innerText||'unavailable')+' | calls: '+JSON.stringify(widgetCalls.map(call=>call.name))+' | results: '+JSON.stringify(widgetResults.map(result=>({name:result.name,isError:result.isError,text:result.text,review:result.structuredContent?.review?.submission})));} finally{run.disabled=false;}
@@ -510,6 +581,9 @@ const server = createServer((req, res) => {
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
+      providerAvailable = true;
+      providerAuthCalls = 0;
+      providerReads = 0;
       res.end("restart");
       return;
     }
@@ -525,6 +599,9 @@ const server = createServer((req, res) => {
       simulatedSubmissions = 0;
       nextSubmissionStatus = "submitted";
       unknownPriceScenario = false;
+      providerAvailable = true;
+      providerAuthCalls = 0;
+      providerReads = 0;
       nextShoppingListId = 1;
       shoppingLists.clear();
       shoppingLists.set(77, {
@@ -545,6 +622,11 @@ const server = createServer((req, res) => {
         deliveryTime: "smoke",
       };
       res.end("reset");
+      return;
+    }
+    if (req.url === "/provider-unavailable" && req.method === "POST") {
+      providerAvailable = false;
+      res.end("disabled");
       return;
     }
     if (req.url === "/unknown-price" && req.method === "POST") {
@@ -581,6 +663,8 @@ const server = createServer((req, res) => {
           shoppingListUpdates,
           nativeListWrites,
           simulatedSubmissions,
+          providerAuthCalls,
+          providerReads,
         }),
       );
       return;
@@ -666,6 +750,8 @@ try {
     }
     console.log(`${phase}: ${result}`);
   };
+  await browserPage.locator("#cached").click();
+  await waitForResult("MCP adapter cached direct-draft outage flow");
   await browserPage.locator("#run").click();
   await waitForResult("MCP adapter saved-list load flow");
   await browserPage.emulateMedia({ reducedMotion: "reduce" });

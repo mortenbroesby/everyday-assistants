@@ -888,6 +888,29 @@ test("display reads exact cached drafts without provider login and rejects unsaf
           .draftId,
         exactReview.draftId,
       );
+      const refreshed = await mcp.callTool({
+        name: "update_product_review",
+        arguments: {
+          action: { kind: "show" },
+          draft_id: exactReview.draftId,
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      assert.deepEqual(
+        (refreshed.structuredContent as { review: ProductReviewSnapshot })
+          .review,
+        exactReview,
+      );
+      const wrongRefreshTarget = await mcp.callTool({
+        name: "update_product_review",
+        arguments: {
+          action: { kind: "show" },
+          draft_id: randomUUID(),
+          review_context_id: exactReview.reviewContextId,
+        },
+      });
+      assert.equal(wrongRefreshTarget.isError, true);
       const partial = await mcp.callTool({
         name: "show_product_review",
         arguments: { draft_id: exactReview.draftId },
@@ -913,6 +936,104 @@ test("display reads exact cached drafts without provider login and rejects unsaf
     },
   );
   assert.equal(providerCalls, 0);
+});
+
+test("display preserves an exact direct draft while another request hydrates an edit", async () => {
+  let deferProductRead = false;
+  let productReadStarted: (() => void) | undefined;
+  let releaseProductRead: (() => void) | undefined;
+  let providerReads = 0;
+  let providerWrites = 0;
+  const source = fakeClient({
+    getProduct: async (id) => {
+      providerReads++;
+      if (deferProductRead && id === 8) {
+        productReadStarted?.();
+        await new Promise<void>((resolve) => {
+          releaseProductRead = resolve;
+        });
+      }
+      return { ...product, id, name: `Exact product ${id}` };
+    },
+    addManyToCart: async () => {
+      providerWrites++;
+      return basket;
+    },
+  });
+  const reviews = new ProductReviewService(source);
+  const context = {
+    principalKey: "auth0|deferred-edit-owner",
+    policyRevision: "test-v1",
+  };
+  // Each HTTP request gets its own MCP server while sharing the review service.
+  const server = () =>
+    createMcpServer(source, testCredentials, undefined, context, reviews);
+
+  await withMcpClient(server(), async (editor) => {
+    const created = await editor.callTool({
+      name: "start_product_review",
+      arguments: { items: [{ product_id: 7, quantity: 1 }] },
+    });
+    assert.equal(created.isError, undefined, toolText(created));
+    const initial = (
+      created.structuredContent as {
+        review: ProductReviewSnapshot;
+      }
+    ).review;
+    const hydrated = new Promise<void>((resolve) => {
+      productReadStarted = resolve;
+    });
+    deferProductRead = true;
+    const pendingEdit = editor.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: initial.draftId,
+        review_context_id: initial.reviewContextId,
+        action: { kind: "add", items: [{ product_id: 8, quantity: 1 }] },
+      },
+    });
+    await hydrated;
+    const readsBeforeDisplay = providerReads;
+    await withMcpClient(server(), async (display) => {
+      const shown = await display.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+        },
+      });
+      assert.equal(shown.isError, undefined, toolText(shown));
+      const snapshot = (
+        shown.structuredContent as {
+          review: ProductReviewSnapshot;
+        }
+      ).review;
+      assert.equal(snapshot.draftId, initial.draftId);
+      assert.equal(snapshot.reviewContextId, initial.reviewContextId);
+      assert.deepEqual(
+        snapshot.items.map(({ product_id, quantity }) => [
+          product_id,
+          quantity,
+        ]),
+        [[7, 1]],
+      );
+    });
+    assert.equal(providerReads, readsBeforeDisplay, "display did not hydrate");
+    assert.equal(providerWrites, 0, "display did not write to the provider");
+    releaseProductRead?.();
+    const edited = await pendingEdit;
+    assert.equal(edited.isError, undefined, toolText(edited));
+    assert.deepEqual(
+      (
+        edited.structuredContent as { review: ProductReviewSnapshot }
+      ).review.items.map(({ product_id, quantity }) => [product_id, quantity]),
+      [
+        [7, 1],
+        [8, 1],
+      ],
+    );
+    assert.equal(providerWrites, 0, "local edit did not write to the provider");
+  });
 });
 
 test("display only selects an omitted target from its trusted current session", async () => {

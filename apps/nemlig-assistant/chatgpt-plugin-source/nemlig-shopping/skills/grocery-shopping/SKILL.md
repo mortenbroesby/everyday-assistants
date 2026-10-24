@@ -15,7 +15,7 @@ Present exact returned product names, brands, package sizes, DKK package prices,
 
 ## Temporary basket draft
 
-When the user chooses exact products and quantities for visual editing, call `start_product_review` with `items: [{product_id, quantity}]`. This creates a temporary process-local draft, not a saved Nemlig shopping list. Draft edits do not change the real basket. Plain search/comparison stays read-only. Respect a display-only request: use text and read-only search instead of creating a draft. Do not make an imitation card or claim that a widget rendered merely because a tool returned data.
+When the user chooses exact products and quantities for visual editing, call `start_product_review` with `items: [{product_id, quantity}]`. This creates a temporary process-local draft, not a saved Nemlig shopping list. Draft edits do not change the real basket. Plain search/comparison stays read-only. For a display-only request with no existing draft, use text and read-only search instead of creating a draft; to display an existing exact draft, use `show_product_review` instead. Do not make an imitation card or claim that a widget rendered merely because a tool returned data.
 
 To show, display, open, browse, review, or compare an existing temporary draft,
 call `show_product_review` with its exact `draft_id` and `review_context_id`, or

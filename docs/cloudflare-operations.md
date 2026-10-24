@@ -21,7 +21,7 @@ schema v3: revision, explicit owner subject and configured enabled family
 identities/opaque keys. Sealed credential records
 remain in the existing fixed controller Durable Object. Authenticated MCP
 discovery is provider-independent and does not require a Nemlig credential;
-the seven-tool user catalog remains OAuth-gated, while only provider-backed
+the eight-tool user catalog remains OAuth-gated, while only provider-backed
 tools require a Nemlig credential.
 This document records
 field names only, never values.
@@ -112,7 +112,7 @@ isolation or explicit recovery.
    Configure the private ChatGPT app with the production `/mcp` URL, OAuth with
    Dynamic Client Registration, and the default `use:nemlig-assistant` scope.
    The current recovery app is `Nemlig Assistant (Rejoin)`. Confirm its
-   connection reports OAuth and returns the authenticated seven-tool catalog.
+   connection reports OAuth and returns the authenticated eight-tool catalog.
    Check provider access separately with `check_nemlig_connection`.
    Ordinary later releases update that app in place with **Refresh**.
 

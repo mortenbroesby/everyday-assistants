@@ -40,7 +40,7 @@ Live checks remain separate from the automatic gate:
   mutation. Obsolete usage/reset endpoints no longer exist; no tier or
   count-based admission evidence is required.
 - For the current private `Nemlig Assistant` connection, verify authenticated
-  seven-tool discovery and the current viewer resource. Complete the UI release
+  eight-tool discovery and the current viewer resource. Complete the UI release
   acceptance below for UI-bearing releases. Historical Rejoin recovery is
   documented in the connector recovery record, not the current setup path.
 - The app has no live mutation acceptance command. Its basket contract is

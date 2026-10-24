@@ -91,8 +91,8 @@ Keep implementation, deployment, native ChatGPT interaction, and provider readba
 
 The bounded local measurement uses a loopback MCP client in the hosted request
 context, captures the actual JSON `tools/list` response bytes, and separately
-counts model-visible tools. It performs no provider, credential, network, or
-model call:
+counts model-visible tools. It performs no external network, provider,
+credential, or model call; the MCP transport is loopback-only:
 
 ```sh
 pnpm --filter nemlig-assistant exec tsx scripts/measure-tool-catalog.ts
@@ -109,7 +109,7 @@ the measurement.
 | Revision | Serialized `tools/list` bytes | Model-visible tools | Total tools |
 | --- | ---: | ---: | ---: |
 | `254789f61bfc73b7791e950e45691c5293ce0a85` baseline | 120,136 | 7 | 10 |
-| `codex/nemlig-review-display` candidate worktree | 137,824 | 8 | 11 |
+| Final `codex/nemlig-review-display` candidate worktree | 137,824 | 8 | 11 |
 
 The candidate adds 17,688 serialized bytes (14.72%) and one model-visible tool.
 This is deterministic catalog evidence only; it does not establish native

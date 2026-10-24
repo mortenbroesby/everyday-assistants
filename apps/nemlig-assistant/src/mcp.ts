@@ -1386,12 +1386,18 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         "quantity",
         "replace",
       ].includes(action.kind);
+      const readsCachedDirectDraft =
+        action.kind === "show" &&
+        draft_id !== undefined &&
+        shopping_list_id === undefined;
       return writesShoppingList
         ? runMcpOperation("update_product_review", async () => {
             await ensureLoggedIn(client, loadCredentials);
             return perform();
           })
-        : runAuthenticatedRead("update_product_review", perform);
+        : readsCachedDirectDraft
+          ? runMcpOperation("update_product_review", perform)
+          : runAuthenticatedRead("update_product_review", perform);
     },
   );
 
