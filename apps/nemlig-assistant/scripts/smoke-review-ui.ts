@@ -323,7 +323,7 @@ const client = new Client(
   { name: "review-ui-smoke", version: "1" },
   { versionNegotiation: { mode: { pin: "2026-07-28" } } },
 );
-const page = `<!doctype html><html><body><h1>Selection recovery smoke</h1>
+const page = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>Selection recovery smoke</h1>
 <button id="start">Start sample selection</button><button id="reset">Simulate server restart</button><button id="replace">Create current selection without updating card</button>
 <button id="run">Run regression smoke</button><button id="cached">Run cached draft outage smoke</button><button id="flow">Run continuous local flow</button><button id="alternatives">Run alternatives comparison smoke</button><button id="uncertain">Run uncertain submission smoke</button><output id="status">Ready</output><iframe id="viewer" src="/viewer" style="width:100%;height:760px"></iframe>
 <script>
@@ -365,6 +365,7 @@ document.getElementById('cached').onclick = async () => {
  const run=document.getElementById('cached'); run.disabled=true;
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ const quantityText=id=>[...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].find(quantity=>quantity.closest('.product-action-row[data-product-id="'+id+'"]'))?.textContent?.trim();
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  try {
   await fetch('/reset',{method:'POST'}); widgetCalls.length=0; widgetResults.length=0; initialized=false;
@@ -377,7 +378,7 @@ document.getElementById('cached').onclick = async () => {
   check(!transcript.isError&&transcript.structuredContent?.review?.draftId===exact.draftId&&transcript.structuredContent.review.reviewContextId===exact.reviewContextId,'Cached display did not preserve the exact draft');
   frame.src='/viewer'; await wait(()=>initialized); publish();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.draftId===exact.draftId&&result.structuredContent.review.reviewContextId===exact.reviewContextId));
-  await wait(()=>title()==='Temporary basket draft'&&doc().querySelector('.product-action-row[data-product-id="1"]')?.textContent.includes('2'));
+  await wait(()=>title()==='Temporary basket draft'&&quantityText(1)==='2 ×');
   const wrong=await call({name:'update_product_review',arguments:{action:{kind:'show'},draft_id:'00000000-0000-4000-8000-000000000099',review_context_id:exact.reviewContextId}});
   check(wrong.isError===true,'Wrong cached draft target was accepted');
   const after=await fetch('/stats').then(r=>r.json());
@@ -439,6 +440,7 @@ document.getElementById('flow').onclick = async () => {
  const doc=()=>frame.contentDocument, title=()=>doc()?.querySelector('#title')?.textContent;
  const buttons=()=>[...doc().querySelectorAll('button')], button=label=>buttons().find(b=>b.textContent.trim()===label);
  const check=(ok,message)=>{if(!ok)throw new Error(message);};
+ const quantityText=id=>[...doc().querySelectorAll('[data-viewer-component="product-quantity"]')].find(quantity=>quantity.closest('.product-action-row[data-product-id="'+id+'"]'))?.textContent?.trim();
  const wait=async predicate=>{const until=Date.now()+15000;while(!predicate()){if(Date.now()>until)throw new Error('Timed out: '+(doc()?.querySelector('main')?.innerText||'no viewer main'));await new Promise(r=>setTimeout(r,25));}};
  const click=label=>{const b=button(label);check(b&&!b.disabled,'Missing enabled control: '+label);b.click();};
  try {
@@ -450,7 +452,7 @@ document.getElementById('flow').onclick = async () => {
   check(!redisplayed.isError&&redisplayed.structuredContent?.review?.draftId===draft.draftId&&redisplayed.structuredContent.review.reviewContextId===draft.reviewContextId,'Exact conversation draft could not be shown again');
   transcript=redisplayed; initialized=false; frame.src='/viewer'; await wait(()=>initialized); publish();
   await wait(()=>widgetResults.some(result=>result.name==='update_product_review'&&!result.isError&&result.structuredContent?.review?.items?.some(item=>item.product_id===1&&item.quantity===2)));
-  await wait(()=>doc().querySelector('.product-action-row[data-product-id="1"]')?.textContent.includes('2'));
+  await wait(()=>quantityText(1)==='2 ×');
   const before=await fetch('/stats').then(r=>r.json());
   click('Add to Nemlig basket');
   await wait(()=>widgetResults.some(result=>result.name==='submit_product_review'&&result.structuredContent?.result?.status==='completed'));
@@ -560,7 +562,7 @@ const server = createServer((req, res) => {
   // fallow-ignore-next-line complexity
   void (async () => {
     if (req.url === "/") {
-      res.setHeader("content-type", "text/html");
+      res.setHeader("content-type", "text/html; charset=utf-8");
       res.end(page);
       return;
     }
