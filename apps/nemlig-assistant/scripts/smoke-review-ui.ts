@@ -376,13 +376,16 @@ window.addEventListener('message',async event=>{
  if(m.method==='ui/notifications/initialized'){ initialized=true; frame.dataset.initialized='true'; if(transcript)publish(); }
  if(m.method==='ui/message'){ conversationMessages++; status.textContent='Retired current-list message received'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
  if(m.method==='tools/call'){
-  widgetCalls.push(m.params);
-  const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
-  widgetResults.push({name:m.params.name,isError:result.isError===true,structuredContent:result.structuredContent,text:(result.content||[]).filter(content=>content.type==='text').map(content=>content.text).join(' ')});
-  // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
-  const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
-  frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
-  if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
+  frame.dataset.toolCallInFlight='true';
+  try {
+   widgetCalls.push(m.params);
+   const result=offline ? {isError:true,content:[{type:'text',text:'Service Unavailable: private trace'}]} : await call(m.params);
+   widgetResults.push({name:m.params.name,isError:result.isError===true,structuredContent:result.structuredContent,text:(result.content||[]).filter(content=>content.type==='text').map(content=>content.text).join(' ')});
+   // Reproduce ChatGPT wrapping a tool error as a JSON-RPC exception.
+   const response=result.isError ? {error:{code:-32602,message:'Error code: INVALID_ARGUMENT; Error calling MCP tool: '+result.content.map(c=>c.text||'').join(' ')}} : {result};
+   frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,...response},location.origin);
+   if (!result.isError) frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:result},location.origin);
+  } finally { frame.dataset.toolCallInFlight='false'; }
  }
 });
 document.getElementById('cached').onclick = async () => {
@@ -837,6 +840,39 @@ const server = createServer((req, res) => {
 server.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => server.once("listening", resolve));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const isSmokeCallResponse = (response: {
+  request(): { method(): string };
+  url(): string;
+}) =>
+  [
+    response.url() === `${origin}/call`,
+    response.request().method() === "POST",
+  ].every(Boolean);
+type SmokeReviewTarget = {
+  draftId: string;
+  reviewContextId: string;
+};
+type SmokeToolCallRequest = {
+  arguments?: {
+    action?: { kind?: unknown };
+    draft_id?: unknown;
+    review_context_id?: unknown;
+  };
+  name?: unknown;
+};
+const isExactDraftShowRequest = (
+  request: SmokeToolCallRequest,
+  target: SmokeReviewTarget,
+) => {
+  if (request.name !== "update_product_review" || !request.arguments) {
+    return false;
+  }
+  return [
+    request.arguments.action?.kind === "show",
+    request.arguments.draft_id === target.draftId,
+    request.arguments.review_context_id === target.reviewContextId,
+  ].every(Boolean);
+};
 const callConcurrentTool = async (input: {
   name: string;
   arguments: Record<string, unknown>;
@@ -939,6 +975,7 @@ try {
             review?: {
               draftId?: string;
               reviewContextId?: string;
+              operationStatus?: "editing" | "submitting";
               items?: Array<{ product_id: number; quantity: number }>;
             };
           }
@@ -989,6 +1026,10 @@ try {
       "In-progress display smoke could not empty the exact draft",
     );
   }
+  const busyTarget: SmokeReviewTarget = {
+    draftId: busyReview.draftId,
+    reviewContextId: busyReview.reviewContextId,
+  };
   const shownBusy = await client.callTool({
     name: "show_product_review",
     arguments: {
@@ -1037,7 +1078,33 @@ try {
   if (await refresh.isDisabled()) {
     throw new Error("In-progress draft hid its exact refresh action");
   }
+  const firstRefreshResponse = browserPage.waitForResponse(
+    (response) => {
+      if (!isSmokeCallResponse(response)) {
+        return false;
+      }
+      return isExactDraftShowRequest(
+        response.request().postDataJSON() as SmokeToolCallRequest,
+        busyTarget,
+      );
+    },
+    { timeout: 10_000 },
+  );
   await refresh.click();
+  const firstRefresh = (await firstRefreshResponse).json() as Promise<{
+    structuredContent?: unknown;
+  }>;
+  const pendingRefresh = directReview(await firstRefresh);
+  if (pendingRefresh?.operationStatus !== "editing") {
+    throw new Error(
+      "First exact refresh did not return the pending edit state",
+    );
+  }
+  await browserPage.waitForFunction(
+    () =>
+      document.querySelector<HTMLIFrameElement>("#viewer")?.dataset
+        .toolCallInFlight === "false",
+  );
   await fetch(new URL("/release-edit", origin), { method: "POST" });
   await refresh.click();
   await busyFrame.locator('.product-action-row[data-product-id="2"]').waitFor();
