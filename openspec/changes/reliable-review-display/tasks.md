@@ -31,9 +31,11 @@ Implementation evidence: code checkpoint `2fb2e7f` passed exact-head [CI run 400
 
 ## 5. User-approved critical audit follow-up
 
-- [ ] 5.1 Add failing regressions for a card displayed during an in-progress edit/submission and a stale card receiving a verified result-only replay receipt; assert rendered controls/outcome and one provider write, not identity alone.
-- [ ] 5.2 Expose and render in-progress state with conflicting controls disabled and exact-target refresh; preserve owner/context validation, stale-payload isolation and no automatic retry.
-- [ ] 5.3 Handle verified completed/replayed receipts as success even without a review or after review expiry; preserve no-replay and exact-result correlation, and never claim a new addition.
-- [ ] 5.4 Correct the native runbook to authorize before the single Add action; run focused checks and browser regressions, review fixes, normal commit/push to PR #348, and reconcile epic/PR with exact-head CI.
+- [x] 5.1 Add failing regressions for a card displayed during an in-progress edit/submission and a stale card receiving a verified result-only replay receipt; assert rendered controls/outcome and one provider write, not identity alone.
+- [x] 5.2 Expose and render in-progress state with conflicting controls disabled and exact-target refresh; preserve owner/context validation, stale-payload isolation and no automatic retry.
+- [x] 5.3 Handle verified completed/replayed receipts as success even without a review or after review expiry; preserve no-replay and exact-result correlation, and never claim a new addition.
+- [x] 5.4 Correct the native runbook to authorize before the single Add action; run focused checks and browser regressions, review fixes, normal commit/push to PR #348, and reconcile epic/PR with exact-head CI.
+
+Audit follow-up evidence: Terra implemented `81654a4` and the deterministic refresh-test correction `3d1c69a`. Exact-head [CI run 40107092556](https://github.com/mortenbroesby/everyday-assistants/actions/runs/40107092556) passed verify and Fallow, including 447 app tests and both browser smoke suites. Failing-then-passing focused regressions cover in-progress editing/submission, empty-draft refresh, and completed result-only replay after draft loss. The browser verifies exact refresh correlation and one provider write; replay wording allows for unavailable products having been skipped. Astra reviewed the final diff and independent review findings were addressed. Normal hooks passed. CodeRabbit's earlier manual review covered `2fb2e7f`, not this follow-up; its success status is not fresh-review evidence. One local diagnostic rerun encountered an intermittent cached-outage mount failure before the changed scenario; a bounded rerun and exact-head CI passed, without a claim that its cause was established.
 
 Native-host release acceptance remains a separate open epic gate until the candidate can be accessed through an approved connection. The implementation must deliver its repeatable procedure and honest evidence status; it must not claim this gate from local metadata or synthetic browser tests.
