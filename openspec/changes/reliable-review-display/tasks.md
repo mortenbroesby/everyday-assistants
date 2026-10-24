@@ -29,4 +29,11 @@ Delivery status and user-facing stories: [epic #347](https://github.com/mortenbr
 
 Implementation evidence: code checkpoint `2fb2e7f` passed exact-head [CI run 40091765096](https://github.com/mortenbroesby/everyday-assistants/actions/runs/40091765096), including verify, Fallow, 443 app tests, build/type checks, and both browser smoke suites. Normal hooks passed, current main remains `254789f`, and Astra's integration review plus independent source review findings were addressed. Epic #347 and PR #348 track final-head checks and the additional manual CodeRabbit review; its earlier automatic success status represented a skipped review. Native-host acceptance is not inferred from any automated result.
 
+## 5. User-approved critical audit follow-up
+
+- [ ] 5.1 Add failing regressions for a card displayed during an in-progress edit/submission and a stale card receiving a verified result-only replay receipt; assert rendered controls/outcome and one provider write, not identity alone.
+- [ ] 5.2 Expose and render in-progress state with conflicting controls disabled and exact-target refresh; preserve owner/context validation, stale-payload isolation and no automatic retry.
+- [ ] 5.3 Handle verified completed/replayed receipts as success even without a review or after review expiry; preserve no-replay and exact-result correlation, and never claim a new addition.
+- [ ] 5.4 Correct the native runbook to authorize before the single Add action; run focused checks and browser regressions, review fixes, normal commit/push to PR #348, and reconcile epic/PR with exact-head CI.
+
 Native-host release acceptance remains a separate open epic gate until the candidate can be accessed through an approved connection. The implementation must deliver its repeatable procedure and honest evidence status; it must not claim this gate from local metadata or synthetic browser tests.

@@ -30,6 +30,7 @@ export const reviewSnapshotSchema = z.object({
     .optional(),
   actionNotice: z.string().max(300).optional(),
   revision: z.number().int().nonnegative().optional(),
+  operationStatus: z.enum(["editing", "submitting"]).optional(),
   submissionAttempted: z.boolean().optional(),
   destination: z.enum(["needs-review", "ready", "alternatives"]),
   items: z.array(reviewItemSchema),

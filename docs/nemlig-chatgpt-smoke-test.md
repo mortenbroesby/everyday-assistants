@@ -43,8 +43,8 @@ Follow the [Nemlig basket contract](../apps/nemlig-assistant/.codex/skills/nemli
 
 1. Independently read the actual basket and retain a private complete baseline. Do not clear it. Ask the owner to avoid concurrent edits.
 2. Review every intended `product_id` and added quantity, with names, sizes, and estimated prices. A failed lookup is not proof a product is unavailable.
-3. Open Submit review without applying. Obtain approval of the exact additions unless an existing instruction already authorizes that unchanged payload. Search or draft editing alone is insufficient.
-4. Confirm once. The current draft must submit with exact `draft_id`, `review_context_id`, unique `submission_id`, and `reviewed_list: {name, items}`. Independently check each approved line has `after = before + added quantity` and unrelated lines remain unchanged.
+3. Review the exact additions and obtain authorization before the one direct **Add to Nemlig basket** action, unless an existing instruction already authorizes that unchanged payload. Search or draft editing alone is insufficient.
+4. Add once. The current draft must submit with exact `draft_id`, `review_context_id`, unique `submission_id`, and `reviewed_list: {name, items}`. There is no extra confirmation screen. Independently check each approved line has `after = before + added quantity` and unrelated lines remain unchanged.
 5. If offered after verified addition, treat **Save basket as shopping list** as a distinct, optional app action: it saves the whole current basket, including older rows. Do not infer a saved-list ID if the provider does not establish one. Never retry an uncertain save.
 
 **Pass:** exact authorized additive readback and truthful UI outcome. HTTP success or a card message alone is insufficient. On uncertainty, stop writes and inspect the actual basket read-only; never confirm again or reuse the submission as a replay workaround.

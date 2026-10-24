@@ -66,6 +66,28 @@ test("an empty direct draft stays in its editor instead of opening saved-list pi
   });
 });
 
+test("viewer recognizes a verified result-only replay receipt", () => {
+  assert.deepEqual(
+    readPayload({
+      result: {
+        status: "completed",
+        operation: "additions",
+        replayed: true,
+        basket: { items: [] },
+      },
+    }),
+    {
+      kind: "replayed",
+      result: {
+        status: "completed",
+        operation: "additions",
+        replayed: true,
+        basket: { items: [] },
+      },
+    },
+  );
+});
+
 test("viewer rejects corrupt review data and keeps cached optional fields compatible", () => {
   const review = draftReview();
   assert.equal(

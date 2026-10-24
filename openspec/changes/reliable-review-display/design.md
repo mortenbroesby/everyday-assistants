@@ -22,6 +22,8 @@ See proposal.md for motivation and epic #347 for delivery ownership. Main #346 a
 
 6. **Proportionate verification.** Terra adds focused MCP tests and changes existing browser fixtures rather than inventing another simulator. Astra reviews owner/target negative cases and the real render journey. Native ChatGPT evaluation uses bounded read-only cases only after the candidate is available through an approved host connection; record tools, argument correctness, visible card, and absence of writes separately. No live external additions for this epic. Unknown native outcomes stay unrun/blocked with a concrete prerequisite.
 
+7. **Truthful concurrent display and receipts.** Reopening a draft while its service operation is in progress must expose that state without enabling conflicting actions. Provide an exact-target refresh path after completion; do not weaken passive stale-payload isolation, infer completion from elapsed time, or automatically retry submission. A durable verified `completed/replayed` result is a confirmed success with no new addition, even when it contains no review snapshot. Handle that receipt explicitly and recover the exact current review where available; an expired or missing draft must not turn verified success into uncertainty or recreate submission authority. Test both in-flight display and a stale card used after another card completes. The runbook must obtain authorization before the single Add action and must not imply that clicking it opens a non-applying confirmation screen.
+
 ## Risks / Trade-offs
 
 - An extra model tool increases catalog size and one deliberate render call can add latency. Keep descriptions/schema compact and measure the serialized catalog delta; do not add a new paid model/evaluation dependency.

@@ -266,6 +266,94 @@ test("pending quantity edits are labeled until Nemlig confirms them", () => {
   assert.match(markup, /Add to Nemlig basket/u);
 });
 
+test("an in-progress direct draft blocks conflicting controls but keeps exact refresh available", () => {
+  for (const operationStatus of ["editing", "submitting"] as const) {
+    const pageProps = props();
+    if (pageProps.model.screen.kind !== "review") {
+      throw new Error("review fixture missing");
+    }
+    Object.assign(pageProps.model.screen.review, {
+      basketMode: "direct-basket",
+      draftId: "11111111-1111-4111-8111-111111111111",
+      reviewContextId: "22222222-2222-4222-8222-222222222222",
+      operationStatus,
+    });
+
+    const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+    const buttons = [
+      ...markup.matchAll(/<button\b[^>]*>[\s\S]*?<\/button>/gu),
+    ].map(([button]) => button);
+    const refresh = buttons.find((button) =>
+      button.includes("Refresh this draft"),
+    );
+    const submit = buttons.find((button) =>
+      button.includes("Add to Nemlig basket"),
+    );
+
+    assert.match(
+      markup,
+      operationStatus === "editing"
+        ? /being updated in another card/u
+        : /being added in another card/u,
+    );
+    assert.ok(refresh);
+    assert.doesNotMatch(refresh, /\sdisabled(?:="")?/u);
+    assert.ok(submit);
+    assert.match(submit, /\sdisabled(?:="")?/u);
+  }
+});
+
+test("an empty in-progress direct draft still exposes its exact refresh", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  Object.assign(pageProps.model.screen.review, {
+    basketMode: "direct-basket",
+    draftId: "11111111-1111-4111-8111-111111111111",
+    reviewContextId: "22222222-2222-4222-8222-222222222222",
+    items: [],
+    operationStatus: "editing",
+  });
+
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+
+  assert.match(markup, /being updated in another card/u);
+  assert.match(markup, />Refresh this draft<\/button>/u);
+});
+
+test("a result-only completed replay is truthful about unavailable products", () => {
+  const pageProps = props();
+  pageProps.model.screen = {
+    kind: "replayed",
+    result: {
+      status: "completed",
+      operation: "additions",
+      replayed: true,
+      basket: {
+        itemCount: 0,
+        productCount: 0,
+        productsPrice: 0,
+        deliveryPrice: 0,
+        total: 0,
+        currency: "DKK",
+      },
+    },
+  };
+
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+
+  assert.match(
+    markup,
+    /Previous submission completed; nothing was added again\./u,
+  );
+  assert.match(
+    markup,
+    /Unavailable products may have been skipped\. Inspect the current Nemlig basket for its contents\./u,
+  );
+  assert.doesNotMatch(markup, /exact addition|verified additions/iu);
+});
+
 test("loading and provider operations show accessible progress without hiding the list", () => {
   const pageProps = props();
   pageProps.model.busy = true;

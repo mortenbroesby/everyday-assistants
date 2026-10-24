@@ -8,6 +8,7 @@ The Shopping List Update investigation (#345) demonstrated a text-only show path
 - Separate model-facing preparation/edit tools from the hosted renderer, preserving the existing shell, app callbacks, and text-only stdio behavior. **BREAKING:** clients expecting start/update to automatically mount the review must call the display tool instead.
 - Preserve exact draft/context identity; allow implicit display only within a trustworthy current session, never an account-wide latest-draft guess. Missing/stale context produces actionable recovery without recreation.
 - Add focused MCP/browser regressions and a bounded prompt/host acceptance matrix that distinguishes model selection from rendering and mutation safety.
+- Expose in-progress draft operations truthfully when reopening a card, and render verified already-completed submission receipts as success without another provider write. Keep the native-test runbook consistent with the existing one-click Submit action.
 
 ## Capabilities
 
@@ -25,4 +26,4 @@ Primary code: `apps/nemlig-assistant/src/mcp.ts`, review identity accessors only
 
 The canonical delivery contract is [epic #347](https://github.com/mortenbroesby/everyday-assistants/issues/347), with five stories and task checkboxes. One branch `codex/nemlig-review-display` and one PR contain this change, based on main `254789f61bfc73b7791e950e45691c5293ce0a85`. Astra owns design/integration; Terra owns implementation.
 
-Non-goals: redesigning the editor, rebuilding lost drafts, adding product inference, changing basket submission/storage/auth, merging/deploying, or performing live basket mutations. Acceptance requires read-only exact-target display, correct metadata and callers, preserved UI journey, focused regressions and exact-head CI. Native ChatGPT selection/rendering is a separately recorded release gate when the candidate is available to the host; static tests never count as native acceptance.
+Non-goals: redesigning the editor, rebuilding lost drafts, adding product inference, changing basket authorization/provider dispatch/storage/auth, merging/deploying, or performing live basket mutations. Submission receipt presentation and in-progress display are in scope; no extra confirmation screen is introduced. Acceptance requires read-only exact-target display, correct metadata and callers, preserved UI journey, focused regressions and exact-head CI. Native ChatGPT selection/rendering is a separately recorded release gate when the candidate is available to the host; static tests never count as native acceptance.

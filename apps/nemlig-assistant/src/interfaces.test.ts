@@ -975,11 +975,24 @@ test("display preserves an exact direct draft while another request hydrates an 
       arguments: { items: [{ product_id: 7, quantity: 1 }] },
     });
     assert.equal(created.isError, undefined, toolText(created));
-    const initial = (
+    const createdReview = (
       created.structuredContent as {
         review: ProductReviewSnapshot;
       }
     ).review;
+    const emptied = await editor.callTool({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: createdReview.draftId,
+        review_context_id: createdReview.reviewContextId,
+        action: { kind: "remove", product_ids: [7] },
+      },
+    });
+    assert.equal(emptied.isError, undefined, toolText(emptied));
+    const initial = (
+      emptied.structuredContent as { review: ProductReviewSnapshot }
+    ).review;
+    assert.deepEqual(initial.items, []);
     const hydrated = new Promise<void>((resolve) => {
       productReadStarted = resolve;
     });
@@ -1010,12 +1023,27 @@ test("display preserves an exact direct draft while another request hydrates an 
       ).review;
       assert.equal(snapshot.draftId, initial.draftId);
       assert.equal(snapshot.reviewContextId, initial.reviewContextId);
+      assert.equal(snapshot.operationStatus, "editing");
       assert.deepEqual(
         snapshot.items.map(({ product_id, quantity }) => [
           product_id,
           quantity,
         ]),
-        [[7, 1]],
+        [],
+      );
+      const refreshed = await display.callTool({
+        name: "update_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+          action: { kind: "show" },
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      assert.equal(
+        (refreshed.structuredContent as { review: ProductReviewSnapshot })
+          .review.operationStatus,
+        "editing",
       );
     });
     assert.equal(providerReads, readsBeforeDisplay, "display did not hydrate");
@@ -1027,11 +1055,29 @@ test("display preserves an exact direct draft while another request hydrates an 
       (
         edited.structuredContent as { review: ProductReviewSnapshot }
       ).review.items.map(({ product_id, quantity }) => [product_id, quantity]),
-      [
-        [7, 1],
-        [8, 1],
-      ],
+      [[8, 1]],
     );
+    await withMcpClient(server(), async (display) => {
+      const refreshed = await display.callTool({
+        name: "update_product_review",
+        arguments: {
+          draft_id: initial.draftId,
+          review_context_id: initial.reviewContextId,
+          action: { kind: "show" },
+        },
+      });
+      assert.equal(refreshed.isError, undefined, toolText(refreshed));
+      const settled = (
+        refreshed.structuredContent as { review: ProductReviewSnapshot }
+      ).review;
+      assert.equal(settled.draftId, initial.draftId);
+      assert.equal(settled.reviewContextId, initial.reviewContextId);
+      assert.equal(settled.operationStatus, undefined);
+      assert.deepEqual(
+        settled.items.map(({ product_id, quantity }) => [product_id, quantity]),
+        [[8, 1]],
+      );
+    });
     assert.equal(providerWrites, 0, "local edit did not write to the provider");
   });
 });
@@ -2680,13 +2726,27 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
           undefined,
           toolText(displayedDuringSubmit),
         );
+        const pending = (
+          displayedDuringSubmit.structuredContent as {
+            review: ProductReviewSnapshot;
+          }
+        ).review;
+        assert.equal(pending.draftId, review.draftId);
+        assert.equal(pending.reviewContextId, review.reviewContextId);
+        assert.equal(pending.operationStatus, "submitting");
+        const refreshed = await displayClient.callTool({
+          name: "update_product_review",
+          arguments: {
+            draft_id: review.draftId,
+            review_context_id: review.reviewContextId,
+            action: { kind: "show" },
+          },
+        });
+        assert.equal(refreshed.isError, undefined, toolText(refreshed));
         assert.equal(
-          (
-            displayedDuringSubmit.structuredContent as {
-              review: ProductReviewSnapshot;
-            }
-          ).review.draftId,
-          review.draftId,
+          (refreshed.structuredContent as { review: ProductReviewSnapshot })
+            .review.operationStatus,
+          "submitting",
         );
       });
       assert.equal(
@@ -2727,6 +2787,7 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
       ).review;
       assert.equal(confirmed.draftId, review.draftId);
       assert.equal(confirmed.reviewContextId, review.reviewContextId);
+      assert.equal(confirmed.operationStatus, undefined);
       assert.equal(confirmed.submission?.status, "submitted");
       const displayedAgain = await mcp.callTool({
         name: "show_product_review",
@@ -2783,6 +2844,39 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         ],
       );
       assert.deepEqual([...sourceItems], [[7, 2]]);
+      const replayedAfterDraftLoss = await mcp.callTool({
+        name: "submit_product_review",
+        arguments: {
+          draft_id: review.draftId,
+          review_context_id: review.reviewContextId,
+          submission_id: randomUUID(),
+          reviewed_list: {
+            name: review.shoppingListName ?? "Read-only source",
+            items: review.items.map(({ product_id, quantity }) => ({
+              product_id,
+              quantity,
+            })),
+          },
+        },
+      });
+      assert.equal(
+        replayedAfterDraftLoss.isError,
+        undefined,
+        toolText(replayedAfterDraftLoss),
+      );
+      const replayReceipt = replayedAfterDraftLoss.structuredContent as {
+        review?: ProductReviewSnapshot;
+        result?: { status: string; operation: string; replayed: boolean };
+      };
+      assert.equal(replayReceipt.review, undefined);
+      assert.equal(replayReceipt.result?.status, "completed");
+      assert.equal(replayReceipt.result?.operation, "additions");
+      assert.equal(replayReceipt.result?.replayed, true);
+      assert.equal(
+        basketWrites,
+        1,
+        "a durable completed receipt did not repeat the provider write",
+      );
     });
     await withMcpClient(server(), async (mcp) => {
       const loaded = await mcp.callTool({

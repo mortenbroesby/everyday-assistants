@@ -60,6 +60,16 @@ The system SHALL expose `show_product_review` to display an existing temporary d
 - **WHEN** an existing draft contains a submission result or uncertainty
 - **THEN** display preserves that state and does not replay, reset, or authorize submission
 
+#### Scenario: Draft is displayed during an operation
+- **WHEN** a draft is reopened while an edit or submission operation is still in progress
+- **THEN** the returned state identifies the operation as in progress and the viewer disables conflicting actions
+- **AND** the viewer provides an exact-target refresh path to observe completion without automatic submission retry or accepting stale passive payloads
+
+#### Scenario: Another card has already completed submission
+- **WHEN** a stale card receives a durable verified completed submission receipt with replayed=true and no new provider write
+- **THEN** the viewer reports that the addition already completed and nothing was added again, even if the response contains no review snapshot
+- **AND** a missing or expired review does not downgrade the verified result to uncertainty, recreate a draft, or enable another submission
+
 #### Scenario: Provider access is unavailable
 - **WHEN** an authenticated MCP user displays an existing cached draft while Nemlig access is unavailable
 - **THEN** the draft is returned without provider login or reads, retaining exact owner checks; saved-list discovery still requires authenticated provider access

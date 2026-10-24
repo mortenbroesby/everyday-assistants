@@ -8,6 +8,7 @@ import { viewerReviewSchema } from "../review-schema.js";
 import { toggleReviewDisclosure, ViewerPage } from "./viewer-page.js";
 import type {
   BasketSummary,
+  CompletedReplayReceipt,
   PresentationDestination,
   Review,
   ReviewItem,
@@ -257,6 +258,31 @@ function reviewTargetArgs(review: Review): Record<string, unknown> {
   }
   return {};
 }
+type DirectReplayTarget = {
+  draftId: string;
+  reviewContextId: string;
+};
+function directReplayTarget(
+  requestArgs: Record<string, unknown>,
+): DirectReplayTarget | undefined {
+  return typeof requestArgs.draft_id === "string" &&
+    typeof requestArgs.review_context_id === "string"
+    ? {
+        draftId: requestArgs.draft_id,
+        reviewContextId: requestArgs.review_context_id,
+      }
+    : undefined;
+}
+function matchesDirectReplayTarget(
+  review: Review | undefined,
+  target: DirectReplayTarget,
+): boolean {
+  return (
+    review?.basketMode === "direct-basket" &&
+    review.draftId === target.draftId &&
+    review.reviewContextId === target.reviewContextId
+  );
+}
 function isPositiveSafeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
 }
@@ -409,6 +435,27 @@ function readProductViews(envelope: Record<string, unknown>) {
   );
   return candidate?.every(isProductView) ? candidate : undefined;
 }
+function readCompletedReplayReceipt(
+  value: unknown,
+): CompletedReplayReceipt | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (
+    value.status !== "completed" ||
+    value.operation !== "additions" ||
+    value.replayed !== true ||
+    !isRecord(value.basket)
+  ) {
+    return undefined;
+  }
+  return {
+    status: "completed",
+    operation: "additions",
+    replayed: true,
+    basket: value.basket,
+  };
+}
 export function readPayload(value: unknown): ViewerScreen | undefined {
   if (Array.isArray(value) && value.every(isProductView)) {
     return { kind: "products", payload: { views: value }, views: value };
@@ -419,6 +466,10 @@ export function readPayload(value: unknown): ViewerScreen | undefined {
   const envelope = isRecord(value.structuredContent)
     ? value.structuredContent
     : value;
+  const replayed = readCompletedReplayReceipt(envelope.result);
+  if (replayed) {
+    return { kind: "replayed", result: replayed };
+  }
   const baskets = readBasketSummaries(envelope);
   if (!baskets) {
     return undefined;
@@ -463,7 +514,9 @@ export function ProductViewer() {
         : readPayload(window.openai?.toolOutput);
     return initial?.kind === "review"
       ? { ...initial, active: false }
-      : (initial ?? { kind: "loading" });
+      : initial?.kind === "replayed"
+        ? { kind: "loading" }
+        : (initial ?? { kind: "loading" });
   });
   const [baskets, setBaskets] = useState<BasketSummary[]>(() =>
     screen.kind === "picker" ? screen.baskets : [],
@@ -624,6 +677,7 @@ export function ProductViewer() {
       current = false,
       adoptPresentationDestination = false,
       acknowledgePartialList = false,
+      replayTarget?: DirectReplayTarget,
     ) => {
       if (!current && callLock.current) {
         return true;
@@ -645,6 +699,27 @@ export function ProductViewer() {
             : "Nemlig returned a response this view could not read. Continue in conversation to inspect the current state.",
         });
         return false;
+      }
+      if (next.kind === "replayed") {
+        if (
+          !current ||
+          !replayTarget ||
+          selectedBasketIdRef.current !== replayTarget.draftId ||
+          !matchesDirectReplayTarget(activeReview.current?.review, replayTarget)
+        ) {
+          return !current;
+        }
+        stopQuantityTimer();
+        clearPendingQuantities();
+        activeReview.current = undefined;
+        lastConfirmedReview.current = undefined;
+        ignorePassivePayloads.current = true;
+        setSubmitBlocked(true);
+        setReviewDisclosures(new Map());
+        setPresentationDestination(undefined);
+        setMessage("");
+        setScreen(next);
+        return true;
       }
       const previous = activeReview.current;
       if (!current && next.kind === "review" && previous?.active === false) {
@@ -1051,6 +1126,9 @@ export function ProductViewer() {
           true,
           adoptPresentationDestination,
           acknowledgePartialList,
+          name === "submit_product_review"
+            ? directReplayTarget(requestArgs)
+            : undefined,
         )
       ) {
         throw new Error("Could not confirm the updated shopping list.");

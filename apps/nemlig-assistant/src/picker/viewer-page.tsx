@@ -60,12 +60,19 @@ export type ViewerPayload = {
   unavailable?: boolean;
   ended?: boolean;
 };
+export type CompletedReplayReceipt = {
+  status: "completed";
+  operation: "additions";
+  replayed: true;
+  basket: Record<string, unknown>;
+};
 export type ViewerScreen =
   | { kind: "loading" }
   | { kind: "error"; message: string }
   | { kind: "cancelled" }
   | { kind: "products"; payload: ViewerPayload; views: ProductView[] }
   | { kind: "review"; review: Review; active: boolean }
+  | { kind: "replayed"; result: CompletedReplayReceipt }
   | { kind: "picker"; baskets: BasketSummary[]; selectedBasketId?: string }
   | { kind: "unavailable"; review?: Review }
   | { kind: "empty"; message?: string };
@@ -713,11 +720,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     Array.isArray(productPayload.items);
   const partialSubmission = review?.submission?.status === "partial";
   const confirmedSubmission = review?.submission?.status === "submitted";
+  const operationStatus = review?.operationStatus;
   const uncertainSubmission =
     review?.submission?.status === "uncertain" ||
     (submitBlocked && !busy && !partialSubmission && !confirmedSubmission);
   const editsBlocked =
     busy ||
+    operationStatus !== undefined ||
     !active ||
     (review?.shoppingListId === undefined &&
       !(review?.basketMode === "direct-basket" && review.draftId)) ||
@@ -740,6 +749,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
         className="basket-menu-trigger"
         aria-label="Shopping list options"
         aria-expanded={basketMenuOpen}
+        disabled={editsBlocked}
         onClick={() => setBasketMenuOpen((open) => !open)}
       >
         <Layers3 aria-hidden="true" size={20} />
@@ -786,29 +796,31 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
   );
   const pickerIsEmpty = screen.kind === "picker" && baskets.length === 0;
   const title =
-    review && active && terminalSubmission
-      ? review.submission?.status === "submitted"
-        ? review.submission.skipped_products?.length
-          ? "Nemlig basket update"
-          : "Added to Nemlig basket"
-        : partialSubmission
-          ? "Addition stopped early"
-          : "Check your Nemlig basket"
-      : review && active
-        ? review.items.length
-          ? safeTitle
-          : "What should we shop for?"
-        : basket
-          ? "Actual Nemlig basket"
-          : screen.kind === "picker"
-            ? "Shopping lists"
-            : screen.kind === "unavailable"
-              ? "Shopping list unavailable"
-              : screen.kind === "review"
-                ? review?.shoppingListId !== undefined
-                  ? "Your shopping list"
-                  : "Shopping list unavailable"
-                : "Products";
+    screen.kind === "replayed"
+      ? "Nemlig basket update"
+      : review && active && terminalSubmission
+        ? review.submission?.status === "submitted"
+          ? review.submission.skipped_products?.length
+            ? "Nemlig basket update"
+            : "Added to Nemlig basket"
+          : partialSubmission
+            ? "Addition stopped early"
+            : "Check your Nemlig basket"
+        : review && active
+          ? review.items.length
+            ? safeTitle
+            : "What should we shop for?"
+          : basket
+            ? "Actual Nemlig basket"
+            : screen.kind === "picker"
+              ? "Shopping lists"
+              : screen.kind === "unavailable"
+                ? "Shopping list unavailable"
+                : screen.kind === "review"
+                  ? review?.shoppingListId !== undefined
+                    ? "Your shopping list"
+                    : "Shopping list unavailable"
+                  : "Products";
   const intro = !terminalSubmission
     ? review && active
       ? review.items.length === 0
@@ -826,6 +838,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     : undefined;
   const outcomeOnly =
     terminalSubmission ||
+    screen.kind === "replayed" ||
     screen.kind === "empty" ||
     pickerIsEmpty ||
     (review && active && review.items.length === 0);
@@ -1124,6 +1137,18 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           ))}
         </section>
       )}
+      {review && active && !terminalSubmission && operationStatus && (
+        <OutcomeSurface tone="warning" title="Draft update in progress">
+          <p role="status">
+            {operationStatus === "submitting"
+              ? "This draft is being added in another card. Refresh this exact draft after it finishes."
+              : "This draft is being updated in another card. Refresh this exact draft after it finishes."}
+          </p>
+          <Button color="secondary" disabled={busy} onClick={actions.onRefresh}>
+            Refresh this draft
+          </Button>
+        </OutcomeSurface>
+      )}
       {review &&
         active &&
         !terminalSubmission &&
@@ -1413,7 +1438,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                   ) : (
                     <Button
                       color="primary"
-                      disabled={busy}
+                      disabled={busy || operationStatus !== undefined}
                       onClick={actions.onConfirmSubmit}
                     >
                       Submit {preparedProductCount}{" "}
@@ -1442,6 +1467,17 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           message={screen.message}
           onChoose={actions.onSendFollowUp}
         />
+      )}
+      {screen.kind === "replayed" && (
+        <OutcomeSurface tone="success" title="Previous submission completed">
+          <p role="status">
+            Previous submission completed; nothing was added again.
+          </p>
+          <p>
+            Unavailable products may have been skipped. Inspect the current
+            Nemlig basket for its contents.
+          </p>
+        </OutcomeSurface>
       )}
       {screen.kind === "products" && screen.views.length === 0 && (
         <div className="empty" role="status">

@@ -11,6 +11,7 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { chromium } from "playwright";
 import { createMcpServer } from "../src/mcp.js";
 import type { Basket, Product, ShoppingClient } from "../src/client.js";
+import { ProductReviewService } from "../src/product-review.js";
 import { handleLocalBasketStateRequest } from "../src/local-basket-callback.js";
 import {
   mutateOwnerLocalBasketInventory,
@@ -39,6 +40,11 @@ let unknownPriceScenario = false;
 let providerAvailable = true;
 let providerAuthCalls = 0;
 let providerReads = 0;
+let deferProductRead = false;
+let notifyProductRead: (() => void) | undefined;
+let releaseProductRead: (() => void) | undefined;
+let deferredEdit: Promise<unknown> | undefined;
+let deferredEditFailure: unknown;
 let nextShoppingListId = 1;
 const shoppingLists = new Map<
   number,
@@ -111,6 +117,12 @@ const catalogue = {
   getProduct: async (id: number) => {
     providerReads++;
     requireProvider();
+    if (deferProductRead && id === 2) {
+      notifyProductRead?.();
+      await new Promise<void>((resolve) => {
+        releaseProductRead = resolve;
+      });
+    }
     return product(id);
   },
   getFreshProduct: async (id: number) => {
@@ -310,15 +322,26 @@ globalThis.fetch = (async (input, init) => {
       capability === "smoke-capability" ? "smoke-owner" : undefined,
   );
 }) as typeof fetch;
+let reviews = new ProductReviewService(catalogue);
 const makeServer = () =>
-  createMcpServer(catalogue, async () => undefined, process.env, {
-    principalKey: "smoke-owner",
-    policyRevision: "smoke-policy",
-    localBasketCapability: "smoke-capability",
-  });
+  createMcpServer(
+    catalogue,
+    async () => undefined,
+    process.env,
+    {
+      principalKey: "smoke-owner",
+      policyRevision: "smoke-policy",
+      localBasketCapability: "smoke-capability",
+    },
+    reviews,
+  );
 let current = makeServer();
 const handler = createMcpHandler(() => current, { legacy: "reject" });
 const mcpHandler = toNodeHandler(handler);
+const concurrentHandler = createMcpHandler(() => makeServer(), {
+  legacy: "reject",
+});
+const concurrentMcpHandler = toNodeHandler(concurrentHandler);
 const client = new Client(
   { name: "review-ui-smoke", version: "1" },
   { versionNegotiation: { mode: { pin: "2026-07-28" } } },
@@ -329,6 +352,7 @@ const page = `<!doctype html><html><head><meta charset="utf-8"></head><body><h1>
 <script>
 const frame = document.getElementById('viewer'), status = document.getElementById('status');
 let transcript, offline = false, initialized = false, conversationMessages = 0;
+window.setSmokeTranscript = value => { transcript = value; };
 const widgetCalls = [], widgetResults = [];
 const publish = () => frame.contentWindow.postMessage({jsonrpc:'2.0',method:'ui/notifications/tool-result',params:transcript},location.origin);
 const call = args => fetch('/call', {method:'POST',body:JSON.stringify(args)}).then(r=>r.json());
@@ -349,7 +373,7 @@ window.addEventListener('message',async event=>{
  if(event.source!==frame.contentWindow || event.origin!==location.origin)return;
  const m=event.data;
  if(m.method==='ui/initialize')frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{protocolVersion:m.params.protocolVersion,hostInfo:{name:'synthetic-mcp-host',version:'1'},hostCapabilities:{},hostContext:{theme:'light'}}},location.origin);
- if(m.method==='ui/notifications/initialized'){ initialized=true; if(transcript)publish(); }
+ if(m.method==='ui/notifications/initialized'){ initialized=true; frame.dataset.initialized='true'; if(transcript)publish(); }
  if(m.method==='ui/message'){ conversationMessages++; status.textContent='Retired current-list message received'; frame.contentWindow.postMessage({jsonrpc:'2.0',id:m.id,result:{}},location.origin); }
  if(m.method==='tools/call'){
   widgetCalls.push(m.params);
@@ -558,6 +582,10 @@ const server = createServer((req, res) => {
     void mcpHandler(req, res);
     return;
   }
+  if (req.url === "/mcp-concurrent") {
+    void concurrentMcpHandler(req, res);
+    return;
+  }
   // Fixture routes share reset counters and durable storage; MCP owns the behavior under test.
   // fallow-ignore-next-line complexity
   void (async () => {
@@ -577,6 +605,7 @@ const server = createServer((req, res) => {
       return;
     }
     if (req.url === "/restart" && req.method === "POST") {
+      reviews = new ProductReviewService(catalogue);
       current = makeServer();
       basketReads = 0;
       directWrites = 0;
@@ -591,6 +620,13 @@ const server = createServer((req, res) => {
     }
     if (req.url === "/reset" && req.method === "POST") {
       stored.clear();
+      releaseProductRead?.();
+      deferProductRead = false;
+      notifyProductRead = undefined;
+      releaseProductRead = undefined;
+      deferredEdit = undefined;
+      deferredEditFailure = undefined;
+      reviews = new ProductReviewService(catalogue);
       current = makeServer();
       basketReads = 0;
       directWrites = 0;
@@ -624,6 +660,93 @@ const server = createServer((req, res) => {
         deliveryTime: "smoke",
       };
       res.end("reset");
+      return;
+    }
+    if (req.url === "/defer-edit" && req.method === "POST") {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.from(chunk));
+        if (Buffer.concat(chunks).length > 16384) {
+          throw new Error("Input too large");
+        }
+      }
+      const input = JSON.parse(Buffer.concat(chunks).toString()) as {
+        name: string;
+        arguments: Record<string, unknown>;
+      };
+      const started = new Promise<void>((resolve) => {
+        notifyProductRead = resolve;
+      });
+      const failBeforeHydration = (failure: unknown) => {
+        if (deferredEditFailure !== undefined) {
+          return;
+        }
+        deferredEditFailure = failure;
+        notifyProductRead?.();
+      };
+      const startTimeout = setTimeout(() => {
+        failBeforeHydration(
+          new Error("Deferred edit did not begin product hydration"),
+        );
+      }, 5_000);
+      deferProductRead = true;
+      deferredEdit = callConcurrentTool(input);
+      void deferredEdit.then(
+        (result) => {
+          const toolResult = result as {
+            content?: Array<{ text?: unknown; type?: unknown }>;
+            isError?: unknown;
+          };
+          if (toolResult.isError === true) {
+            const detail = toolResult.content
+              ?.filter((entry) => entry.type === "text")
+              .map((entry) =>
+                typeof entry.text === "string" ? entry.text : "",
+              )
+              .filter(Boolean)
+              .join(" ");
+            failBeforeHydration(
+              new Error(
+                `Deferred edit MCP error: ${detail || "unknown error"}`,
+              ),
+            );
+            return;
+          }
+          if (releaseProductRead === undefined) {
+            failBeforeHydration(
+              new Error("Deferred edit completed before product hydration"),
+            );
+          }
+        },
+        (error: unknown) => {
+          failBeforeHydration(error);
+        },
+      );
+      await started;
+      clearTimeout(startTimeout);
+      if (deferredEditFailure) {
+        deferProductRead = false;
+        notifyProductRead = undefined;
+        releaseProductRead = undefined;
+        res.statusCode = 500;
+        res.end(
+          `Deferred edit failed before hydration: ${deferredEditFailure instanceof Error ? deferredEditFailure.message : "unknown error"}`,
+        );
+        return;
+      }
+      res.end("deferred");
+      return;
+    }
+    if (req.url === "/release-edit" && req.method === "POST") {
+      releaseProductRead?.();
+      const result = await deferredEdit;
+      deferProductRead = false;
+      notifyProductRead = undefined;
+      releaseProductRead = undefined;
+      deferredEdit = undefined;
+      deferredEditFailure = undefined;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify(result));
       return;
     }
     if (req.url === "/provider-unavailable" && req.method === "POST") {
@@ -714,6 +837,26 @@ const server = createServer((req, res) => {
 server.listen(0, "127.0.0.1");
 await new Promise<void>((resolve) => server.once("listening", resolve));
 const origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+const callConcurrentTool = async (input: {
+  name: string;
+  arguments: Record<string, unknown>;
+}) => {
+  const concurrentClient = new Client(
+    { name: "review-ui-smoke-concurrent", version: "1" },
+    { versionNegotiation: { mode: { pin: "2026-07-28" } } },
+  );
+  await concurrentClient.connect(
+    new StreamableHTTPClientTransport(new URL("/mcp-concurrent", origin)),
+  );
+  try {
+    return await concurrentClient.callTool({
+      ...input,
+      _meta: { "openai/session": "review-ui-smoke-conversation" },
+    });
+  } finally {
+    await concurrentClient.close();
+  }
+};
 await client.connect(
   new StreamableHTTPClientTransport(new URL("/mcp", origin)),
 );
@@ -788,6 +931,193 @@ try {
   }
   await browserPage.locator("#uncertain").click();
   await waitForResult("MCP adapter uncertain submission");
+  await fetch(new URL("/reset", origin), { method: "POST" });
+  const directReview = (result: { structuredContent?: unknown }) =>
+    (
+      result.structuredContent as
+        | {
+            review?: {
+              draftId?: string;
+              reviewContextId?: string;
+              items?: Array<{ product_id: number; quantity: number }>;
+            };
+          }
+        | undefined
+    )?.review;
+  const mountViewer = async (result: unknown) => {
+    await browserPage.evaluate((toolOutput) => {
+      const frame = document.querySelector<HTMLIFrameElement>("#viewer");
+      if (!frame) {
+        throw new Error("Viewer iframe is missing");
+      }
+      (
+        window as typeof window & {
+          setSmokeTranscript?: (value: unknown) => void;
+        }
+      ).setSmokeTranscript?.(toolOutput);
+      frame.dataset.initialized = "";
+      frame.src = "/viewer";
+    }, result);
+    await browserPage.waitForFunction(
+      () =>
+        document.querySelector<HTMLIFrameElement>("#viewer")?.dataset
+          .initialized === "true",
+    );
+    await browserPage.frameLocator("#viewer").locator("main.viewer").waitFor();
+  };
+  const startedBusy = await client.callTool({
+    name: "start_product_review",
+    arguments: { items: [{ product_id: 1, quantity: 1 }] },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const startedBusyReview = directReview(startedBusy);
+  if (!startedBusyReview?.draftId || !startedBusyReview.reviewContextId) {
+    throw new Error("In-progress display smoke could not start a direct draft");
+  }
+  const emptiedBusy = await client.callTool({
+    name: "update_product_review_conversation",
+    arguments: {
+      draft_id: startedBusyReview.draftId,
+      review_context_id: startedBusyReview.reviewContextId,
+      action: { kind: "remove", product_ids: [1] },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const busyReview = directReview(emptiedBusy);
+  if (!busyReview?.draftId || !busyReview.reviewContextId) {
+    throw new Error(
+      "In-progress display smoke could not empty the exact draft",
+    );
+  }
+  const shownBusy = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  await mountViewer(shownBusy);
+  const deferredResponse = await fetch(new URL("/defer-edit", origin), {
+    method: "POST",
+    body: JSON.stringify({
+      name: "update_product_review_conversation",
+      arguments: {
+        draft_id: busyReview.draftId,
+        review_context_id: busyReview.reviewContextId,
+        action: { kind: "add", items: [{ product_id: 2, quantity: 1 }] },
+      },
+    }),
+  });
+  if (!deferredResponse.ok) {
+    throw new Error(await deferredResponse.text());
+  }
+  const duringEdit = await client.callTool({
+    name: "update_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+      action: { kind: "show" },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  if (directReview(duringEdit)?.draftId !== busyReview.draftId) {
+    throw new Error("In-progress display returned a different draft");
+  }
+  await mountViewer(duringEdit);
+  const busyFrame = browserPage.frameLocator("#viewer");
+  await busyFrame.getByText("Draft update in progress").waitFor();
+  const pendingAdd = busyFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  if ((await pendingAdd.count()) !== 0) {
+    throw new Error("Empty in-progress draft rendered a basket addition");
+  }
+  const refresh = busyFrame.getByRole("button", { name: "Refresh this draft" });
+  if (await refresh.isDisabled()) {
+    throw new Error("In-progress draft hid its exact refresh action");
+  }
+  await refresh.click();
+  await fetch(new URL("/release-edit", origin), { method: "POST" });
+  await refresh.click();
+  await busyFrame.locator('.product-action-row[data-product-id="2"]').waitFor();
+  const settledSubmit = busyFrame.getByRole("button", {
+    name: "Add to Nemlig basket",
+  });
+  if (
+    (await settledSubmit.count()) !== 1 ||
+    (await settledSubmit.isDisabled())
+  ) {
+    throw new Error(
+      "Completed exact refresh did not enable the single Add action",
+    );
+  }
+  const settled = await client.callTool({
+    name: "show_product_review",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  const settledReview = directReview(settled);
+  if (!settledReview?.items) {
+    throw new Error(
+      "In-progress display smoke could not refresh the exact draft",
+    );
+  }
+  const completedElsewhere = await client.callTool({
+    name: "submit_product_review_conversation",
+    arguments: {
+      draft_id: busyReview.draftId,
+      review_context_id: busyReview.reviewContextId,
+      submission_id: "88888888-8888-4888-8888-888888888888",
+      reviewed_list: {
+        name: "Smoke draft",
+        items: settledReview.items.map(({ product_id, quantity }) => ({
+          product_id,
+          quantity,
+        })),
+      },
+    },
+    _meta: { "openai/session": "review-ui-smoke-conversation" },
+  });
+  if (
+    directReview(completedElsewhere) === undefined ||
+    (
+      completedElsewhere.structuredContent as {
+        result?: { replayed?: boolean };
+      }
+    ).result?.replayed !== false
+  ) {
+    throw new Error("Second-card direct submission was not confirmed");
+  }
+  await busyFrame.getByRole("button", { name: "Add to Nemlig basket" }).click();
+  await busyFrame
+    .getByText("Previous submission completed; nothing was added again.")
+    .waitFor();
+  if (
+    await busyFrame
+      .getByText("We could not verify the addition")
+      .isVisible()
+      .catch(() => false)
+  ) {
+    throw new Error("Verified replay opened uncertain submission recovery");
+  }
+  const replayStats = (await fetch(new URL("/stats", origin)).then((response) =>
+    response.json(),
+  )) as { basketWrites: number; simulatedSubmissions: number };
+  if (
+    replayStats.basketWrites !== 1 ||
+    replayStats.simulatedSubmissions !== 1
+  ) {
+    throw new Error(
+      `Verified replay repeated the provider write: ${JSON.stringify(replayStats)}`,
+    );
+  }
+  console.log(
+    "MCP adapter in-progress display and durable replay: disabled conflicting controls, exact refresh, one provider write",
+  );
   await fetch(new URL("/reset", origin), { method: "POST" });
   await fetch(new URL("/uncertain-next", origin), { method: "POST" });
   const started = await client.callTool({
