@@ -505,6 +505,29 @@ test("native-list recovery keeps the latest rows visible and blocks basket addit
   assert.doesNotMatch(markup, /Request cancelled/u);
 });
 
+test("an inactive empty temporary draft retains an exact refresh action", () => {
+  const pageProps = props();
+  if (pageProps.model.screen.kind !== "review") {
+    throw new Error("review fixture missing");
+  }
+  pageProps.model.screen.active = false;
+  pageProps.model.screen.review = {
+    basketMode: "direct-basket",
+    draftId: "12345678-1234-4234-8234-123456789abc",
+    reviewContextId: "12345678-1234-4234-8234-123456789def",
+    destination: "ready",
+    items: [],
+  };
+  const markup = renderToStaticMarkup(createElement(ViewerPage, pageProps));
+  assert.match(markup, /This temporary draft is read only/u);
+  assert.match(markup, /<h1[^>]*>Temporary draft needs review<\/h1>/u);
+  assert.match(markup, />Refresh this draft<\/button>/u);
+  assert.doesNotMatch(
+    markup,
+    /Shopping list unavailable|Refresh shopping list|Add to Nemlig basket/u,
+  );
+});
+
 test("shared viewer page uses its supplied fixture thumbnail and keeps unsafe input on the fallback", () => {
   const localThumbnail = "/assets/milk-carton.svg";
   const withFixture = renderToStaticMarkup(

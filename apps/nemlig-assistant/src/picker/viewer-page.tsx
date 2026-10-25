@@ -623,6 +623,7 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
     selectedBasketId,
   } = model;
   const review = screen.kind === "review" ? screen.review : undefined;
+  const directDraft = review?.basketMode === "direct-basket";
   useEffect(() => {
     setBasketMenuOpen(false);
   }, [selectedBasketId]);
@@ -817,9 +818,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
               : screen.kind === "unavailable"
                 ? "Shopping list unavailable"
                 : screen.kind === "review"
-                  ? review?.shoppingListId !== undefined
-                    ? "Your shopping list"
-                    : "Shopping list unavailable"
+                  ? directDraft
+                    ? "Temporary draft needs review"
+                    : review?.shoppingListId !== undefined
+                      ? "Your shopping list"
+                      : "Shopping list unavailable"
                   : "Products";
   const intro = !terminalSubmission
     ? review && active
@@ -957,12 +960,13 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {screen.kind === "review" && review && !active && !terminalSubmission && (
         <section className="status">
           <p>
-            This shopping list is read only until Nemlig confirms its current
-            contents.
+            {directDraft
+              ? "This temporary draft is read only until its current contents are confirmed."
+              : "This shopping list is read only until Nemlig confirms its current contents."}
           </p>
-          {review.items.length > 0 && (
+          {(directDraft || review.items.length > 0) && (
             <Button color="primary" disabled={busy} onClick={actions.onRefresh}>
-              Refresh shopping list
+              {directDraft ? "Refresh this draft" : "Refresh shopping list"}
             </Button>
           )}
           {message && <p role="status">{message}</p>}
@@ -971,7 +975,11 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
       {review && !active && !terminalSubmission && review.items.length > 0 && (
         <section
           className="product-list"
-          aria-label="Current shopping list, read only"
+          aria-label={
+            directDraft
+              ? "Temporary draft, read only"
+              : "Current shopping list, read only"
+          }
         >
           {review.items.map((item) => (
             <ProductCard
@@ -1521,7 +1529,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
           >
             <Dialog.Title>
               {recoveryOperation === "update" || recoveryOperation === "list"
-                ? "Shopping list change needs review"
+                ? directDraft && recoveryOperation === "update"
+                  ? "Temporary draft needs review"
+                  : "Shopping list change needs review"
                 : knownNoWrite
                   ? "Submission was not sent"
                   : "Check your Nemlig basket"}
@@ -1548,7 +1558,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                       actions.onRefresh();
                     }}
                   >
-                    Refresh shopping list
+                    {directDraft && recoveryOperation === "update"
+                      ? "Refresh this draft"
+                      : "Refresh shopping list"}
                   </Button>
                   <Button
                     color="secondary"
@@ -1558,7 +1570,9 @@ export function ViewerPage({ model, actions }: ViewerPageProps) {
                       actions.onOpenPicker();
                     }}
                   >
-                    Choose another shopping list
+                    {directDraft && recoveryOperation === "update"
+                      ? "Browse saved lists"
+                      : "Choose another shopping list"}
                   </Button>
                   {recoveryOperation === "update" &&
                     (review?.updateStatus === "partial" ||

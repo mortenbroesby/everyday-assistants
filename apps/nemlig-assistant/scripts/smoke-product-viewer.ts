@@ -27,6 +27,7 @@ declare global {
           product_ids?: number[];
         };
         shopping_list_id?: number;
+        draft_id?: string;
         review_context_id?: string;
         creation_id?: string;
         submission_id?: string;
@@ -45,6 +46,7 @@ declare global {
     nextReviewResponse?:
       | "tool"
       | "malformed"
+      | "mismatched"
       | "unavailable"
       | "products"
       | "partial"
@@ -130,6 +132,15 @@ const initialReview = {
   })),
 };
 const fixtureJson = JSON.stringify(initialReview);
+const directFixture = {
+  ...initialReview,
+  basketMode: "direct-basket",
+  draftId: "12345678-1234-4234-8234-123456789abc",
+  shoppingListId: undefined,
+  shoppingListName: undefined,
+  saveStatus: undefined,
+};
+const directFixtureJson = JSON.stringify(directFixture);
 const nativeFixtureJson = fixtureJson;
 const partialFixtureJson = JSON.stringify({
   ...initialReview,
@@ -189,6 +200,7 @@ const payload=(data)=>({structuredContent:data});
 const apply=(action,args)=>{
  if(action.kind==='list') return payload({shoppingLists:inventory,selectedShoppingListId:null,selectionRequired:true});
  if(action.kind==='select'){selectedBasketId=String(args.shopping_list_id);if(Number(selectedBasketId)!==Number(review.shoppingListId))review={...review,items:[{product_id:8,quantity:1,state:'ready',view:${JSON.stringify(fixtureView(8, "Foreign list product"))}}]};review={...review,shoppingListId:Number(selectedBasketId),shoppingListName:inventory.find(list=>String(list.id)===selectedBasketId)?.name,reviewContextId:'12345678-1234-4234-8234-123456789def',saveStatus:'saved',saveProgress:undefined};return result(review)}
+ if(review.basketMode==='direct-basket' && (args.draft_id!==review.draftId || args.review_context_id!==review.reviewContextId))throw new Error('Synthetic exact-draft mismatch');
  if(action.kind==='show'){if(args.shopping_list_id!==review.shoppingListId)throw new Error('Synthetic exact-list mismatch');return result(review)}
  if(action.kind==='navigate') review.destination=action.destination;
  if(action.kind==='quantity'){review.items.find(item=>item.product_id===action.product_id).quantity=action.quantity;window.providerWrites++}
@@ -227,6 +239,7 @@ window.addEventListener('message',event=>{
       products:payload({views:[]}),
       unavailable:payload({unavailable:true}),
       malformed:payload({unexpected:true}),
+      mismatched:result({...review,reviewContextId:'12345678-1234-4234-8234-123456789aaa'}),
       tool:{isError:true,content:[{type:'text',text:window.failMessageNext??'Temporary synthetic failure'}]},
       partial:result({...review,updateStatus:'partial',actionNotice:'Nemlig did not confirm this shopping-list change. Refresh the exact list before editing again.'}),
       uncertain:result({...review,updateStatus:'uncertain',actionNotice:'Nemlig may have applied this shopping-list change. Refresh the exact list before editing again.'}),
@@ -243,6 +256,7 @@ window.addEventListener('message',event=>{
 
 const hostDocuments = new Map([
   ["/host", parentDocument(fixtureJson)],
+  ["/host-direct", parentDocument(directFixtureJson)],
   ["/host-native", parentDocument(nativeFixtureJson)],
   ["/host-native-cached", parentDocument(fixtureJson)],
   ["/host-unavailable", parentDocument(fixtureJson, "unavailable")],
@@ -457,6 +471,79 @@ try {
     await page.screenshot({ path });
     console.log(`Synthetic viewer mockup: ${path}`);
   };
+
+  // A failed direct edit keeps its exact target through failed and successful reads.
+  const directFrame = await open("/host-direct");
+  await directFrame
+    .getByRole("button", { name: "Add to Nemlig basket", exact: true })
+    .waitFor();
+  await directFrame.locator('main:not([aria-busy="true"])').waitFor();
+  await page.evaluate(() => {
+    window.nextReviewResponse = "tool";
+    window.failMessageNext =
+      "This direct basket draft is unavailable. token=synthetic-private-value";
+  });
+  await clickQuantityIncrease(directFrame, 1, "Synthetic milk");
+  const directRecovery = directFrame.getByRole("dialog", {
+    name: "Temporary draft needs review",
+  });
+  await directRecovery.waitFor();
+  assert.match(await directRecovery.innerText(), /exact temporary draft/u);
+  assert.doesNotMatch(
+    await directRecovery.innerText(),
+    /synthetic-private-value/u,
+  );
+  assert.equal(await directFrame.locator(".product-list article").count(), 5);
+  assert.equal(await countActionCalls("quantity"), 1);
+  await page.evaluate(() => window.sendPassive());
+  assert.equal(
+    await directFrame
+      .getByRole("button", { name: "Add to Nemlig basket" })
+      .count(),
+    0,
+    "passive payload re-enabled a failed direct draft",
+  );
+  for (const response of [
+    "unavailable",
+    "malformed",
+    "products",
+    "mismatched",
+  ] as const) {
+    await page.evaluate((kind) => {
+      window.nextReviewResponse = kind;
+    }, response);
+    await directRecovery
+      .getByRole("button", { name: "Refresh this draft" })
+      .click();
+    await directRecovery.waitFor();
+    await directFrame.locator('main:not([aria-busy="true"])').waitFor();
+    assert.equal(await directFrame.locator(".product-list article").count(), 5);
+    assert.equal(
+      await countActionCalls("quantity"),
+      1,
+      "recovery retried a draft edit",
+    );
+  }
+  await directRecovery
+    .getByRole("button", { name: "Refresh this draft" })
+    .click();
+  await directRecovery.waitFor({ state: "detached" });
+  await directFrame.locator('main:not([aria-busy="true"])').waitFor();
+  const recoveredDraftCalls = await page.evaluate(() => window.calls);
+  assert.ok(
+    recoveredDraftCalls.every(
+      ({ name, args }) =>
+        name === "update_product_review" &&
+        args.draft_id === directFixture.draftId &&
+        args.review_context_id === directFixture.reviewContextId &&
+        args.shopping_list_id === undefined,
+    ),
+  );
+  assert.equal(await countActionCalls("quantity"), 1);
+  assert.equal(await page.evaluate(() => window.providerWrites), 0);
+  await incrementQuantity(directFrame, 1, "Synthetic milk", 2);
+  assert.equal(await countActionCalls("quantity"), 2);
+  assert.equal(await page.evaluate(() => window.submissionAttempts), 0);
 
   const activeFrame = await open("/host");
   await activeFrame
