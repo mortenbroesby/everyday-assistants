@@ -1,3 +1,4 @@
+import { compareBasketSubmission } from "./basket-recovery.js";
 import {
   basketPayload,
   type ApplyResult,
@@ -6,6 +7,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { NemligError } from "./nemlig-error.js";
 import {
+  BasketAdditionError,
   ProductNotFoundError,
   type Basket,
   type BasketAddition,
@@ -160,6 +162,8 @@ type DirectReviewOperationIntent = Pick<
   | "name"
   | "items"
   | "baseline"
+  | "dispatchedItems"
+  | "failure"
 > & { kind: "submit" | "basket-save" };
 export interface ReviewOperationJournal {
   // Reads include historical native-list receipts; current writes do not create them.
@@ -953,6 +957,53 @@ export class ProductReviewService {
     stored.operationStatus = undefined;
   }
 
+  // Keep owner-journal identity and before/after account checks around this read.
+  // CC 10 / cognitive 6: the gate's estimated-coverage score is not missing validation.
+  // Reconstructed-service tests cover mismatch, unavailable evidence and no replay.
+  // fallow-ignore-next-line complexity
+  async inspectDirectBasketSubmission(
+    draftId: string,
+    signal: AbortSignal | undefined,
+    journal: ReviewOperationJournal | undefined,
+  ) {
+    if (
+      !isUuid(draftId) ||
+      !journal ||
+      !this.client.providerIdentity ||
+      !this.client.getCart
+    ) {
+      throw new NemligError(
+        "Submission inspection is unavailable. It cannot retry basket additions.",
+      );
+    }
+    const operation = await journal.read(`direct-basket-submit:${draftId}`);
+    if (
+      !operation ||
+      operation.operationId !== `direct-basket-submit:${draftId}` ||
+      operation.kind !== "submit"
+    ) {
+      throw new NemligError(
+        "No submission evidence is available for this draft. Do not repeat an uncertain addition.",
+      );
+    }
+    const account = this.client.providerIdentity();
+    if (operation.accountIdentity !== account) {
+      throw new NemligError(
+        "This submission belongs to a different Nemlig account.",
+      );
+    }
+    const basket = await this.client.getCart(signal);
+    if (this.client.providerIdentity() !== account) {
+      throw new NemligError(
+        "Nemlig account changed during submission inspection.",
+      );
+    }
+    return {
+      basket,
+      recovery: compareBasketSubmission(draftId, operation, basket),
+    };
+  }
+
   // Keep review binding, dispatch claim, account check, receipt, and uncertainty
   // transition together so no caller can accidentally split the no-replay flow.
   // fallow-ignore-next-line complexity
@@ -1022,6 +1073,7 @@ export class ProductReviewService {
     }
     const stored = this.lock(owner, draftId, "submitting");
     let dispatchClaimed = false;
+    let dispatchedIntent: DirectReviewOperationIntent | undefined;
     try {
       if (stored.snapshot.submissionAttempted) {
         throw new NativeTransferUnconfirmedError(
@@ -1109,6 +1161,10 @@ export class ProductReviewService {
                   quantity,
                 })),
                 baseline: basketOperationItems(baseline),
+                dispatchedItems: additions.map(({ productId, quantity }) => ({
+                  productId,
+                  quantity,
+                })),
               };
               await journal.write(operation);
               if (!(await journal.claim(operationId, submissionId))) {
@@ -1116,6 +1172,7 @@ export class ProductReviewService {
                   "This direct basket submission is already fenced. Inspect the basket; do not retry.",
                 );
               }
+              dispatchedIntent = operation;
               dispatchClaimed = true;
             },
           })
@@ -1171,6 +1228,17 @@ export class ProductReviewService {
       };
     } catch (error) {
       if (dispatchClaimed) {
+        if (dispatchedIntent && error instanceof BasketAdditionError) {
+          try {
+            await journal.write({
+              ...dispatchedIntent,
+              failure: error.failure,
+            });
+          } catch {
+            // The durable claim already fences replay. Preserve the original
+            // diagnostic even when cancellation or storage prevents annotation.
+          }
+        }
         markReviewSubmissionUncertain(
           stored,
           submissionId,

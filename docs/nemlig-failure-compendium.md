@@ -103,9 +103,11 @@ IDs, or shopping data.
   exact per-line quantity deltas against an independent pre-submit baseline.
 - **Status:** Unresolved; provider outcome and root cause unknown.
 - **Last tested:** 2026-10-25, deployed revision `6b2436c` (PR #349).
-- **Next investigation:** Inspect safe stage/status evidence from the failed
-  call, if available; implement focused synthetic regressions before any
-  separately authorized live attempt.
+- **Next investigation:** PR #350 implements safe future-failure diagnostics
+  and overlapping-product fault regressions. The original response cannot be
+  recovered from those changes. After review/deployment, verify the behavior
+  with a new exact authorized operation and capture started before Submit;
+  never retry the historical uncertain operation. Follow issue #357.
 
 ### NEM-CHATGPT-004 — Read-only recovery prompt omitted the quantity baseline
 
@@ -124,12 +126,14 @@ IDs, or shopping data.
   item’s before quantity with the expected after quantity, report an
   unconfirmed delta when evidence is insufficient, and retain the no-retry
   fence. Product presence alone must never count as success.
-- **Status:** Confirmed regression candidate; no live retry or mutation used to
-  investigate it.
-- **Last tested:** 2026-10-25, native recovery observation at deployed revision
-  `6b2436c` (PR #349).
-- **Next investigation:** Add sanitized operation context to read-only recovery
-  and test the quantity-delta comparison synthetically.
+- **Status:** Confirmed defect addressed in PR #350; production/native
+  acceptance remains pending. No live retry or mutation was used to fix it.
+- **Last tested:** 2026-10-25, service reconstruction and actual MCP/callback/
+  storage regression: unchanged baseline one stays unconfirmed; matching
+  expected two also stays unconfirmed without a completed receipt.
+- **Next investigation:** Verify the deployed native recovery action carries
+  the exact draft handle and reports the before/requested/expected/current
+  comparison. Missing old receipt evidence must remain explicitly unavailable.
 
 ### NEM-CHATGPT-005 — Submission progress was outside the visible scroll area
 
@@ -240,13 +244,21 @@ hypothesis, **not a confirmed cause**. Provider rejection, response parsing and
 readback failures remain alternatives; the observed HTTP 200 was from our MCP
 gateway, not from Nemlig's bulk endpoint.
 
-The next contract regression must include overlapping and unrelated existing
-rows: a baseline quantity of one plus a requested one succeeds only with a
-verified quantity of two and preserved unrelated rows. Unchanged quantity must
-remain uncertain with no replay. That synthetic test verifies our safety
-behavior, not the provider contract. Establish provider semantics from
-authoritative evidence or a separately authorized, bounded experiment; never
-retry the already-uncertain operation.
+PR #350 adds the overlapping-product contract regression: baseline one plus
+requested one succeeds only with verified two and preserved unrelated rows.
+Unchanged quantity and an unrelated decrease fail with no mutation retry. Those
+synthetic tests verify our safety behavior, not the live provider contract.
+
+The public first-party bundle at `https://www.nemlig.com/scom/dist/main.js?v=b1.0.0.0`
+(inspected 2026-10-25, SHA-256
+`608e52fbc904386432c2e7394ffd7396ba224f2facf54a927e28c1856b028d75`)
+uses the same endpoint and `{addToExisting: true, Products}` shape in its top-up
+flow. It passes the JSON response to a basket updater that checks a top-level
+nonempty `ValidationFailures` array. This supports the request shape, but does
+not establish the historical outcome or all overlapping-product semantics.
+The updater expects basket-shaped data; no empty-response success contract was
+established. We therefore do not relax response parsing or invent error-code
+mappings. No authenticated provider call was made for this source inspection.
 
 ### Next bounded investigation
 
@@ -259,21 +271,47 @@ retry the already-uncertain operation.
    events were returned. Separate gateway authentication from the provider's
    session and anti-forgery state; do not reconnect or rotate application or
    provider credentials based solely on the generic submission message.
-3. If existing evidence cannot distinguish POST rejection, transport/abort,
-   response parsing, and readback failure, add a narrowly scoped diagnostic
-   improvement in a follow-up change. Preserve a closed stage/category, safe
-   HTTP status where available, and a correlation reference. Test each category
-   synthetically; never log raw provider errors, bodies, headers, tokens,
-   cookies, product identifiers, or shopping data. Preserve the no-replay fence.
-4. Repair read-only recovery using exact operation evidence and before/expected
-   quantity comparisons. Matching quantities alone must not clear an uncertain
-   fence or claim this operation caused the change.
+3. PR #350 preserves closed dispatch/readback stage, finite category, known
+   HTTP status and optional validation-array presence. Tests cover HTTP,
+   network, timeout, cancellation, malformed response, mismatch and body-level
+   validation evidence. The MCP emits a scalar-only stderr event; the existing
+   owner-scoped receipt is annotated best-effort. A process crash or cancelled
+   callback can still prevent annotation. Never log raw provider errors,
+   bodies, headers, tokens, cookies, product identifiers or shopping data.
+4. PR #350 extends `show_my_basket` with optional exact `draft_id`, using the
+   existing owner/account-bound receipt across restart. Compare recorded
+   baseline plus actually dispatched additions; skipped products are excluded.
+   Legacy receipts are explicitly labeled as reviewed intent. Matching
+   quantities alone do not complete an uncertain fence or attribute a write.
+   The viewer sends the exact handle rather than asking only about presence.
+
+The implementation and future live acceptance are tracked in [issue #357](https://github.com/mortenbroesby/everyday-assistants/issues/357)
+and [PR #350](https://github.com/mortenbroesby/everyday-assistants/pull/350).
 
 A future live run must establish the baseline before the one authorized
 addition. Start any authorized bounded capture before the action, and record
 only sanitized evidence afterward. Better evidence collection and regression
 coverage can catch known modes earlier; they cannot guarantee future failures
 will not occur.
+
+## Synthetic regression checkpoint — PR #350
+
+2026-10-25, isolated local worktree. Client fault suite: 76 passed. Runtime
+checks cover service, storage, callback, MCP and viewer recovery; the built
+iframe smoke verifies the exact draft ID in its conversation message with one
+submission attempt. App typecheck, lint and strict OpenSpec validation pass.
+These checks use synthetic provider data and do not establish native acceptance.
+
+| Failure ID | Result in this scoped run | Evidence / limit |
+| --- | --- | --- |
+| NEM-CHATGPT-001 | NOT RUN | No new native ChatGPT tool invocation diagnosis |
+| NEM-CHATGPT-002 | PASS (synthetic) | Existing failed-edit exact-draft recovery and isolation in built iframe smoke |
+| NEM-CHATGPT-003 | PASS (synthetic); NOT RUN (live) | Overlap, unchanged readback, unrelated row preservation, HTTP/network/timeout/cancellation/parse/validation faults; no retry |
+| NEM-CHATGPT-004 | PASS (synthetic); NOT RUN (native) | Actual MCP/callback receipt after restart; exact iframe recovery handle; matching quantities stay unconfirmed |
+| NEM-CHATGPT-005 | NOT RUN | Progress placement was not changed or reassessed |
+| NEM-CHATGPT-006 | NOT RUN | Real-touch discoverability was not tested |
+| NEM-CHATGPT-007 | NOT RUN | Replacement affordance interpretation was not reassessed |
+| NEM-CHATGPT-008 | NOT RUN | Localization policy remains separate |
 
 ## Run checklist and report template
 
