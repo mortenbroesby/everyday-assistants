@@ -201,7 +201,8 @@ IDs, or shopping data.
 
 Scope: read-only diagnosis of NEM-CHATGPT-003 on deployed revision
 `6b2436c8334982e141b923ccb589a6e62d0f001a`. The uncertain addition was **not
-repeated**. No production settings or credentials were changed.
+repeated**. No application production settings or provider credentials were
+changed.
 
 | Evidence plane | Result | What it does and does not establish |
 | --- | --- | --- |
@@ -211,7 +212,7 @@ repeated**. No production settings or credentials were changed.
 | Browser console and exceptions | Three host-side cache warnings; no recorded JavaScript exceptions | No observed console evidence establishes the submission cause; absence from a retained buffer does not prove absence during the incident |
 | Cloudflare historical Worker logs | Initial CLI Observability query returned HTTP 403; later authorized dashboard access found the exact `submit_product_review` invocation and matching terminal event | The event at 13:20:45.920 UTC reports revision `6b2436c`, operation `useful`, denial reason `none`, outcome `completed`, HTTP 200 and 6,907 ms. Gateway authentication did not reject this request. This is **not** the provider POST status or evidence of tool success |
 | Cloudflare Container logs | A Containers-only query for 13:18–13:22 UTC returned no events | No retained Container event supplies the provider error; this is not proof that the application encountered no error |
-| Auth0 tenant logs | Still not inspected: the authorized saved dashboard credential was rejected; the owner was asked for the correct management login | This later administrator sign-in failure is separate from the original app request. The matched gateway event establishes no authentication denial for that request |
+| Auth0 tenant logs | Authenticated dashboard access succeeded through GitHub. An all-log-types search for `date:[2026-10-25T13:18:00Z TO 2026-10-25T13:22:00Z]` returned “No logs match your search” | No retained Auth0 event in this window explains the failure. A cached access token need not generate an Auth0 event for each tool call; absence of events does not prove global authentication health. The matched Worker event independently establishes no gateway authentication denial for this request |
 | Client source | `addManyToCart` catches POST errors and replaces them with a generic unconfirmed result; readback failure has a separate generic result | Confirms lost diagnostic detail, not the original provider error/status |
 | Recovery source | The follow-up asks to inspect the basket without the operation baseline/expected delta | Confirms NEM-CHATGPT-004; product presence cannot attribute an addition to this operation |
 
@@ -254,10 +255,10 @@ retry the already-uncertain operation.
    scalar fields from [Cloudflare operations](cloudflare-operations.md#inspect-sanitized-operational-evidence);
    platform invocation records can contain request metadata beyond the
    application's closed event schema, so do not export whole records.
-2. Compare Auth0 event timestamps/categories in the same window only when
-   access is available. Separate gateway authentication from the provider's
-   session and anti-forgery state; do not reconnect or rotate credentials based
-   solely on the generic submission message.
+2. Auth0 correlation is complete for the same window: no matching tenant
+   events were returned. Separate gateway authentication from the provider's
+   session and anti-forgery state; do not reconnect or rotate application or
+   provider credentials based solely on the generic submission message.
 3. If existing evidence cannot distinguish POST rejection, transport/abort,
    response parsing, and readback failure, add a narrowly scoped diagnostic
    improvement in a follow-up change. Preserve a closed stage/category, safe
