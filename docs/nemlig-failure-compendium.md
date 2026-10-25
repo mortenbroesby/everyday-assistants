@@ -209,8 +209,9 @@ repeated**. No production settings or credentials were changed.
 | Durable draft state | Submission attempted and uncertain | The application crossed its dispatch-claim boundary; this is not a provider acknowledgement |
 | Retained browser network capture | No matching MCP entries remained when inspected after the failure | Original request/response cannot be reconstructed from this buffer; never replay the write to recover it |
 | Browser console and exceptions | Three host-side cache warnings; no recorded JavaScript exceptions | No observed console evidence establishes the submission cause; absence from a retained buffer does not prove absence during the incident |
-| Cloudflare historical Worker logs | Existing Wrangler account access worked; the bounded Observability query returned HTTP 403, API code 10000 | Log access is blocked with this credential; this diagnostic query failure is **not** evidence that the original application request failed authentication |
-| Auth0 tenant logs | Not inspected: no authenticated dashboard or log-reader access available to this investigation | Auth0 is neither established nor ruled out as a contributing boundary |
+| Cloudflare historical Worker logs | Initial CLI Observability query returned HTTP 403; later authorized dashboard access found the exact `submit_product_review` invocation and matching terminal event | The event at 13:20:45.920 UTC reports revision `6b2436c`, operation `useful`, denial reason `none`, outcome `completed`, HTTP 200 and 6,907 ms. Gateway authentication did not reject this request. This is **not** the provider POST status or evidence of tool success |
+| Cloudflare Container logs | A Containers-only query for 13:18–13:22 UTC returned no events | No retained Container event supplies the provider error; this is not proof that the application encountered no error |
+| Auth0 tenant logs | Still not inspected: the authorized saved dashboard credential was rejected; the owner was asked for the correct management login | This later administrator sign-in failure is separate from the original app request. The matched gateway event establishes no authentication denial for that request |
 | Client source | `addManyToCart` catches POST errors and replaces them with a generic unconfirmed result; readback failure has a separate generic result | Confirms lost diagnostic detail, not the original provider error/status |
 | Recovery source | The follow-up asks to inspect the basket without the operation baseline/expected delta | Confirms NEM-CHATGPT-004; product presence cannot attribute an addition to this operation |
 
@@ -218,13 +219,41 @@ The provider-level root cause remains **unknown**. Do not collapse these facts
 into “Auth0 failed,” “Cloudflare failed,” “the provider rejected it,” or “nothing
 was sent.” Existing data supports none of those conclusions yet.
 
+### Provider-contract hypothesis and coverage gap
+
+Source review found a concrete gap in what the bulk-add success test proves.
+The fixture in `apps/nemlig-assistant/src/client.test.ts` submits 37 new product
+IDs while preserving a different existing row. It supplies the expected result
+as a mock; it does not exercise a submitted product already in the basket.
+The single-product endpoint's overlap test does not establish the bulk
+endpoint's behavior.
+
+The bulk request sends requested quantities with `addToExisting: true`, and
+`client.ts` requires readback quantities to equal baseline plus requested
+quantity. The OpenAPI entry for `/webapi/Basket/AddManyToBasket` explicitly
+records first-party request-shape evidence, with live behavior unverified.
+Neither the flag name nor the mock proves whether an overlapping product's
+quantity is incremented or treated as a target while other rows are preserved.
+The failed native run involved overlapping products, making this a plausible
+hypothesis, **not a confirmed cause**. Provider rejection, response parsing and
+readback failures remain alternatives; the observed HTTP 200 was from our MCP
+gateway, not from Nemlig's bulk endpoint.
+
+The next contract regression must include overlapping and unrelated existing
+rows: a baseline quantity of one plus a requested one succeeds only with a
+verified quantity of two and preserved unrelated rows. Unchanged quantity must
+remain uncertain with no replay. That synthetic test verifies our safety
+behavior, not the provider contract. Establish provider semantics from
+authoritative evidence or a separately authorized, bounded experiment; never
+retry the already-uncertain operation.
+
 ### Next bounded investigation
 
-1. Obtain authorized historical log access, then correlate the incident window
-   with the deployed revision and Worker terminal events. Use the safe fields
-   in [Cloudflare operations](cloudflare-operations.md#inspect-sanitized-operational-evidence).
-   Keep exact private correlation material local. HTTP 200 at the gateway is
-   not proof of an MCP tool success.
+1. Worker correlation is complete for this submission. Preserve that evidence
+   without treating gateway success as provider or MCP success. Use only safe
+   scalar fields from [Cloudflare operations](cloudflare-operations.md#inspect-sanitized-operational-evidence);
+   platform invocation records can contain request metadata beyond the
+   application's closed event schema, so do not export whole records.
 2. Compare Auth0 event timestamps/categories in the same window only when
    access is available. Separate gateway authentication from the provider's
    session and anti-forgery state; do not reconnect or rotate credentials based
