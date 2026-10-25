@@ -100,7 +100,7 @@
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "semver": "7.8.5",
-    "storybook": "10.6.1",
+    "storybook": "10.6.3",
     "tsdown": "0.22.14",
     "tsx": "4.23.13",
     "typescript": "7.0.2",
