@@ -2,6 +2,14 @@
 
 Use this runbook against a deployed Nemlig Assistant in a fresh ChatGPT conversation. Record each flow as **PASS**, **FAIL**, or **NOT RUN** from observed evidence. A packaged ZIP, local fixture, green CI, or tool response alone does not prove that ChatGPT rendered the current UI. Follow [production readiness](nemlig-production-readiness.md) and keep private product data, conversation links, and credentials out of shared reports.
 
+Every native smoke or regression run must also copy the stable IDs in the
+[Nemlig failure compendium](nemlig-failure-compendium.md#run-checklist-and-report-template)
+and report **PASS**, **FAIL**, **BLOCKED**, **NOT RUN**, or justified **N/A**
+for each applicable observation. Keep confirmed causes separate from
+hypotheses, record recurrence against the first occurrence, and never retry an
+uncertain write to check the result. A read-only run may mark write-specific
+checks N/A only when it states that no write was authorized or attempted.
+
 Product search and temporary-draft edits do not write a Nemlig shopping list or the real basket. Loading an existing saved list uses it as a read-only source. A real basket addition requires separate exact authorization and an independent readback. Do not check out, pay, order, choose delivery, or remove/decrease/clear actual basket contents.
 
 ## Before starting

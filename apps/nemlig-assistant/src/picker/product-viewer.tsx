@@ -94,7 +94,24 @@ function isUncertainFailure(
   return !recovery && (uncertainOnFailure || /uncertain/i.test(text));
 }
 
-function submitFailureCopy(detail: string): string | undefined {
+export function basketInspectionMessage(
+  review?: Pick<Review, "basketMode" | "draftId">,
+): string {
+  const instruction =
+    review?.basketMode === "direct-basket" && review.draftId
+      ? `Call show_my_basket with draft_id: "${review.draftId}" to inspect this exact uncertain operation. Compare each product's baseline plus approved delta with its expected and current quantities. Existing products in the basket do not by themselves prove that this addition succeeded.`
+      : "Call show_my_basket to inspect the actual Nemlig basket. No exact draft handle is available, so this generic read cannot verify whether this addition succeeded.";
+  return `${instruction} Do not retry or add anything.`;
+}
+
+export function submitFailureCopy(detail: string): string | undefined {
+  // Only fixed client copy and finite diagnostic fields may cross this boundary.
+  const bulkDiagnostic = detail.match(
+    /^(?:Error code: [A-Z_]+; Error calling MCP tool: )?(Bulk basket (?:write outcome is unconfirmed|write was sent, but readback is unconfirmed|readback did not confirm the exact additive quantities); inspect the basket and do not retry\.(?: Diagnostic: (?:dispatch|readback)\/(?:http|network|timeout|cancelled|invalid_response|readback_mismatch)(?:; HTTP [1-5]\d{2})?\.)?)$/u,
+  );
+  if (bulkDiagnostic) {
+    return bulkDiagnostic[1];
+  }
   if (
     /Basket changed before an addition; no provider write was sent/iu.test(
       detail,
@@ -1854,7 +1871,9 @@ export function ProductViewer() {
         },
         onInspectBasket: () =>
           void sendFollowUp(
-            "Inspect the actual Nemlig basket for this uncertain submission. Do not retry or add anything.",
+            basketInspectionMessage(
+              activeReview.current?.review ?? lastConfirmedReview.current,
+            ),
           ),
         onDismissSubmitError: () => setSubmitErrorOpen(false),
         onSendFollowUp: (text) => void sendFollowUp(text),

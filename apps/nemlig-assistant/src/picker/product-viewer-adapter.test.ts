@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   LONG_OPERATION_TIMEOUT_MS,
+  basketInspectionMessage,
   isBasketId,
   isKnownNoWriteFailure,
   progressMessage,
   readPayload,
   reconcileReviewState,
   reviewSubmissionBlockTransition,
+  submitFailureCopy,
   viewerToolCallOptions,
 } from "./product-viewer.js";
 import type { Review } from "./viewer-page.js";
@@ -46,6 +48,70 @@ const draftReview = (): Review => ({
       },
     },
   ],
+});
+
+test("uncertain draft inspection requests its exact durable operation without replay", () => {
+  const review = draftReview();
+  const message = basketInspectionMessage(review);
+  assert.match(message, /show_my_basket/u);
+  assert.ok(message.includes(`draft_id: "${review.draftId}"`));
+  assert.match(message, /baseline.*approved.*delta/iu);
+  assert.match(message, /existing products.*do not.*prove/iu);
+  assert.match(message, /Do not retry or add anything/u);
+  assert.ok(!message.includes(review.reviewContextId!));
+});
+
+test("inspection without a draft handle requests an honest generic basket read", () => {
+  for (const review of [
+    undefined,
+    { basketMode: "direct-basket" as const },
+    { basketMode: "native-list" as const, draftId: draftReview().draftId },
+  ]) {
+    const message = basketInspectionMessage(review);
+    assert.match(message, /show_my_basket/u);
+    assert.doesNotMatch(message, /draft_id|12345678/u);
+    assert.match(message, /cannot verify.*addition/iu);
+    assert.match(message, /Do not retry or add anything/u);
+  }
+});
+
+test("submission recovery preserves only fixed bulk diagnostics and finite metadata", () => {
+  const messages = [
+    "Bulk basket write outcome is unconfirmed; inspect the basket and do not retry.",
+    "Bulk basket write was sent, but readback is unconfirmed; inspect the basket and do not retry.",
+    "Bulk basket readback did not confirm the exact additive quantities; inspect the basket and do not retry.",
+  ];
+  for (const message of messages) {
+    assert.equal(submitFailureCopy(message), message);
+    const diagnostic = `${message} Diagnostic: readback/http; HTTP 503.`;
+    assert.equal(submitFailureCopy(diagnostic), diagnostic);
+    assert.equal(
+      submitFailureCopy(
+        `Error code: INVALID_ARGUMENT; Error calling MCP tool: ${diagnostic}`,
+      ),
+      diagnostic,
+    );
+  }
+  for (const category of [
+    "network",
+    "timeout",
+    "cancelled",
+    "invalid_response",
+    "readback_mismatch",
+  ]) {
+    const diagnostic = `${messages[0]} Diagnostic: dispatch/${category}.`;
+    assert.equal(submitFailureCopy(diagnostic), diagnostic);
+  }
+  for (const unsafe of [
+    "Network failure token=private-value",
+    "Bulk basket failed token=private-value",
+    `${messages[0]} token=private-value`,
+    `${messages[0]} Diagnostic: dispatch/private-value.`,
+    `${messages[0]} Diagnostic: readback/http; HTTP 999.`,
+    `${messages[0]} Diagnostic: readback/http; HTTP 503. token=private-value`,
+  ]) {
+    assert.equal(submitFailureCopy(unsafe), undefined);
+  }
 });
 
 test("viewer decodes the current shared review contract without losing draft expiry", () => {
