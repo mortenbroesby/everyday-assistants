@@ -47,7 +47,7 @@
     "@fission-ai/openspec": "1.11.0",
     "fallow": "3.32.0",
     "husky": "9.1.7",
-    "prettier": "^3.7.4",
+    "prettier": "^3.9.10",
     "turbo": "^2.11.7"
   }
 }
