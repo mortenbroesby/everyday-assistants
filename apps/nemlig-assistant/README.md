@@ -96,7 +96,11 @@ this includes existing basket rows and does not clear the basket.
   new-list ID, so find it in the saved-list picker. This action never clears
   the basket.
 - Failed draft edits or alternatives requests keep visible products and
-  quantities. Dismissing an error does not replay a provider write.
+  quantities. Recovery names the temporary draft, describes recognized failures
+  without exposing raw host errors, and offers **Refresh this draft**. Editing
+  stays disabled until a response confirms the same draft and context; a
+  malformed response or another draft cannot replace the cached selection.
+  Dismissing an error does not replay the failed edit or a provider write.
 - Show the current operation while loading a saved list, editing the draft,
   submitting additions, or saving the basket; keep products visible while
   waiting.

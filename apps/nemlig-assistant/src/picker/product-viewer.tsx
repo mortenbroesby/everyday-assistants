@@ -121,6 +121,36 @@ export function isKnownNoWriteFailure(detail: string): boolean {
   );
 }
 
+function directDraftFailureMessage(cause: unknown): string {
+  const detail = cause instanceof Error ? cause.message : "";
+  // Describe recognized failures without displaying arbitrary host/provider text.
+  let reason = "The service could not confirm this temporary draft request.";
+  if (/draft.*(?:expired|unavailable|changed)|review expired/iu.test(detail)) {
+    reason = "The service could not find this exact temporary draft.";
+  } else if (
+    /does not match|review_context_id|draft_id|invalid.*(?:argument|parameter)/iu.test(
+      detail,
+    )
+  ) {
+    reason = "The temporary draft response did not match this card.";
+  } else if (/operation is in progress|review is opening/iu.test(detail)) {
+    reason = "Another operation is still running for this temporary draft.";
+  } else if (
+    /unauthorized|forbidden|permission|authentication|access denied/iu.test(
+      detail,
+    )
+  ) {
+    reason = "Access to this temporary draft could not be confirmed.";
+  } else if (
+    /connect|network|fetch|timeout|timed out|transport/iu.test(detail)
+  ) {
+    reason = "The connection to this temporary draft failed.";
+  } else if (/cancelled|canceled/iu.test(detail)) {
+    reason = "The temporary draft request was cancelled.";
+  }
+  return `${reason} Your last confirmed products remain visible. Refresh this exact draft before continuing. No automatic retry was made.`;
+}
+
 function isReview(value: unknown): value is Review {
   if (!isRecord(value) || value.basketId !== undefined) {
     return false;
@@ -550,6 +580,7 @@ export function ProductViewer() {
   );
   const callLock = useRef(false);
   const activeToolController = useRef<AbortController | undefined>(undefined);
+  const activeDraftUpdate = useRef(false);
   const cancelledCallPending = useRef(false);
   const ignorePassivePayloads = useRef(
     screen.kind === "review" &&
@@ -597,11 +628,25 @@ export function ProductViewer() {
     setRecoveryOperation(operation);
     setSubmitErrorOpen(true);
   };
-  const recoverInterruptedDraft = (message: string) => {
-    if (activeReview.current?.review.shoppingListId !== undefined) {
-      activeReview.current = { ...activeReview.current, active: false };
+  const recoverInterruptedDraft = (
+    message: string,
+    includeDirect = activeDraftUpdate.current,
+  ) => {
+    const current = activeReview.current;
+    if (
+      current?.review.shoppingListId !== undefined ||
+      (includeDirect && current?.review.basketMode === "direct-basket")
+    ) {
+      const direct = current.review.basketMode === "direct-basket";
+      if (direct) {
+        clearPendingQuantities();
+      }
+      activeReview.current = { ...current, active: false };
       setScreen({ kind: "review", ...activeReview.current });
-      showRecovery("update", message);
+      showRecovery(
+        "update",
+        direct ? directDraftFailureMessage(new Error(message)) : message,
+      );
       return true;
     }
     return false;
@@ -826,9 +871,12 @@ export function ProductViewer() {
           setPresentationDestination(cachedReview.destination);
           setScreen({ kind: "review", ...inactive });
           showRecovery(
-            cachedReview.shoppingListId === undefined ? "list" : "update",
+            cachedReview.basketMode === "direct-basket" ||
+              cachedReview.shoppingListId !== undefined
+              ? "update"
+              : "list",
             cachedReview.basketMode === "direct-basket"
-              ? "This temporary draft expired or the service restarted. Load a saved shopping list or start a new draft; no basket change was made."
+              ? directDraftFailureMessage(new Error("Draft unavailable"))
               : cachedReview.shoppingListId === undefined
                 ? "The selected shopping-list creation could not be confirmed. Review its status before continuing."
                 : "Could not refresh this exact Nemlig shopping list. Its last confirmed rows remain visible; retry the same list or choose another explicitly.",
@@ -890,7 +938,8 @@ export function ProductViewer() {
         }
         if (
           callLock.current &&
-          activeReview.current?.review.shoppingListId !== undefined
+          (activeReview.current?.review.shoppingListId !== undefined ||
+            activeDraftUpdate.current)
         ) {
           cancellationEpoch.current++;
           activeToolController.current?.abort();
@@ -972,12 +1021,12 @@ export function ProductViewer() {
           ? "The shopping list could not connect. Your current products and quantities remain visible; review them before continuing."
           : "Connecting to the current shopping list…";
         if (
-          activeReview.current?.review.shoppingListId !== undefined &&
+          (activeReview.current?.review.shoppingListId !== undefined ||
+            (name === "update_product_review" &&
+              activeReview.current?.review.basketMode === "direct-basket")) &&
           error
         ) {
-          activeReview.current = { ...activeReview.current, active: false };
-          setScreen({ kind: "review", ...activeReview.current });
-          showRecovery("update", detail);
+          recoverInterruptedDraft(detail, name === "update_product_review");
         } else {
           setMessage(detail);
         }
@@ -1092,6 +1141,9 @@ export function ProductViewer() {
       expectedSelection?.epoch ?? selectionEpoch.current;
     const requestController = new AbortController();
     activeToolController.current = requestController;
+    activeDraftUpdate.current =
+      name === "update_product_review" &&
+      activeReview.current?.review.basketMode === "direct-basket";
     if (!background) {
       setBusy(true);
       setMessage(progressMessage(name, requestArgs));
@@ -1119,6 +1171,21 @@ export function ProductViewer() {
         }
         throw new Error(detail);
       }
+      const exactDraft = directReplayTarget(requestArgs);
+      const response = readPayload(result);
+      if (
+        name === "update_product_review" &&
+        exactDraft &&
+        isRecord(requestArgs.action) &&
+        requestArgs.action.kind !== "abandon_draft" &&
+        response?.kind !== "unavailable" &&
+        (response?.kind !== "review" ||
+          !matchesDirectReplayTarget(response.review, exactDraft))
+      ) {
+        throw new Error(
+          "The temporary draft response does not match this card.",
+        );
+      }
       if (
         !background &&
         !applyPayload(
@@ -1139,7 +1206,13 @@ export function ProductViewer() {
       ) {
         ignorePassivePayloads.current = true;
       }
-      const response = readPayload(result);
+      if (
+        name === "update_product_review" &&
+        exactDraft &&
+        response?.kind === "unavailable"
+      ) {
+        return false;
+      }
       const needsNativeRecovery =
         response?.kind === "review" &&
         (response.review.updateStatus === "partial" ||
@@ -1151,6 +1224,17 @@ export function ProductViewer() {
       }
       return true;
     } catch (cause) {
+      if (
+        name === "update_product_review" &&
+        !background &&
+        activeReview.current?.review.basketMode === "direct-basket" &&
+        requestEpoch === cancellationEpoch.current &&
+        requestSelectionEpoch === selectionEpoch.current
+      ) {
+        deactivateReview();
+        showRecovery("update", directDraftFailureMessage(cause));
+        return false;
+      }
       if (name === "submit_product_review") {
         const detail = cause instanceof Error ? cause.message : "Update failed";
         submissionFailure.current = submitFailureCopy(detail);
@@ -1214,6 +1298,7 @@ export function ProductViewer() {
     } finally {
       if (activeToolController.current === requestController) {
         activeToolController.current = undefined;
+        activeDraftUpdate.current = false;
       }
       callLock.current = false;
       if (!background) {
@@ -1502,7 +1587,7 @@ export function ProductViewer() {
   };
   const refreshCurrentDraftList = async () => {
     if (!connectedApp || !isConnected) {
-      setMessage("Reconnect to read this exact Nemlig shopping list.");
+      setMessage("Reconnect to refresh the products shown in this card.");
       return;
     }
     const knownReview =

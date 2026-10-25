@@ -51,6 +51,14 @@ Follow the [Nemlig basket contract](../apps/nemlig-assistant/.codex/skills/nemli
 
 ## Sanitised result
 
+When a draft edit fails, record the exact tool name, action, draft/context
+handles and sanitized result locally before assigning a cause. An unavailable
+response to a later request without the original handles does not prove that
+the original draft was lost. Verify the installed catalog separately: a
+completed Refresh button is insufficient without the current actions in the
+response. Inspect browser network bodies only with the owner's approval, omit
+credentials and unrelated traffic, and keep private captures out of Git.
+
 ```text
 UTC / operator:
 Deployed commit / workflow / installed plugin version:
