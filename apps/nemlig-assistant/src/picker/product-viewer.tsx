@@ -107,7 +107,7 @@ export function basketInspectionMessage(
 export function submitFailureCopy(detail: string): string | undefined {
   // Only fixed client copy and finite diagnostic fields may cross this boundary.
   const bulkDiagnostic = detail.match(
-    /^(?:Error code: [A-Z_]+; Error calling MCP tool: )?(Bulk basket (?:write outcome is unconfirmed|write was sent, but readback is unconfirmed|readback did not confirm the exact additive quantities); inspect the basket and do not retry\.(?: Diagnostic: (?:dispatch|readback)\/(?:http|network|timeout|cancelled|invalid_response|readback_mismatch)(?:; HTTP [1-5]\d{2})?\.)?)$/u,
+    /^(?:Error code: [A-Z_]+; Error calling MCP tool: )?((?:Bulk basket (?:write outcome is unconfirmed|write was sent, but readback is unconfirmed|readback did not confirm the exact additive quantities)|Basket readback is ambiguous|A previous basket line was not preserved); inspect the basket and do not retry\.(?: Diagnostic: (?:dispatch|readback)\/(?:http|network|timeout|cancelled|invalid_response|readback_mismatch)(?:; HTTP [1-5]\d{2})?\.)?)$/u,
   );
   if (bulkDiagnostic) {
     return bulkDiagnostic[1];

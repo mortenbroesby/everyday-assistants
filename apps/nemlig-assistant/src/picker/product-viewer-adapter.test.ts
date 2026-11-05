@@ -80,6 +80,8 @@ test("submission recovery preserves only fixed bulk diagnostics and finite metad
     "Bulk basket write outcome is unconfirmed; inspect the basket and do not retry.",
     "Bulk basket write was sent, but readback is unconfirmed; inspect the basket and do not retry.",
     "Bulk basket readback did not confirm the exact additive quantities; inspect the basket and do not retry.",
+    "Basket readback is ambiguous; inspect the basket and do not retry.",
+    "A previous basket line was not preserved; inspect the basket and do not retry.",
   ];
   for (const message of messages) {
     assert.equal(submitFailureCopy(message), message);
@@ -90,6 +92,10 @@ test("submission recovery preserves only fixed bulk diagnostics and finite metad
         `Error code: INVALID_ARGUMENT; Error calling MCP tool: ${diagnostic}`,
       ),
       diagnostic,
+    );
+    assert.equal(
+      submitFailureCopy(`${diagnostic} token=private-value`),
+      undefined,
     );
   }
   for (const category of [
