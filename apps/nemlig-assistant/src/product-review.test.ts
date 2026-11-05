@@ -2151,3 +2151,115 @@ test("start and add share exact-product hydration and propagate authentication f
   );
   assert.equal(service.active("another-owner"), undefined);
 });
+
+test("submission inspection compares exact quantities after restart without releasing the fence", async () => {
+  const owner = "inspection-owner";
+  const durable = createDurableReviewJournal(owner);
+  const draftId = "11111111-1111-4111-8111-111111111111";
+  const operation: ReviewOperation = {
+    operationId: `direct-basket-submit:${draftId}`,
+    generation: "22222222-2222-4222-8222-222222222222",
+    accountIdentity: "fixture-account",
+    kind: "submit",
+    name: "Direct basket draft",
+    items: [
+      { productId: 7, quantity: 1 },
+      { productId: 8, quantity: 1 },
+    ],
+    dispatchedItems: [{ productId: 7, quantity: 1 }],
+    baseline: [
+      { productId: 7, quantity: 1 },
+      { productId: 9, quantity: 3 },
+    ],
+  };
+  await durable.journal.write(operation);
+  await durable.journal.claim(operation.operationId, operation.generation);
+  let quantity = 1;
+  let reads = 0;
+  const provider = {
+    ...client,
+    getCart: async (): Promise<Basket> => {
+      reads++;
+      return {
+        items: [
+          { id: 7, quantity, name: undefined, total: undefined },
+          { id: 9, quantity: 3, name: undefined, total: undefined },
+        ],
+        productsPrice: undefined,
+        deliveryPrice: undefined,
+        numberOfProducts: undefined,
+        deliveryTime: undefined,
+      };
+    },
+  };
+  const service = new ProductReviewService(provider);
+  const unchanged = await service.inspectDirectBasketSubmission(
+    draftId,
+    undefined,
+    durable.journal,
+  );
+  assert.equal(unchanged.recovery.status, "unconfirmed");
+  assert.equal(unchanged.recovery.comparison, "unchanged");
+  assert.deepEqual(unchanged.recovery.lines, [
+    { product_id: 7, before: 1, requested: 1, expected: 2, current: 1 },
+  ]);
+  assert.equal(unchanged.recovery.retry_allowed, false);
+  quantity = 2; // An unrelated writer can produce the expected quantities.
+  const matching = await new ProductReviewService(
+    provider,
+  ).inspectDirectBasketSubmission(draftId, undefined, durable.journal);
+  assert.equal(matching.recovery.comparison, "matches_expected");
+  assert.equal(matching.recovery.status, "unconfirmed");
+  assert.notEqual(
+    (await durable.journal.read(operation.operationId))?.completed,
+    true,
+  );
+  const wrongAccount = new ProductReviewService({
+    ...provider,
+    providerIdentity: () => "another-account",
+  });
+  await assert.rejects(
+    wrongAccount.inspectDirectBasketSubmission(
+      draftId,
+      undefined,
+      durable.journal,
+    ),
+    /account/u,
+  );
+  assert.equal(reads, 2, "wrong account never reads the provider basket");
+  await assert.rejects(
+    service.inspectDirectBasketSubmission(
+      "not-a-uuid",
+      undefined,
+      durable.journal,
+    ),
+    /unavailable/u,
+  );
+  await assert.rejects(
+    service.inspectDirectBasketSubmission(
+      "33333333-3333-4333-8333-333333333333",
+      undefined,
+      durable.journal,
+    ),
+    /No submission evidence/u,
+  );
+  assert.equal(
+    reads,
+    2,
+    "invalid or missing evidence never reads the provider",
+  );
+  let identity = "fixture-account";
+  const switched = new ProductReviewService({
+    ...provider,
+    providerIdentity: () => identity,
+    getCart: async () => {
+      const basket = await provider.getCart();
+      identity = "changed-account";
+      return basket;
+    },
+  });
+  await assert.rejects(
+    switched.inspectDirectBasketSubmission(draftId, undefined, durable.journal),
+    /account changed/u,
+  );
+});

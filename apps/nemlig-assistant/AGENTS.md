@@ -40,5 +40,11 @@ app, also apply this file. Then select the matching app-local skill:
   owner session as separate boundaries; change only the layer supported by
   evidence. A server release does not imply a plugin ZIP update, and a gateway
   HTTP 200 does not prove the MCP tool succeeded.
+- Every Nemlig native smoke or regression run must select and report each
+  applicable stable failure ID from `../../docs/nemlig-failure-compendium.md`,
+  including **PASS**, **FAIL**, **BLOCKED**, **NOT RUN**, or justified **N/A**
+  with evidence/reason. Preserve unknown root causes as unknown, record first
+  occurrences and recurrences, and never retry an uncertain provider write for
+  regression purposes. The compendium does not grant authority for live writes.
 - For shipped user-visible behavior, update the README feature inventory; keep
   planned work in `BACKLOG.md` or a linked OpenSpec change.

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   matchFavorites,
+  BasketAdditionError,
   NemligClient,
   NemligError,
   ProductNotFoundError,
@@ -74,6 +75,38 @@ const sessionRequests = (): ExpectedRequest[] => [
     }),
   },
 ];
+
+test("basket failure metadata bounds HTTP status and excludes unrelated private fields", () => {
+  for (const httpStatus of [
+    99,
+    600,
+    200.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    null,
+  ]) {
+    const failure = {
+      stage: "dispatch" as const,
+      category: "http" as const,
+      httpStatus,
+      rawCause: "private-provider-body",
+    };
+    const error = new BasketAdditionError(
+      "Unconfirmed basket operation.",
+      failure,
+    );
+    assert.deepEqual(error.failure, {
+      stage: "dispatch",
+      category: "http",
+      httpStatus: null,
+    });
+    assert.equal(error.status, undefined);
+    assert.doesNotMatch(
+      JSON.stringify(error),
+      /private-provider-body|rawCause/u,
+    );
+  }
+});
 
 test("login retains multiple cookies and reuses the session for basket access", async () => {
   const requests: ExpectedRequest[] = [
@@ -544,6 +577,34 @@ test("caller cancellation starts no read, preserves its identity, and leaves mut
     /^NemligError: Write failed: network unavailable\.$/u,
   );
   assert.equal(mutationAttempts, 1);
+});
+
+test("JSON response-body timeouts retain their category and HTTP status without retry", async () => {
+  let reads = 0;
+  const client = new NemligClient((async () => {
+    reads++;
+    const response = new Response(null, { status: 200 });
+    response.json = async () => {
+      throw new DOMException("private timeout detail", "TimeoutError");
+    };
+    return response;
+  }) as typeof fetch);
+  await assert.rejects(
+    Reflect.get(client, "json").call(
+      client,
+      "https://example.test/read",
+      {},
+      "Read",
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof NemligError);
+      assert.equal(error.category, "timeout");
+      assert.equal(error.status, 200);
+      assert.doesNotMatch(String(error), /private timeout detail/u);
+      return true;
+    },
+  );
+  assert.equal(reads, 1);
 });
 
 test("catalogue and basket reads pass caller signals through initialization, fallback, and response bodies", async () => {
@@ -1534,6 +1595,255 @@ test("bulk basket addition rejects invalid or duplicate input before provider wr
     /unique positive/,
   );
 });
+
+for (const outcome of [
+  "increased",
+  "unchanged",
+  "previous-row-decreased",
+] as const) {
+  test(`bulk basket overlap readback: ${outcome}`, async () => {
+    let writes = 0;
+    let fetches = 0;
+    const before = [
+      { Id: 7, Name: "Overlapping product", Quantity: 1 },
+      { Id: 9, Name: "Unrelated product", Quantity: 3 },
+    ];
+    const after = [
+      { ...before[0], Quantity: outcome === "unchanged" ? 1 : 2 },
+      { ...before[1], Quantity: outcome === "previous-row-decreased" ? 2 : 3 },
+    ];
+    const requests: ExpectedRequest[] = [
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ RedirectUrl: "/" }) },
+      ...sessionRequests(),
+      { match: "/basket/GetBasket$", response: json({ Lines: before }) },
+      {
+        match: "/Basket/AddManyToBasket$",
+        inspect: (_url, init) => {
+          writes++;
+          assert.deepEqual(JSON.parse(String(init?.body)), {
+            addToExisting: true,
+            Products: [{ ProductId: "7", Quantity: 1 }],
+          });
+        },
+        response: json({}),
+      },
+      { match: "/basket/GetBasket$", response: json({ Lines: after }) },
+    ];
+    const expectedFetches = requests.length;
+    const fetcher = mockFetch(requests);
+    const client = new NemligClient((...args) => {
+      fetches++;
+      return fetcher(...args);
+    });
+    await client.login("person@example.test", "secret");
+    const pending = client.addManyToCart([{ productId: 7, quantity: 1 }]);
+    if (outcome === "increased") {
+      assert.deepEqual(
+        (await pending).items.map(({ id, quantity }) => [id, quantity]),
+        [
+          [7, 2],
+          [9, 3],
+        ],
+      );
+    } else {
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof BasketAdditionError);
+        assert.deepEqual(error.failure, {
+          stage: "readback",
+          category: "readback_mismatch",
+          httpStatus: null,
+        });
+        assert.match(error.message, /do not retry/u);
+        return true;
+      });
+    }
+    assert.equal(writes, 1);
+    assert.equal(fetches, expectedFetches);
+    assert.equal(requests.length, 0);
+  });
+}
+
+for (const outcome of ["unchanged", "increased", "unavailable"] as const) {
+  test(`bulk basket validation presence preserves independent ${outcome} readback`, async () => {
+    let fetches = 0;
+    let writes = 0;
+    const before = [
+      { Id: 7, Quantity: 1 },
+      { Id: 9, Quantity: 3 },
+    ];
+    const requests: ExpectedRequest[] = [
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ RedirectUrl: "/" }) },
+      ...sessionRequests(),
+      { match: "/basket/GetBasket$", response: json({ Lines: before }) },
+      {
+        match: "/Basket/AddManyToBasket$",
+        inspect: () => {
+          writes++;
+        },
+        response: json({
+          ValidationFailures: [
+            {
+              ErrorCode: "unproven-private-code",
+              ErrorMessage: "private-body person@example.test userId=42",
+            },
+          ],
+        }),
+      },
+      {
+        match: "/basket/GetBasket$",
+        response:
+          outcome === "unavailable"
+            ? json({}, { status: 403 })
+            : json({
+                Lines:
+                  outcome === "increased"
+                    ? [{ Id: 7, Quantity: 2 }, before[1]]
+                    : before,
+              }),
+      },
+    ];
+    const expectedFetches = requests.length;
+    const fetcher = mockFetch(requests);
+    const client = new NemligClient((...args) => {
+      fetches++;
+      return fetcher(...args);
+    });
+    await client.login("person@example.test", "secret");
+    const pending = client.addManyToCart([{ productId: 7, quantity: 1 }]);
+    if (outcome === "increased") {
+      assert.deepEqual(
+        (await pending).items.map(({ id, quantity }) => [id, quantity]),
+        [
+          [7, 2],
+          [9, 3],
+        ],
+      );
+    } else {
+      await assert.rejects(pending, (error: unknown) => {
+        assert.ok(error instanceof BasketAdditionError);
+        assert.deepEqual(error.failure, {
+          stage: "readback",
+          category: outcome === "unavailable" ? "http" : "readback_mismatch",
+          httpStatus: outcome === "unavailable" ? 403 : null,
+          validationFailuresPresent: true,
+        });
+        assert.doesNotMatch(
+          JSON.stringify(error),
+          /unproven|private-body|person@example|userId/u,
+        );
+        assert.match(error.message, /do not retry/u);
+        return true;
+      });
+    }
+    assert.equal(writes, 1);
+    assert.equal(fetches, expectedFetches);
+    assert.equal(requests.length, 0);
+  });
+}
+
+for (const stage of ["dispatch", "readback"] as const) {
+  for (const category of [
+    "http",
+    "network",
+    "timeout",
+    "cancelled",
+    "invalid_response",
+  ] as const) {
+    test(`bulk basket failure retains safe ${stage}/${category} evidence without another POST`, async () => {
+      const cancellation = new AbortController();
+      const privateDetail =
+        "private-cookie=secret; person@example.test; userId=42";
+      let writes = 0;
+      let fetches = 0;
+      const failure = (): Response => {
+        if (category === "http") {
+          return json({ detail: privateDetail }, { status: 403 });
+        }
+        if (category === "invalid_response") {
+          return new Response(`{${privateDetail}`);
+        }
+        if (category === "cancelled") {
+          cancellation.abort(new Error(privateDetail));
+          throw new DOMException(privateDetail, "AbortError");
+        }
+        if (category === "timeout") {
+          throw new DOMException(privateDetail, "TimeoutError");
+        }
+        throw new TypeError(privateDetail);
+      };
+      const readAttempts =
+        stage === "readback" &&
+        (category === "network" || category === "timeout")
+          ? 2
+          : 1;
+      const requests: ExpectedRequest[] = [
+        antiForgeryRequest(),
+        { match: "/login$", response: json({ RedirectUrl: "/" }) },
+        ...sessionRequests(),
+        {
+          match: "/basket/GetBasket$",
+          response: json({ Lines: [{ Id: 9, Quantity: 3 }] }),
+        },
+        {
+          match: "/Basket/AddManyToBasket$",
+          inspect: () => {
+            writes++;
+          },
+          response: stage === "dispatch" ? failure : json({}),
+        },
+        ...(stage === "readback"
+          ? Array.from({ length: readAttempts }, () => ({
+              match: "/basket/GetBasket$",
+              response: failure,
+            }))
+          : []),
+      ];
+      const expectedFetches = requests.length;
+      const fetcher = mockFetch(requests);
+      const client = new NemligClient((...args) => {
+        fetches++;
+        return fetcher(...args);
+      });
+      await client.login("person@example.test", "secret");
+      await assert.rejects(
+        client.addManyToCart([{ productId: 7, quantity: 1 }], {
+          signal: cancellation.signal,
+        }),
+        (error: unknown) => {
+          assert.ok(error instanceof BasketAdditionError);
+          const httpStatus =
+            category === "http"
+              ? 403
+              : category === "invalid_response"
+                ? 200
+                : null;
+          assert.deepEqual(error.failure, {
+            stage,
+            category,
+            httpStatus,
+          });
+          assert.equal(error.status, httpStatus ?? undefined);
+          assert.match(error.message, /unconfirmed.*do not retry/u);
+          assert.doesNotMatch(
+            JSON.stringify(error),
+            /private-cookie|person@example|userId|secret/u,
+          );
+          assert.doesNotMatch(
+            String(error),
+            /private-cookie|person@example|userId|secret/u,
+          );
+          assert.equal(error.cause, undefined);
+          return true;
+        },
+      );
+      assert.equal(writes, 1);
+      assert.equal(fetches, expectedFetches);
+      assert.equal(requests.length, 0);
+    });
+  }
+}
 
 test("bulk basket addition reports partial readback without retrying the POST", async () => {
   let writes = 0;

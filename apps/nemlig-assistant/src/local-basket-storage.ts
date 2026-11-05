@@ -257,6 +257,11 @@ export const mutateOwnerLocalBasketInventory = async (
         current.kind !== operation.kind ||
         current.name !== operation.name ||
         JSON.stringify(current.items) !== JSON.stringify(operation.items) ||
+        (current.dispatchedItems !== undefined &&
+          JSON.stringify(current.dispatchedItems) !==
+            JSON.stringify(
+              operation.dispatchedItems ?? current.dispatchedItems,
+            )) ||
         JSON.stringify(current.baseline) !==
           JSON.stringify(operation.baseline) ||
         (current.listId !== undefined &&
@@ -278,6 +283,10 @@ export const mutateOwnerLocalBasketInventory = async (
             dispatchAttempted:
               current.dispatchAttempted || operation.dispatchAttempted,
             completed: current.completed || operation.completed,
+            ...(current.failure ? { failure: current.failure } : {}),
+            ...(current.dispatchedItems
+              ? { dispatchedItems: current.dispatchedItems }
+              : {}),
             ...(current.listId !== undefined ? { listId: current.listId } : {}),
             ...(current.progress && operation.progress
               ? {

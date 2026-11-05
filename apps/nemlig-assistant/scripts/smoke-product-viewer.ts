@@ -1171,6 +1171,31 @@ try {
     "passive payload replayed uncertain transfer",
   );
 
+  // NEM-CHATGPT-004: the real iframe sends the exact operation for read-only recovery.
+  const directSubmitFrame = await open("/host-direct");
+  await directSubmitFrame
+    .getByRole("button", { name: "Add to Nemlig basket", exact: true })
+    .waitFor();
+  await page.evaluate(() => {
+    window.failNext = true;
+  });
+  await directSubmitFrame
+    .getByRole("button", { name: "Add to Nemlig basket" })
+    .click();
+  const directSubmitDialog = directSubmitFrame.getByRole("dialog", {
+    name: "Check your Nemlig basket",
+  });
+  await directSubmitDialog.waitFor();
+  await directSubmitDialog
+    .getByRole("button", { name: "Inspect Nemlig basket in conversation" })
+    .click();
+  await page.waitForFunction(() => window.messages.length === 1);
+  const inspection = await page.evaluate(() => window.messages[0]);
+  assert.ok(inspection?.includes(`draft_id: "${directFixture.draftId}"`));
+  assert.match(inspection!, /baseline.*approved.*delta/iu);
+  assert.match(inspection!, /Do not retry or add anything/u);
+  assert.equal(await page.evaluate(() => window.submissionAttempts), 1);
+
   assert.deepEqual(
     externalRequests,
     [],

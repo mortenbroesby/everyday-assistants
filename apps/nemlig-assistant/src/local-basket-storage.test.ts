@@ -894,3 +894,46 @@ test("retired inventory commands fail before touching legacy storage", async () 
   assert.equal(storage.alarm, 1234);
   assert.deepEqual(storage.writes, []);
 });
+
+test("submission diagnostics and dispatched intent survive stale writes without clearing fences", async () => {
+  const storage = new FakeStorage();
+  const operation: ReviewOperation = {
+    operationId: "direct-basket-submit:draft",
+    generation: "submission",
+    accountIdentity: "account",
+    kind: "submit",
+    name: "Direct basket draft",
+    items: [{ productId: 7, quantity: 1 }],
+    baseline: [{ productId: 7, quantity: 1 }],
+    dispatchedItems: [{ productId: 7, quantity: 1 }],
+  };
+  const write = (value: ReviewOperation) =>
+    mutateOwnerLocalBasketInventory(storage, "owner", {
+      kind: "review-operation-write",
+      operation: value,
+    });
+  await write(operation);
+  await mutateOwnerLocalBasketInventory(storage, "owner", {
+    kind: "review-operation-claim",
+    operationId: operation.operationId,
+    generation: operation.generation,
+  });
+  const failure = {
+    stage: "dispatch",
+    category: "http",
+    httpStatus: 403,
+  } as const;
+  await write({ ...operation, failure });
+  await write(operation);
+  await assert.rejects(
+    write({ ...operation, dispatchedItems: [{ productId: 7, quantity: 2 }] }),
+    /different/u,
+  );
+  const stored = (await mutateOwnerLocalBasketInventory(storage, "owner", {
+    kind: "review-operation-read",
+    operationId: operation.operationId,
+  })) as ReviewOperation;
+  assert.deepEqual(stored.failure, failure);
+  assert.equal(stored.dispatchAttempted, true);
+  assert.notEqual(stored.completed, true);
+});

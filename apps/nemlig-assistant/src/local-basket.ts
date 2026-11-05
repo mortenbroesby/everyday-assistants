@@ -1,3 +1,5 @@
+import type { BasketAdditionFailure } from "./client.js";
+
 export class LocalBasketOperationCapacityError extends Error {
   override readonly name = "LocalBasketOperationCapacityError";
   // Preserve this code when Durable Object RPC reconstructs the error.
@@ -41,6 +43,8 @@ export interface ReviewOperation {
   listId?: number;
   items: Array<{ productId: number; quantity: number }>;
   baseline?: Array<{ productId: number; quantity: number }>;
+  dispatchedItems?: Array<{ productId: number; quantity: number }>;
+  failure?: BasketAdditionFailure;
   progress?: { completed: number; total: number };
   createdAt?: number;
   completedUntil?: number;
