@@ -30,7 +30,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Fallow changed-code report
-        uses: fallow-rs/fallow@fccff887da0d83db1711379e0a3696dfc2460fdd # v3.33.1
+        uses: fallow-rs/fallow@2d55db7a9f0e3501c8be43f64400c47be365e668 # v3.44.0
         with:
           command: audit
           version: 3.32.0
