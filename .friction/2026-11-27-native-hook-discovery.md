@@ -44,3 +44,16 @@ bypass trust or merge/deploy merely to obtain a passing probe.
 Documentation correction is in draft PR #371; discovery and native execution
 remain unresolved. User authorization persists for the two reminder hooks.
 Source: https://learn.chatgpt.com/docs/hooks (reviewed 2026-11-27).
+
+### Follow-up: standalone discovery and approval
+A temporary standalone clone at the exact candidate `aca803f` exposed both
+hooks in the same CLI. Each detail showed the clone's `.codex/hooks.json`,
+the expected friction-reminder command, synchronous mode and a two-second
+timeout. Under the user's explicit authorization, the project folder was
+trusted and each reminder hook was approved individually through the native
+interface. Readback showed Stop and Interrupt each installed 1, active 1,
+review 0; five unrelated hooks remained untrusted. No model task was submitted.
+This comparison supports linked-worktree source resolution as the cause. It
+proves discovery and persisted trust in the standalone checkout only, not
+activation in the original worktree or real Stop/Interrupt execution. The
+standalone checkout is retained locally for those remaining validation steps.

@@ -240,3 +240,11 @@ available to approve. No trust was changed. See the
 A subsequent native test must first verify source path and installed events,
 then trust only those definitions and observe real Stop/Interrupt execution.
 Do not merge the draft or change the main checkout merely to make this test pass.
+
+Follow-up at `aca803f`: an isolated standalone clone of the exact candidate
+discovered both hooks. With the owner's explicit authorization, native review
+approved only Stop and Interrupt; readback showed each installed 1, active 1,
+review 0, with five unrelated hooks still awaiting review. No model task was
+submitted. Trust/discovery is verified for that standalone checkout; original
+linked-worktree activation, real event execution and comparative agent behavior
+remain unverified. Preserve this distinction when resuming validation.
