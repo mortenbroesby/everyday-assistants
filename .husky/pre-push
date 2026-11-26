@@ -1,3 +1,5 @@
+#!/bin/sh
 set -e
 
+pnpm exec fallow audit --base "${FALLOW_AUDIT_BASE:-origin/main}" --gate new-only --quiet
 pnpm verify

@@ -11,6 +11,16 @@
             "statusMessage": "Checking whether repository intelligence would help"
           }
         ]
+      },
+      {
+        "matcher": "^(Bash|exec_command)$",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$(git rev-parse --show-toplevel)/scripts/fallow-agent-hook.mjs\"",
+            "timeout": 120
+          }
+        ]
       }
     ]
   }

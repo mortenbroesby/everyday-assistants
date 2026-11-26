@@ -1,18 +1,16 @@
 ---
 name: fallow
-description: Use the pinned Fallow CLI for targeted evidence about unused code or dependencies, duplication, complexity, architecture boundaries, and changed-code PR risk. Do not activate for every cleanup or treat findings as deletion proof.
+description: Codebase intelligence for TypeScript and JavaScript. Static analysis reports changed-code risk, cleanup opportunities, duplication, circular dependencies, complexity hotspots, architecture boundaries, design-system drift, feature flags, and opt-in security candidates. Opt-in mutation testing reports the code changes that no test detects. Optional local similar-code discovery finds functions that may implement the same intent despite different syntax. Runtime coverage can merge production execution data. Use when asked to audit PR risk, find unused code or dependencies, compare semantically similar functions, detect duplicates, inspect architecture boundaries, merge runtime coverage, improve or check the tests of a change, auto-fix supported issues, or run fallow.
 license: MIT
 ---
 
 # Fallow: codebase intelligence for TypeScript and JavaScript
 
-Repository adaptation: run the pinned CLI with `pnpm exec fallow`. Apply the
-repository's AGENTS.md and Code Simplifier guidance before acting on findings.
-The setup, MCP, Cloud, Impact, telemetry, and auto-fix workflows below are
-optional; use them only when the task requests that capability. The repository
-already has a local install and Git hook. Do not offer routine onboarding.
-
 Fallow analyzes code and styles for changed-code risk, cleanup opportunities, circular dependencies, duplication, complexity hotspots, architecture boundary violations, design-system styling drift, feature flags, and opt-in security candidates. Runtime coverage merges production execution data into the same `fallow health` report for hot-path review and cold-path deletion confidence. A single local capture is available by default. Continuous or cloud runtime monitoring is optional.
+
+Repository usage: run the pinned CLI with `pnpm exec fallow`. Read
+[the repository integration guide](../../../docs/fallow.md) for gates, baseline
+policy, and harness activation. Repository safety and delivery rules apply.
 
 ## When to Use
 - Find cleanup opportunities: unused files, exports, types, members, dependencies, or feature flags that guard unused exports.
@@ -25,6 +23,7 @@ Fallow analyzes code and styles for changed-code risk, cleanup opportunities, ci
 - Investigate why a specific export, dependency, file, or issue type was reported.
 - Surface local security candidates for an agent to verify (`fallow security`).
 - Find untested but runtime-reachable code (`fallow health --coverage-gaps`).
+- Improve or check the tests of a change: find the small code changes (mutants) that no test detects (`fallow mutation`, opt-in, because a run executes the project tests).
 - Rank complexity hotspots, owners, and refactoring targets (`fallow health --hotspots --ownership --targets`).
 - Review what fallow has surfaced over time (`fallow impact`).
 - Confirm exact TypeScript symbol use, affected tests, API leaks, or public type coupling when syntactic evidence is insufficient (`--type-aware`).
@@ -48,9 +47,9 @@ cargo install fallow-cli   # build from source
 
 ## Agent Rules
 1. **Always use `--format json --quiet`** for machine-readable output and parse stdout as JSON. Compact JSON is the default; never depend on whitespace or add `--pretty` in agent pipelines. Keep stderr separate so diagnostics remain visible; never merge it into the JSON stream with `2>&1`.
-2. **Preserve and interpret the exit status.** Codes 0 and 1 are successful analysis outcomes: 0 is clean and 1 means findings. Treat every other code according to `fallow schema.exit_codes`. Do not force a successful status, because that hides validation, license, setup, network, and security-gate outcomes.
+2. **Preserve and interpret the exit status.** Codes 0 and 1 are successful analysis outcomes. 0 means no enforced gate failed, and 1 means an enforced gate failed: findings, not a tool failure. Bare `fallow` in a machine format exits 0 on findings unless you pass `--fail-on-issues`. To gate, pass `--fail-on-issues`, run `fallow dead-code` or `fallow audit`, or read `gate_outcomes`: `status: "fail"` with `enforced: false` is a failing gate that did not set the exit code. Treat every other code according to `fallow schema.exit_codes`. Do not force a successful status, because that hides validation, license, setup, network, and security-gate outcomes.
 3. **Use `--explain`** to include a `_meta` object in JSON output with metric definitions, ranges, and interpretation hints. In human format, `--explain` prints a `Description:` line under each section header.
-4. **Use the root `kind` field** to identify typed JSON envelopes (`dead-code`, `dead-code-grouped`, `health`, `dupes`, `combined`, `audit`, etc.).
+4. **Use the root `kind` field** to identify typed JSON envelopes (`dead-code`, `dead-code-grouped`, `architecture`, `architecture-grouped`, `health`, `dupes`, `combined`, `audit`, etc.).
 5. **Use issue type filters** (`--unused-exports`, `--unused-files`, etc.) to limit output scope
 6. **Always `--dry-run` before `fix`**, then `fix --yes` to apply
 7. **All output paths are relative** to the project root
@@ -62,6 +61,8 @@ cargo install fallow-cli   # build from source
 13. **Use `fallow impact statusline` only for a user-facing status surface**. It intentionally emits one plain-text, path-free line and ignores `--format`. It starts no analysis, never enables Impact, and compares only whole-project scans. Do not parse this line as JSON.
 14. **Treat similar-code output as discovery only**. Never describe its score as a probability, finding, proof of equivalent behavior, or safe-refactor decision. Agents must not authorize setup. Inspect a candidate before judging it: save discovery as `similar-code.json`, inspect with `--candidates similar-code.json`, and pass the unchanged file to `fallow similar-code review`. Over MCP use `find_similar_code` with `paths:` and `inspect_similar_code` with a typed `snapshot`; it fails closed on stale source. Keep `candidate_worthy`, `behaviorally_equivalent`, and `refactor_safe` separate, use `needs-human-review`, and abstain when evidence is incomplete. Only `completion.status: "complete"` makes an empty result conclusive. Follow [the complete workflow to compare semantically similar functions](references/similar-code.md).
 15. **Check production runtime data before an edit or a delete, when Fallow Cloud is connected**. Prefer the scoped reads over the full `get_cloud_runtime_context` pull. Before an edit, run `fallow coverage review-packet --repo <owner/repo>` (MCP `get_cloud_review_packet`) for the changed files and read `hit_count`, `covered_by_test`, and the callers when present. Before a delete, require `period_tracking_state: "never_called"`, not only `tracking_state`, and read `evidence_window.observed_hours`: few observed hours or a low-traffic surface mean "not visited", not "dead". After a deploy, run `fallow coverage deployment-changes --repo <owner/repo>` (MCP `get_cloud_deployment_changes`) and, when `comparable` is `false`, report `reason` and claim no change. Open files by `repo_path`, not `file_path`. Production data is context, never a gate. Details: [references/mcp.md](references/mcp.md#scoped-cloud-reads).
+16. **Run `fallow doctor --format json --quiet` as a preflight**. Run it before the first analysis of a project, and again when a result looks wrong (an empty result, many unresolved imports, or missing workspaces). The doctor run reads the project setup and changes nothing. A required check with `status: "fail"` makes it exit 2. Fix each `fail` check before you trust the analysis. A `warn` message names the part of the analysis that degrades; a stale cache only makes the next run slower. Run each `remediation.command` from the project root (`cwd` is `.`). You may run it without asking when its `mutating` field is `false`; such a command can still write the Fallow cache. Ask the user before you run a remediation with `mutating: true`, such as a dependency install.
+17. **Treat a rejected argument from this skill as a version difference**. A command from this skill can exit 2 with `unexpected argument` or `invalid value` in the message. An unknown subcommand gives `PATH '<name>' does not exist`. Both mean that the installed fallow is older than this skill. Run `fallow --version`, tell the user to update fallow, and continue without that argument when the task permits. Do not try other spellings.
 
 ## Onboarding And Insight
 Offer setup after showing the findings from a human-requested analysis, only when all these conditions hold:
@@ -73,7 +74,7 @@ Offer setup after showing the findings from a human-requested analysis, only whe
 
 Offer these choices: guard commits and PRs, baseline the existing backlog and clean by category, add AGENTS.md guidance, or keep as-is. Mutate only after consent. On decline, run `fallow init --decline --quiet` and stay silent for this project.
 
-For guards, inspect `fallow hooks status --format json --quiet`, then use `fallow hooks install --target agent` and `fallow hooks install --target git`. For large backlogs, pair the gate with `--save-baseline` and new-only guidance.
+For complete agent onboarding, use the `fallow-setup` skill: preview `fallow agent install --dry-run`, apply the approved setup, then run `fallow agent status --format json --quiet`. Report runtime blockers and pending harness trust before calling the setup ready. For an explicit guard-only request, inspect `fallow hooks status --format json --quiet` and install the requested agent or Git hook. For large backlogs, pair the gate with `--save-baseline` and new-only guidance.
 
 Offer `fallow impact enable` for local value tracking. Impact is separate from telemetry. Also offer it once on an already-configured project when `fallow impact status --format json` has `enabled: false` and `explicit_decision: false`. Record a decline with `fallow impact disable --quiet`.
 
@@ -91,14 +92,17 @@ Route by intent before reaching for the big analysis commands. Same matrix as `f
 | prove a TypeScript symbol's exact consumers before refactoring | `fallow dead-code --type-aware --symbol-impact <file>:<export-or-class.method>` |
 | find how one module reaches another | `fallow trace --path <from> <to>`; Reports `reachable: false` instead of failing when no import path exists; type-only hops are reported, not skipped. |
 | delete an "unused" dependency | `fallow dead-code --trace-dependency <name>` |
+| migrate a dependency | `fallow trace --dependency <name> --sites`; Counts each imported name, follows one hop through project wrappers, and counts each use that it cannot resolve. |
 | commit or open a PR | `fallow audit --base <ref>` |
 | read a diff before approving it | `fallow review --base <ref> --brief`; orientation, never gates: deterministic and always exit 0, unlike the audit row |
 | prioritize refactoring | `fallow health --hotspots --targets` |
 | ask who owns code | `fallow health --ownership` |
 | check untested-but-reachable code | `fallow health --coverage-gaps` |
+| improve or check the tests of a change | `fallow mutation --plan --base <ref>`; The plan runs no code. Without `--plan`, the command runs the project tests against each mutant, so ask the user first. |
 | consolidate duplication | `fallow dupes --trace dup:<fingerprint>` |
 | find feature flags | `fallow flags` |
 | check which architecture rules apply to a file before changing it | `fallow guard <files>` |
+| check import cycles, boundaries and policy rules after changing code | `fallow architecture` |
 | surface security candidates | `fallow security` |
 | understand a finding | `fallow explain <issue-type>` |
 | scope a monorepo | `--workspace <glob> / --changed-workspaces <ref>`; global flags, prefix any command |
@@ -112,9 +116,11 @@ Full command catalogue, one row per command: **[references/cli-reference.md](ref
 
 ## Issue Types
 
-Dead-code filter flags select issue categories (`--unused-exports`, `--unused-types`, `--unused-deps`, `--circular-deps`, and so on). Some flags select related types together; `--unused-deps` covers several dependency types. Passing one or more narrows `fallow dead-code` to those categories. Passing none applies no issue-type filter.
+Dead-code filter flags select issue categories (`--unused-exports`, `--unused-types`, `--unused-deps`, `--unused-files`, and so on). Some flags select related types together; `--unused-deps` covers several dependency types. Passing one or more narrows `fallow dead-code` to those categories. Passing none applies no issue-type filter.
 
-For suppressible findings, use the placement listed in the issue catalogue: `// fallow-ignore-next-line <issue-type>` above the finding, or `// fallow-ignore-file <issue-type>` at the top of the file. Some types support only file-level suppression; others have no suppression comment. A bare supported form without a type suppresses all matching findings at that placement.
+`fallow architecture` reports the architecture findings: circular dependencies, re-export cycles, package cycles, boundary violations and rule-pack policy violations. Use `--cycles`, `--boundaries` or `--policy` to select one kind. The JSON output has `kind: "architecture"` and its own `schema_version`, with the same arrays and finding ids as `dead-code`. `fallow dead-code` still reports these findings until the next major version. Its `--circular-deps`, `--re-export-cycles`, `--package-cycles`, `--boundary-violations` and `--policy-violations` flags are deprecated aliases. Run `fallow guard <files>` before an edit and `fallow architecture` after it. In bare `fallow`, `--only architecture` reports only these findings and `--skip architecture` removes them.
+
+For suppressible findings, use the placement listed in the issue catalogue: `// fallow-ignore-next-line <issue-type>` above the finding, or `// fallow-ignore-file <issue-type>` at the top of the file. Some types support only file-level suppression; others have no suppression comment. A bare supported form without a type suppresses all matching findings at that placement. Put `-- <reason>` after the types to record why. Always give a reason on a `security-sink` or `security-client-server-leak` suppression: `fallow audit` marks an added security suppression without a reason with `suppression.security_without_reason: true`. A blanket comment without a kind does not set this flag. To list existing suppressions without a reason, run `fallow suppressions --format json` and select `reason_present: false`.
 
 `fallow explain <issue-type>` describes one type without running analysis, and the MCP server serves the same catalogue as the `fallow://issue-types` resource.
 
@@ -125,6 +131,8 @@ Full catalogue, one row per type: **[references/issue-types.md](references/issue
 Fallow ships an MCP server (`fallow-mcp`) that exposes these same analyses as agent tools. When the server is connected, its tools are already in your context with typed params and structured JSON returns, and each maps to a CLI fallback command. Prefer them when you want JSON without shelling out, or `code_execute` (Code Mode) to compose several read-only analyses in one sandboxed snippet (no single-call CLI equivalent). Otherwise use the CLI.
 
 The server also serves read-only reference resources (no subprocess, no analysis run, cacheable by URI; your client reads them through its own resource tool): `fallow://tools`, `fallow://issue-types`, `fallow://explain/{issue_type}`, `fallow://task-matrix`, and the config, plugin, and rule-pack JSON Schemas. Every resource payload is JSON. Each content item carries the server version in `_meta.fallow_version`.
+
+Fallow Cloud also runs a hosted MCP server at `POST https://api.fallow.cloud/mcp` (Bearer read-only or live API key). It serves production data with no local install, and has tools that `fallow-mcp` does not have, such as `get_file_context`, `verify_deployment`, and `list_errors`. Details: [references/mcp.md](references/mcp.md#hosted-fallow-cloud-mcp-server).
 
 Full tool catalogue, resource catalogue, key params, runtime source-map confidence tiers, shared timeouts, and the `next_steps` dispatch mapping: **[references/mcp.md](references/mcp.md)**.
 
@@ -160,6 +168,39 @@ fallow audit --format json --quiet --base main
 
 Returns a pass/warn/fail verdict for issues introduced by the PR. Only analyzes files changed since the `main` branch.
 
+### Review a change and let fallow check the verdict
+```bash
+review="${TMPDIR:-/tmp}"
+fallow audit --format json --quiet                                                    # 1. gate the change
+fallow audit --walkthrough-guide --format json --quiet > "$review/fallow-guide.json"  # 2. read the guide
+fallow audit --walkthrough-file "$review/fallow-judgment.json" --format json --quiet  # 4. fallow checks the judgment
+```
+
+Step 3 is your review. Read `digest.decisions[]` and `change_anchors[]` in the guide, then write `fallow-judgment.json` in the same folder:
+
+```json
+{
+  "graph_snapshot_hash": "<copy from the guide>",
+  "judgments": [
+    { "signal_id": "sig:<from digest.decisions>", "framing": "Callers keep their imports.", "action": "fyi" },
+    { "change_anchor": "chg:<from change_anchors>", "framing": "unusedHelper has no caller.", "action": "address" }
+  ]
+}
+```
+
+Fallow validates the judgment against the live graph. It rejects an id that it did not emit. It refuses the whole file as `stale` when the hash no longer matches. Report only the `accepted` judgments. Keep the guide outside the project: a new file in the tree changes the hash. Do not create `.fallow/` for it, because a folder that you create has no ignore file. On `stale: true`, fetch the guide again.
+
+### Improve the tests of a change
+```bash
+fallow mutation --plan --base main --format json --quiet   # the plan: runs no code
+fallow mutation --base main --format json --quiet          # the run: executes the project tests
+fallow mutation tasks --format json --quiet                # the open mutants: runs no code
+fallow mutation inspect <mutant_id> --format json --quiet  # one mutant: runs no code
+fallow mutation --recheck --format json --quiet            # after new tests: runs only the open mutants
+```
+
+Start the run when the user asks for better tests or for mutation testing. In each other task, show the plan and ask. A run exits 2 on uncommitted files: pass `--allow-dirty`, and do not commit for the user. A `survived` mutant is a code change that no test detects. Write a behavior test for each one that a caller can observe, then recheck. Do not write a test that only pins an implementation detail, and do not pass `--allow-side-effects` unless the user asks. The runners are Vitest, `node:test` and `bun test`. The Fallow plugin has a `fallow-mutation` skill with the full method.
+
 ### Find code duplication
 ```bash
 fallow dupes --format json --quiet
@@ -191,6 +232,13 @@ fallow dead-code --format json --quiet --production
 ```
 
 Excludes test/dev files (`*.test.*`, `*.spec.*`, `*.stories.*`) and only analyzes production scripts.
+
+### Review parameters that each call passes in one way
+```bash
+fallow dead-code --constant-parameters --production --format json --quiet
+```
+
+The opt-in rule reports a function parameter that each visible call passes the same value (`identical-argument`), or an optional parameter that no call passes (`never-passed`). The same value is the same literal, or the same `const` with a literal initializer or enum member (`value.kind` is `binding`). A finding with `option_key` is about one key of an object-pattern parameter, such as `retries` in `{ retries = 3 }`. It reports only when it sees each caller, and it never reports a function that a test file declares. Start with findings where `condition_reads` is above 0: a condition tests the constant, so a branch cannot run. Read the `inspected_call_sites` and the intent before a change. Keep a deliberate option, a test seam, or a parameter that matches a sibling API. `--production` drops test callers. With `--type-aware`, the rule also reports `unused-default` (each call passes a value whose type excludes `undefined`, so the default never applies) and reads the methods of exported classes (`function_name` is `Class.method`). These findings carry `evidence: "type-aware"`: a type does not prove a run-time value, so check that no `any` value or cast reaches the parameter. There is no auto-fix.
 
 ### Analyze specific workspaces
 ```bash
@@ -284,11 +332,13 @@ fallow dead-code --format json --quiet --save-regression-baseline
 # 2. In CI: fail only if issues increase beyond tolerance
 fallow dead-code --format json --quiet --fail-on-regression --tolerance 0
 # Identity-based baseline (fail only on NEW findings, not raw counts)
-fallow dead-code --format json --quiet --save-baseline .fallow/snapshot.json
-fallow dead-code --format json --quiet --baseline .fallow/snapshot.json
+fallow dead-code --format json --quiet --save-baseline fallow-baselines/dead-code.json
+fallow dead-code --format json --quiet --baseline fallow-baselines/dead-code.json
 ```
 
-`--save-regression-baseline` / `--regression-baseline` / `--fail-on-regression` / `--tolerance` are count-based gates for `dead-code`, bare combined mode, and `flags --retirement` (a flags baseline needs a PATH; without `--retirement` the options have no effect on `flags` and it warns). `--save-baseline` / `--baseline` are identity-based (track finding identity, fail on new). `audit` rejects the global baseline flags and uses `--dead-code-baseline` / `--health-baseline` / `--dupes-baseline` instead.
+Commit the baseline file. Do not save it in `.fallow/`: fallow tells Git to ignore that cache directory, so the baseline is not committed and `fallow` prints a warning.
+
+`--save-regression-baseline` / `--regression-baseline` / `--fail-on-regression` / `--tolerance` are count-based gates for `dead-code`, `architecture`, bare combined mode, and `flags --retirement` (a flags baseline needs a PATH; without `--retirement` the options have no effect on `flags` and it warns). `--save-baseline` / `--baseline` are identity-based (track finding identity, fail on new). On bare `fallow` they hold the dead-code baseline only; pass health and duplication baselines with `--health-baseline` / `--dupes-baseline`. `audit` rejects the global baseline flags and uses `--dead-code-baseline` / `--health-baseline` / `--dupes-baseline` instead.
 
 With no path, `--save-regression-baseline` updates `regression.baseline` in the discovered fallow config, or creates `.fallowrc.json` when none exists. Pass a path only when a standalone baseline file is preferred.
 
@@ -330,7 +380,9 @@ fallow dead-code --type-aware --symbol-impact src/api.ts:Client --format json --
 fallow health --type-aware --type-coupling --format json --quiet
 ```
 
-The optional companion must match the installed Fallow version. Semantic
+The `fallow-type-aware` companion is an install on demand
+(`npm install --save-dev fallow-type-aware@<fallow version>`), and it must
+match the installed Fallow version. Semantic
 results expose completeness, per-candidate decisions, and omissions.
 `confirmed-used` and `contract-preserved` remove syntactic false positives.
 `confirmed-no-static-references` retains the finding and only enables a guarded
@@ -350,12 +402,12 @@ Auto-detects `knip.json`, `knip.jsonc`, `.knip.json`, `.knip.jsonc`, `.jscpd.jso
 ```bash
 fallow init              # creates .fallowrc.json, adds .fallow/ to .gitignore (--toml for fallow.toml)
 fallow init --agents     # scaffolds a starter AGENTS.md prefilled from detected project info (never overwrites)
-fallow hooks install --target git   # pre-commit gate; --branch <ref> sets the fallback base branch
+fallow hooks install --target git   # pre-commit gate: audits the staged index (fallow audit --staged)
 ```
 
 ## Exit Codes
 
-Codes 0 and 1 are successful analysis outcomes: 0 is clean and 1 means findings. Read `fallow schema.exit_codes` for validation, resource, runtime, network, security-gate, and upload failures instead of maintaining another copied table.
+Codes 0 and 1 are successful analysis outcomes. 0 means no enforced gate failed, and 1 means an enforced gate failed: findings, not a tool failure. Bare `fallow` in a machine format exits 0 on findings unless you pass `--fail-on-issues`. To gate, pass `--fail-on-issues`, run `fallow dead-code` or `fallow audit`, or read `gate_outcomes`: `status: "fail"` with `enforced: false` is a failing gate that did not set the exit code. Read `fallow schema.exit_codes` for validation, resource, runtime, network, security-gate, and upload failures instead of maintaining another copied table.
 
 When `--format json` is active and exit code is 2, errors are emitted as JSON on stdout:
 ```json
@@ -392,6 +444,10 @@ export const keepThisToo = 2;
 
 // fallow-ignore-file
 // fallow-ignore-file unused-export
+
+// State the reason after `--` (every kind accepts it)
+// fallow-ignore-next-line security-sink -- the HTML is a constant template
+el.innerHTML = TEMPLATE;
 
 // Mark as intentionally unused (tracked for staleness)
 /** @expected-unused */

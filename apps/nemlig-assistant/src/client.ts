@@ -1,5 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
-import { NemligError } from "./nemlig-error.js";
+import {
+  BasketAdditionError,
+  NemligError,
+  type BasketAdditionFailure,
+  type NemligFailureCategory,
+} from "./nemlig-error.js";
 import {
   asId,
   asNumber,
@@ -28,7 +33,11 @@ export {
   type ShoppingListOverview,
 } from "./provider-response.js";
 
-export { NemligError } from "./nemlig-error.js";
+export {
+  BasketAdditionError,
+  NemligError,
+  type BasketAdditionFailure,
+} from "./nemlig-error.js";
 
 const API_BASE_URL = "https://www.nemlig.com/webapi";
 export const SEARCH_GATEWAY_URL =
@@ -92,6 +101,20 @@ export interface BasketAddition {
   productId: number;
   quantity: number;
 }
+
+const basketAdditionFailure = (
+  stage: BasketAdditionFailure["stage"],
+  error: unknown,
+  signal?: AbortSignal,
+): BasketAdditionFailure => ({
+  stage,
+  category: signal?.aborted
+    ? "cancelled"
+    : error instanceof NemligError
+      ? (error.category ?? "invalid_response")
+      : "invalid_response",
+  httpStatus: error instanceof NemligError ? (error.status ?? null) : null,
+});
 
 /** Stable basket identity for additive writes; prices are estimates, not approval limits. */
 const basketFingerprint = (basket: Basket): string => {
@@ -938,6 +961,10 @@ export class NemligClient {
   }
 
   /** Send approved positive basket deltas in one provider request. */
+  // Keep preflight, durable dispatch hook, one POST and independent readback together.
+  // Client tests cover overlap/preservation, dispatch/readback failures, cancellation
+  // and validation evidence; splitting these guards would obscure the no-retry path.
+  // fallow-ignore-next-line complexity
   async addManyToCart(
     additions: BasketAddition[],
     options: {
@@ -975,8 +1002,12 @@ export class NemligClient {
     );
     assertSafeBasketIncreases(baseline, requested);
     await this.prepareBasketMutation(before, signal, options.beforeDispatch);
+    let validationEvidence: Pick<
+      BasketAdditionFailure,
+      "validationFailuresPresent"
+    > = {};
     try {
-      await this.json(
+      const response = await this.json(
         `${API_BASE_URL}/Basket/AddManyToBasket`,
         {
           method: "POST",
@@ -989,20 +1020,43 @@ export class NemligClient {
         "Add items to basket",
         false,
       );
-    } catch {
-      throw new NemligError(
+      const failures = asRecord(response).ValidationFailures;
+      if (Array.isArray(failures) && failures.length > 0) {
+        validationEvidence = { validationFailuresPresent: true };
+      }
+    } catch (error) {
+      throw new BasketAdditionError(
         "Bulk basket write outcome is unconfirmed; inspect the basket and do not retry.",
+        basketAdditionFailure("dispatch", error, signal),
       );
     }
     let after: Basket;
     try {
       after = await this.getCart(signal);
-    } catch {
-      throw new NemligError(
+    } catch (error) {
+      throw new BasketAdditionError(
         "Bulk basket write was sent, but readback is unconfirmed; inspect the basket and do not retry.",
+        {
+          ...basketAdditionFailure("readback", error, signal),
+          ...validationEvidence,
+        },
       );
     }
-    assertBasketAdditionReadback(before, after, requested);
+    try {
+      assertBasketAdditionReadback(before, after, requested);
+    } catch (error) {
+      throw new BasketAdditionError(
+        error instanceof NemligError
+          ? error.message
+          : "Bulk basket readback is unconfirmed; inspect the basket and do not retry.",
+        {
+          stage: "readback",
+          category: "readback_mismatch",
+          httpStatus: null,
+          ...validationEvidence,
+        },
+      );
+    }
     return after;
   }
 
@@ -1366,6 +1420,7 @@ export class NemligClient {
     ) {
       await this.ensureAntiForgery(init.signal ?? undefined);
     }
+    let failureCategory: NemligFailureCategory = "network";
     for (
       let attempt = 0;
       attempt <= (retry ? NEMLIG_READ_MAX_RETRIES : 0);
@@ -1454,6 +1509,7 @@ export class NemligClient {
           throw new NemligError(
             `${operation} failed (HTTP ${response.status}).`,
             response.status,
+            "http",
           );
         }
         try {
@@ -1462,11 +1518,22 @@ export class NemligClient {
             return body.trim() ? JSON.parse(body) : undefined;
           }
           return await response.json();
-        } catch {
+        } catch (error) {
           if (init.signal?.aborted) {
             throw abortReason(init.signal);
           }
-          throw new NemligError(`${operation} failed: invalid response data.`);
+          const category =
+            attemptSignal.aborted ||
+            (error instanceof Error && error.name === "TimeoutError")
+              ? "timeout"
+              : error instanceof TypeError
+                ? "network"
+                : "invalid_response";
+          throw new NemligError(
+            `${operation} failed: ${category === "timeout" ? "request timed out" : category === "network" ? "network unavailable" : "invalid response data"}.`,
+            response.status,
+            category,
+          );
         }
       } catch (error) {
         if (init.signal?.aborted) {
@@ -1475,12 +1542,21 @@ export class NemligClient {
         if (error instanceof NemligError) {
           throw error;
         }
-        if (init.signal?.aborted || attemptSignal.aborted) {
+        failureCategory =
+          attemptSignal.aborted ||
+          (error instanceof Error && error.name === "TimeoutError")
+            ? "timeout"
+            : "network";
+        if (attemptSignal.aborted) {
           break;
         }
       }
     }
-    throw new NemligError(`${operation} failed: network unavailable.`);
+    throw new NemligError(
+      `${operation} failed: ${failureCategory === "timeout" ? "request timed out" : "network unavailable"}.`,
+      undefined,
+      failureCategory,
+    );
   }
 
   private captureCookies(host: string, headers: Headers): void {
