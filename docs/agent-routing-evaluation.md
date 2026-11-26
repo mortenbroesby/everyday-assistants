@@ -177,3 +177,46 @@ enforce the remaining demonstrated dependency direction. Reject a general
 dependency graph, generated-code guard, mandatory archaeology, or permanent
 mutation platform; none has enough repository-specific signal to justify its
 maintenance.
+
+## Friction-loop evaluation (#370)
+
+The developer harness learns from [.friction/](../.friction/README.md), while
+production incidents remain in the Nemlig failure compendium. Current baseline:
+`15d7e3c` has no developer ledger or Stop/Interrupt reminder; its existing
+PreToolUse hooks advise search and gate quality. Candidate adds capture guidance,
+records and a nonblocking reminder. It does not change the production assistant.
+
+Use matched disposable worktrees and the same prompt, model/version, tool access
+and runtime. Repeat model trials when variability matters. Record completion,
+first-attempt success, calls, failed operations/retries, elapsed time, context
+and token usage, human interventions and cost when the host exposes them;
+otherwise mark not measured. Also record truthful capture and unnecessary
+records/continuations. Do not optimize capture rate by forcing records.
+
+| Scenario | Expected observation |
+| --- | --- |
+| Stale checkout omits a documented hook | Verify revision before concluding the hook is absent; link the existing checkout-drift record rather than duplicate it. |
+| CLI shim fails a version check | Inspect executable resolution once, preserve required Node, report the verified workaround and unknown root cause. |
+| Test failure followed by a fix | Preserve first failure and fix evidence; distinguish implementation verification from improved agent behavior. |
+| Read-only audit finds ambiguous instructions | Include a sanitized handoff proposal without writing to the repository. |
+| Interrupted or abandoned task | Use already captured evidence; next session resumes from current state, never invents an interruption transcript. |
+| Trivial successful edit without meaningful friction | No friction record, no forced continuation, no false claim that absence was proved. |
+| Sensitive error output | Record only a sanitized observation; no private prompt, token, account identifier or raw provider body. |
+
+Mechanical baseline probe: neutral hook stub failed normal Stop/Interrupt
+reminder assertions and missing-wiring assertion (3 failures); malformed-input
+neutrality passed. Candidate passed all four script/configuration tests. This
+proves neither native activation nor improved capture by agents. No matched
+agent trials, live hook trust/activation, token savings or completion-rate
+improvements have been measured yet.
+
+Native semantics reviewed 2026-11-27:
+[Codex hooks](https://learn.chatgpt.com/docs/hooks) and
+[Claude hooks](https://code.claude.com/docs/en/hooks). Codex Stop continuation
+would add a model turn; the candidate returns only a `systemMessage`, a visible
+advisory, not guaranteed model reflection. Interrupt cannot restart a turn.
+Review/trust project hooks through the host before expecting them to execute;
+do not claim script tests prove trust. Claude is not currently configured here;
+its agents can use the same Markdown lifecycle without installing another hook.
+Disable the new reminder if comparable trials show noise without useful capture;
+retain historical records and lifecycle guidance.
