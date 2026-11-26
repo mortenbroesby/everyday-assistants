@@ -16,7 +16,7 @@ const root = join(import.meta.dirname, "..");
 
 const runHook = (
   hook,
-  { exitCode = 0, upstream = "origin/main", whitespaceExit = 0 } = {},
+  { exitCode = 0, base = "", whitespaceExit = 0 } = {},
 ) => {
   const directory = mkdtempSync(join(tmpdir(), "git-hook-test-"));
   try {
@@ -28,16 +28,8 @@ const runHook = (
 printf 'git %s\n' "$*" >> "$HOOK_TEST_LOG"
 case "$1" in
   diff) exit "$HOOK_TEST_WHITESPACE_EXIT" ;;
-  rev-parse)
-    [ -n "$HOOK_TEST_UPSTREAM" ] || exit 1
-    printf '%s\n' "$HOOK_TEST_UPSTREAM" ;;
-  merge-base) printf '%s\n' base-sha ;;
   *) exit 97 ;;
 esac
-`,
-      fallow: `#!/bin/sh
-printf 'fallow %s\n' "$*" >> "$HOOK_TEST_LOG"
-exit "$HOOK_TEST_EXIT"
 `,
       pnpm: `#!/bin/sh
 printf 'pnpm %s\n' "$*" >> "$HOOK_TEST_LOG"
@@ -56,9 +48,9 @@ exit "$HOOK_TEST_EXIT"
       env: {
         ...process.env,
         PATH: `${bin}:${process.env.PATH ?? ""}`,
+        FALLOW_AUDIT_BASE: base,
         HOOK_TEST_LOG: logPath,
         HOOK_TEST_EXIT: String(exitCode),
-        HOOK_TEST_UPSTREAM: upstream,
         HOOK_TEST_WHITESPACE_EXIT: String(whitespaceExit),
       },
     });
@@ -75,20 +67,16 @@ exit "$HOOK_TEST_EXIT"
   }
 };
 
-for (const upstream of ["origin/main", "origin/feature", ""]) {
-  for (const exitCode of [0, 17]) {
-    test(`pre-commit retains new-only Fallow audit (${upstream || "fallback"}, exit ${exitCode})`, () => {
-      const result = runHook("pre-commit", { exitCode, upstream });
-      assert.equal(result.status, exitCode);
-      assert.equal(result.signal, null);
-      assert.deepEqual(result.commands, [
-        "git diff --cached --check",
-        "git rev-parse --abbrev-ref --symbolic-full-name @{upstream}",
-        ...(upstream ? [`git merge-base ${upstream} HEAD`] : []),
-        `fallow audit --base ${upstream ? "base-sha" : "main"} --gate new-only --quiet --gate-marker pre-commit`,
-      ]);
-    });
-  }
+for (const exitCode of [0, 1, 17]) {
+  test(`pre-commit runs pinned Fallow and propagates exit ${exitCode}`, () => {
+    const result = runHook("pre-commit", { exitCode });
+    assert.equal(result.status, exitCode);
+    assert.equal(result.signal, null);
+    assert.deepEqual(result.commands, [
+      "git diff --cached --check",
+      "pnpm exec fallow audit --base origin/main --gate new-only --quiet --gate-marker pre-commit",
+    ]);
+  });
 }
 
 test("pre-commit stops before audit when staged whitespace fails", () => {
@@ -97,12 +85,15 @@ test("pre-commit stops before audit when staged whitespace fails", () => {
   assert.deepEqual(result.commands, ["git diff --cached --check"]);
 });
 
-for (const exitCode of [0, 17]) {
-  test(`pre-push runs only fast verify and propagates exit ${exitCode}`, () => {
+for (const exitCode of [0, 1, 17]) {
+  test(`pre-push gates before fast verify and propagates exit ${exitCode}`, () => {
     const result = runHook("pre-push", { exitCode });
     assert.equal(result.status, exitCode);
     assert.equal(result.signal, null);
-    assert.deepEqual(result.commands, ["pnpm verify"]);
+    assert.deepEqual(result.commands, [
+      "pnpm exec fallow audit --base origin/main --gate new-only --quiet",
+      ...(exitCode === 0 ? ["pnpm verify"] : []),
+    ]);
   });
 }
 
@@ -117,3 +108,15 @@ test("local verify is lint-only while production readiness retains lint, build a
   );
   assert.doesNotMatch(scripts["nemlig:production:ready"], /pnpm verify/u);
 });
+
+for (const hook of ["pre-commit", "pre-push"]) {
+  test(`${hook} honors a different integration branch`, () => {
+    const result = runHook(hook, { base: "origin/release" });
+    assert.equal(result.status, 0);
+    assert.ok(
+      result.commands.some((command) =>
+        command.includes("--base origin/release"),
+      ),
+    );
+  });
+}

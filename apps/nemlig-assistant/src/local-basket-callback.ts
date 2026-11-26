@@ -1,3 +1,4 @@
+import { basketAdditionFailureSchema } from "./basket-recovery.js";
 import {
   LocalBasketOperationCapacityError,
   serializedLocalBasketFailureCode,
@@ -39,6 +40,16 @@ const reviewOperationSchema = z
       )
       .max(500),
     baseline: z
+      .array(
+        z.object({
+          productId: z.number().int().positive(),
+          quantity: z.number().int().positive(),
+        }),
+      )
+      .max(500)
+      .optional(),
+    failure: basketAdditionFailureSchema.optional(),
+    dispatchedItems: z
       .array(
         z.object({
           productId: z.number().int().positive(),

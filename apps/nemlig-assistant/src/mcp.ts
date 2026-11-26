@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+import {
+  basketAdditionFailureSchema,
+  basketRecoverySchema,
+} from "./basket-recovery.js";
 
 import {
   inputRequired,
@@ -14,7 +18,11 @@ import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import { z } from "zod";
-import { NemligError, type ShoppingClient } from "./client.js";
+import {
+  BasketAdditionError,
+  NemligError,
+  type ShoppingClient,
+} from "./client.js";
 import {
   ensureLoggedIn,
   getClient,
@@ -347,6 +355,7 @@ const basketSchema = z.object({
 });
 const basketResultSchema = basketSchema.extend({
   views: z.array(productViewSchema),
+  recovery: basketRecoverySchema.optional(),
 });
 const applyResultSchema = z.object({
   status: z.literal("completed"),
@@ -458,16 +467,36 @@ const success = (value: unknown, text = JSON.stringify(value)) => ({
     : value) as Record<string, unknown>,
 });
 
-const failure = (operation: string, error: unknown) => ({
-  isError: true,
-  content: [
-    {
-      type: "text" as const,
-      text:
-        error instanceof NemligError ? error.message : `${operation} failed.`,
-    },
-  ],
-});
+const failure = (operation: string, error: unknown) => {
+  let diagnostic = "";
+  if (error instanceof BasketAdditionError) {
+    const parsed = basketAdditionFailureSchema.safeParse(error.failure);
+    if (parsed.success) {
+      const { stage, category, httpStatus } = parsed.data;
+      diagnostic = ` Diagnostic: ${stage}/${category}${httpStatus === null ? "" : `; HTTP ${httpStatus}`}.`;
+      // stderr is safe for both stdio MCP framing and Container log collection.
+      console.error(
+        JSON.stringify({
+          event: "basket_submission_failed",
+          schema_version: 1,
+          ...parsed.data,
+        }),
+      );
+    }
+  }
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text" as const,
+        text:
+          (error instanceof NemligError
+            ? error.message
+            : `${operation} failed.`) + diagnostic,
+      },
+    ],
+  };
+};
 
 const runMcpOperation = async <Result>(
   operation: string,
@@ -1093,7 +1122,16 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Show my Nemlig basket",
       description:
-        "Show the actual Nemlig basket, not a temporary draft or saved shopping list. Use show_product_review with view=saved_lists to inspect native shopping lists. This read-only tool shows current real-basket items and totals.",
+        "Show the actual Nemlig basket, not a temporary draft or saved shopping list. Use show_product_review with view=saved_lists to inspect native shopping lists. This read-only tool shows current real-basket items and totals. After an uncertain submission, supply its exact draft_id to compare the stored baseline and dispatched quantities with the current basket. Matching quantities alone never prove that an uncertain operation succeeded and never permit retry.",
+      inputSchema: z.object({
+        draft_id: z
+          .string()
+          .uuid()
+          .optional()
+          .describe(
+            "Exact draft ID of a previous submission to inspect. Omit for an ordinary basket read. Never guess an ID or retry an uncertain addition.",
+          ),
+      }),
       outputSchema: basketResultSchema,
       annotations: {
         readOnlyHint: true,
@@ -1101,13 +1139,23 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         openWorldHint: true,
       },
     },
-    () =>
+    ({ draft_id }, ctx) =>
       runAuthenticatedRead("show_my_basket", async () => {
-        const basket = basketPayload(await client.getCart());
+        const inspected = draft_id
+          ? await reviews.inspectDirectBasketSubmission(
+              draft_id,
+              ctx.mcpReq.signal,
+              reviewOperationJournal(ctx.mcpReq.signal),
+            )
+          : undefined;
+        const basket = basketPayload(
+          inspected?.basket ?? (await client.getCart(ctx.mcpReq.signal)),
+        );
         const views = basketProductViews(basket);
+        const recovery = inspected?.recovery;
         return success(
-          { ...basket, views },
-          `${basketText(basket)}\n${productViewsToText(views)}`,
+          { ...basket, views, ...(recovery ? { recovery } : {}) },
+          `${basketText(basket)}\n${productViewsToText(views)}${recovery ? `\nSubmission evidence: ${JSON.stringify(recovery)}\nCompare before, requested, expected and current quantities. Only a completed receipt confirms this operation; matching basket quantities alone cannot attribute an uncertain addition. Do not retry.` : ""}`,
         );
       }),
   );
