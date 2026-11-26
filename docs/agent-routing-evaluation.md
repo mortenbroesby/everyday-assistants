@@ -220,3 +220,9 @@ do not claim script tests prove trust. Claude is not currently configured here;
 its agents can use the same Markdown lifecycle without installing another hook.
 Disable the new reminder if comparable trials show noise without useful capture;
 retain historical records and lifecycle guidance.
+
+Additional instruction regression: author a routine server-change PR and a
+separately scoped package-identity PR against the same policy. Baseline template
+at `15d7e3c` asks both for a release note; corrected template distinguishes them
+and links canonical policy. Static comparison confirms removal of that conflict.
+A model trial proving fewer unnecessary artifacts or calls remains NOT RUN.
