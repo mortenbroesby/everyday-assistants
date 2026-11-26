@@ -41,11 +41,17 @@
     "smoke": "turbo smoke",
     "spec:validate": "DO_NOT_TRACK=1 openspec validate --all --strict --no-interactive",
     "test": "turbo test && node --test scripts/git-hooks.test.mjs",
-    "verify": "turbo lint"
+    "verify": "turbo lint",
+    "fallow:audit": "fallow audit --gate new-only",
+    "fallow:check": "fallow dead-code",
+    "fallow:health": "fallow health",
+    "fallow:dupes": "fallow dupes",
+    "fallow:status": "fallow agent status",
+    "fallow:review": "fallow review"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",
-    "fallow": "3.32.0",
+    "fallow": "3.49.0",
     "husky": "9.1.7",
     "prettier": "^3.9.10",
     "turbo": "^2.11.7"
