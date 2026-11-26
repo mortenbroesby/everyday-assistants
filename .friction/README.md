@@ -84,8 +84,12 @@ must be verified separately from script tests.
 
 The repository's Codex Stop/Interrupt command emits a short `systemMessage`.
 It is a visible reminder, not a model continuation or proof of reflection.
-Review and trust the changed project hooks in the host's `/hooks` interface
-before expecting native execution. Do not bypass that trust decision. Tests
+Use the Codex CLI's `/hooks` interface to inspect the source path and installed
+events before reviewing and trusting the changed hooks. Linked Git worktrees
+can load project hooks from the main checkout; opening a candidate worktree
+does not prove its hooks were discovered. If Stop/Interrupt are absent, resolve
+discovery before attempting approval. Do not trust unrelated hooks or bypass
+trust. Remote iOS hook-trust support has not been verified. Tests
 exercise script inputs and configuration only; native activation is unverified
 until a real trusted turn and interruption are observed. Other agents use the
 portable lifecycle and handoff guidance. See the friction scenarios in the

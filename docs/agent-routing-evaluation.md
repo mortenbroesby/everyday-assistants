@@ -207,7 +207,7 @@ Mechanical baseline probe: neutral hook stub failed normal Stop/Interrupt
 reminder assertions and missing-wiring assertion (3 failures); malformed-input
 neutrality passed. Candidate passed all four script/configuration tests. This
 proves neither native activation nor improved capture by agents. No matched
-agent trials, live hook trust/activation, token savings or completion-rate
+agent trials, successful native hook activation, token savings or completion-rate
 improvements have been measured yet.
 
 Native semantics reviewed 2026-11-27:
@@ -226,3 +226,17 @@ separately scoped package-identity PR against the same policy. Baseline template
 at `15d7e3c` asks both for a release note; corrected template distinguishes them
 and links canonical policy. Static comparison confirms removal of that conflict.
 A model trial proving fewer unnecessary artifacts or calls remains NOT RUN.
+
+Native discovery probe at candidate `717d50c` on 2026-11-27: bundled CLI
+`0.169.0-alpha.11.1`, launched in the candidate worktree with `--no-daemon`,
+opened `/hooks`. Stop and Interrupt each showed zero installed hooks; the
+Interrupt detail said “No hooks installed for this event.” Candidate JSON
+contains one of each. The default checkout has only one PreToolUse hook.
+Official Codex documentation permits linked-worktree layers to load from the
+main checkout; that is a supported hypothesis, not a verified source trace.
+The user authorized approval of the reminder hooks, but no matching hook was
+available to approve. No trust was changed. See the
+[discovery record](../.friction/2026-11-27-native-hook-discovery.md).
+A subsequent native test must first verify source path and installed events,
+then trust only those definitions and observe real Stop/Interrupt execution.
+Do not merge the draft or change the main checkout merely to make this test pass.
