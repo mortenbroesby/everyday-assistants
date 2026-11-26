@@ -14,7 +14,6 @@ env:
 
 jobs:
   fallow:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
@@ -29,19 +28,22 @@ jobs:
           node-version: 24.13.0
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Fallow changed-code report
-        uses: fallow-rs/fallow@fccff887da0d83db1711379e0a3696dfc2460fdd # v3.33.1
-        with:
-          command: audit
-          version: 3.32.0
-          fail-on-issues: false
-          annotations: false
+      - name: Gate Fallow regressions
+        env:
+          FALLOW_AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: pnpm exec fallow audit --base "$FALLOW_AUDIT_BASE" --gate new-only --format github-summary >> "$GITHUB_STEP_SUMMARY"
 
   verify:
+    needs: fallow
+    if: always()
     runs-on: ubuntu-latest
     env:
       DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
+      - name: Require the Fallow gate
+        env:
+          FALLOW_RESULT: ${{ needs.fallow.result }}
+        run: test "$FALLOW_RESULT" = success
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6.0.1
         with:
           fetch-depth: 0
