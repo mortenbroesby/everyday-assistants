@@ -179,7 +179,9 @@ Error-severity findings can trigger exit code 1. Default severity varies by rule
 }
 ```
 
-Exit code 1 always means that an enforced gate failed. A load warning or a workspace diagnostic (for example `node-modules-missing` or a tsconfig `extends` that does not resolve) never changes the exit code. The only exception is `source-parse-degraded` with `--fail-on-parse-error`. To find the gate, read `gate_outcomes` in the JSON output and look for an entry with `status: "fail"` and `enforced: true`. Under `--quiet` and in every machine format, fallow also prints one stderr line that names the failed gates, for example `[X] Exit code 1: gate health-findings (3 at or above error) failed.` On `health`, the `complexity-*` rules default to `error`, so each complexity finding fails the run. Set them to `warn` or pass `--report-only` to report without a failure.
+Exit code 1 always means that an enforced gate failed. A load warning or a workspace diagnostic (for example `node-modules-missing` or a tsconfig `extends` that does not resolve) never changes the exit code. The only exceptions are `source-parse-degraded` and `source-nesting-too-deep` with `--fail-on-parse-error`. To find the gate, read `gate_outcomes` in the JSON output and look for an entry with `status: "fail"` and `enforced: true`. Under `--quiet` and in every machine format, fallow also prints one stderr line that names the failed gates, for example `[X] Exit code 1: gate health-findings (3 at or above error) failed.` On `health`, the `complexity-*` rules default to `error`, so each complexity finding fails the run. Set them to `warn` or pass `--report-only` to report without a failure.
+
+Bare `fallow` in a machine format (`json`, `sarif`, `codeclimate`, the GitHub formats, and the comment and review formats) exits 0 on findings. `fallow dead-code --format json` exits 1 on the same findings. The bare machine run reports only, because the GitHub Action and the GitLab template read its JSON output and not its exit code. Its `gate_outcomes` entries then have `status: "fail"` and `enforced: false`, and stderr has one line, also under `--quiet`, for example `[W] Exit code 0: gate error-severity-findings (2 at or above error) failed, but bare fallow does not enforce it in --format json. To exit 1 on it, pass --fail-on-issues.` To gate on a bare machine run, pass `--fail-on-issues` or `--ci`.
 
 ---
 
@@ -213,7 +215,7 @@ fallow dead-code --format json --quiet --save-baseline fallow-baselines/dead-cod
 fallow dead-code --format json --quiet --baseline fallow-baselines/dead-code.json --fail-on-issues
 ```
 
-Commit the baseline file to your repo. Update it periodically as you fix existing issues.
+Commit the baseline file to your repo. When a fix removes a finding, its entry stays in the file until you prune it. `fallow baselines prune` removes the entries that match no current finding and never adds an entry, so it is safe to run after each fix. It reads the paths in `audit.deadCodeBaseline`, `audit.healthBaseline` and `audit.dupesBaseline`. A prune runs in one mode and refuses a file saved in another mode, because the run cannot see the findings of that file. For a file saved with `--production` or `--include-entry-exports`, pass the same flag to the prune. The refusal exits 2 and prints the command to use. Do not save the file again to clear a refusal without a review of its findings.
 
 ---
 
@@ -311,7 +313,16 @@ const handler = createStandardHandler(config);
 
 // CORRECT: suppress all duplication in a file
 // fallow-ignore-file code-duplication
+
+// CORRECT: suppress only one clone, with the reason next to the code
+// fallow-ignore-start code-duplication -- one field block per locale
+export const en = { title: "", body: "", footer: "" };
+// fallow-ignore-end code-duplication
 ```
+
+A next-line marker removes each clone instance that touches the next line. A clone of the code above often ends on that line, so the marker can hide a neighbor clone too. A range removes only the clones inside it, and cuts a neighbor clone at the range border. A cut part below `minTokens` or `minLines` is not reported.
+
+Wrap the whole block or function in the range, not the line range that `fallow dupes` reports. The reported ranges of neighbor clones share border lines. Put each range marker on its own line: a marker after code on the same line has no effect and shows as `not_own_line`. Ranges support only `code-duplication`: `fallow dupes` reports a range marker with another kind, with no kind, an end with no start, a nested start, and a start with no end in `range_marker_problems`, and such a marker has no effect. A cut neighbor clone has new lines and content, so it can show as a new clone in a baseline gate and needs a new `ignoredClones` key. Save the baseline again after you add a range.
 
 This is separate from the dead code suppression tokens. See the full list of valid tokens in the [CLI Reference](cli-reference.md#inline-suppression-comments).
 
@@ -351,7 +362,7 @@ The skip above applies only to generic `unused-class-member` detection. The dedi
 
 ## JSDoc Visibility Tags Keep Exports Alive
 
-Exports annotated with `/** @public */`, `/** @internal */`, `/** @beta */`, `/** @alpha */`, or `/** @api public */` are never reported as unused. This is designed for library authors whose exports are consumed by external projects not visible to fallow.
+By default, exports annotated with `/** @public */`, `/** @internal */`, `/** @beta */`, `/** @alpha */`, or `/** @api public */` are never reported as unused. This is designed for library authors whose exports are consumed by external projects not visible to fallow.
 
 ```typescript
 // NOT flagged: @public annotation
@@ -380,6 +391,16 @@ export const notProtected = () => {};
 ```
 
 Only `/** */` JSDoc block comments are recognized. Line comments (`// @public`) are ignored.
+
+The `keepExportTags` config key selects the tags that keep an export. The default is all four tags. When a project uses `@internal`, `@alpha` or `@beta` for code that no consumer outside the project uses (for example `/** @internal Exported for tests. */`), set the key to `["public"]`. fallow then checks those exports like untagged exports:
+
+```jsonc
+{
+  "keepExportTags": ["public"]
+}
+```
+
+`fallow dead-code --trace <file>:<export>` names the tag when a tag keeps an export with no consumer (`kept_by_tag` in JSON). When you remove an export that the strict setting reports, also remove its stale `@internal` comment.
 
 ---
 
@@ -609,6 +630,8 @@ The `type-only-dependencies` rule defaults to `warn`. Suppress with `"type-only-
 ## Test-Only Dependencies Should Be devDependencies
 
 Fallow detects production dependencies that are only imported from test files (`*.test.*`, `*.spec.*`, `__tests__/**`). Since these packages are never used in production code, they should be in `devDependencies` instead.
+
+A test runner config or setup file (`vitest.config.*`, `vitest.unit.config.ts`, `jest.setup.*`, `playwright-ct.config.ts`) counts as a test file. Other config files (`astro.config.mjs`, `vite.config.ts`, `next.config.js`) count as production use, so a package that only they import is not reported as test-only.
 
 ```typescript
 // If "msw" is in dependencies (not devDependencies):

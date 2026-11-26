@@ -112,7 +112,8 @@ target branch, so editing the baseline in a later PR cannot accept new findings.
 For this first baseline only, CI requires current target-branch history and no
 Nemlig app changes. Existing findings are tracked debt; new findings fail the
 check, including unused development and optional dependencies. The separate
-Fallow PR audit remains report-only.
+Fallow audit now gates introduced dead-code, complexity, and duplication findings
+on PRs and main pushes. See [the integration guide](fallow.md).
 
 After resolving baseline debt, review the findings and deliberately regenerate
 the baseline on a clean, current `main`:
