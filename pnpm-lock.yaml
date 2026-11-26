@@ -40,13 +40,13 @@ importers:
         version: 2.3.1
       '@modelcontextprotocol/express':
         specifier: 2.0.0
-        version: 2.0.0(@modelcontextprotocol/server@2.0.0)(express@5.2.1)
+        version: 2.0.0(@modelcontextprotocol/server@2.3.1)(express@5.2.1)
       '@modelcontextprotocol/node':
         specifier: 2.1.1
-        version: 2.1.1(@modelcontextprotocol/server@2.0.0)
+        version: 2.1.1(@modelcontextprotocol/server@2.3.1)
       '@modelcontextprotocol/server':
-        specifier: 2.0.0
-        version: 2.0.0
+        specifier: 2.3.1
+        version: 2.3.1
       '@radix-ui/react-dialog':
         specifier: 1.2.0
         version: 1.2.0(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -92,7 +92,7 @@ importers:
         version: 11.14.1(@emotion/react@11.14.0(@types/react@19.2.7)(react@19.2.3))(@types/react@19.2.7)(react@19.2.3)
       '@modelcontextprotocol/ext-apps':
         specifier: 2.0.3
-        version: 2.0.3(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.3.1)(@modelcontextprotocol/server@2.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.5.4)
+        version: 2.0.3(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.3.1)(@modelcontextprotocol/server@2.3.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.5.4)
       '@storybook/react-vite':
         specifier: 10.6.1
         version: 10.6.1(@types/react-dom@19.2.3(@types/react@19.2.7))(@types/react@19.2.7)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(rollup@4.64.0)(storybook@10.6.1(@types/react@19.2.7)(prettier@3.9.10)(react@19.2.3))(typescript@7.0.2)(vite@8.3.4(@types/node@26.6.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.13)(yaml@2.9.1))
@@ -1097,8 +1097,8 @@ packages:
     peerDependencies:
       '@modelcontextprotocol/server': ^2.3.0
 
-  '@modelcontextprotocol/server@2.0.0':
-    resolution: {integrity: sha512-YhHWdHfpFMQfd0prsEnxKeS3Qz3ytIGmsS0sth4KDjnacIT7hxk6hXHkJ9KysxlkvTM+WZAtQbbcUhdoP4Hvtw==}
+  '@modelcontextprotocol/server@2.3.1':
+    resolution: {integrity: sha512-e59MfWuSssj6DoQ96JCTqdW1AXT5/XtnTl0WWd6MU1Ka434fFUGGosCLJbGNySDhHGvxQWoRWK137FXYFkYNWw==}
     engines: {node: '>=20'}
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
@@ -4780,32 +4780,32 @@ snapshots:
     dependencies:
       zod: 4.5.4
 
-  '@modelcontextprotocol/express@2.0.0(@modelcontextprotocol/server@2.0.0)(express@5.2.1)':
+  '@modelcontextprotocol/express@2.0.0(@modelcontextprotocol/server@2.3.1)(express@5.2.1)':
     dependencies:
-      '@modelcontextprotocol/server': 2.0.0
+      '@modelcontextprotocol/server': 2.3.1
       cors: 2.8.6
       express: 5.2.1
 
-  '@modelcontextprotocol/ext-apps@2.0.3(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.3.1)(@modelcontextprotocol/server@2.0.0)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.5.4)':
+  '@modelcontextprotocol/ext-apps@2.0.3(@modelcontextprotocol/client@2.0.0)(@modelcontextprotocol/core@2.3.1)(@modelcontextprotocol/server@2.3.1)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(zod@4.5.4)':
     dependencies:
       '@modelcontextprotocol/client': 2.0.0
       '@modelcontextprotocol/core': 2.3.1
       '@standard-schema/spec': 1.1.0
       zod: 4.5.4
     optionalDependencies:
-      '@modelcontextprotocol/server': 2.0.0
+      '@modelcontextprotocol/server': 2.3.1
       react: 19.2.3
       react-dom: 19.2.3(react@19.2.3)
 
-  '@modelcontextprotocol/node@2.1.1(@modelcontextprotocol/server@2.0.0)':
+  '@modelcontextprotocol/node@2.1.1(@modelcontextprotocol/server@2.3.1)':
     dependencies:
       '@hono/node-server': 1.19.17(hono@4.13.13)
-      '@modelcontextprotocol/server': 2.0.0
+      '@modelcontextprotocol/server': 2.3.1
       hono: 4.13.13
 
-  '@modelcontextprotocol/server@2.0.0':
+  '@modelcontextprotocol/server@2.3.1':
     dependencies:
-      '@modelcontextprotocol/core': 2.0.0
+      '@modelcontextprotocol/core': 2.3.1
       zod: 4.5.4
 
   '@napi-rs/lzma-linux-x64-gnu@1.5.1':
