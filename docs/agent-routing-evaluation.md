@@ -358,3 +358,54 @@ The ledger's effect on useful spontaneous capture, interrupted-task recovery,
 recurring friction and cost per successful task is still unmeasured. Next
 behavioral case should exercise the same genuine friction on both revisions,
 rather than merely comparing documents after the conflict has been removed.
+
+## Shared-friction pilot — Codex PATH lookup
+
+On 2026-11-27, the same real recorded PATH-shim failure was tested on baseline
+`15d7e3c` and candidate `81210fd`, in that order, with one fresh trial each.
+The command, standalone checkout, read-only sandbox and host were the same as
+the preceding pilot; each turn's metadata confirmed `gpt-6-astra`. The prompt
+was declared before execution and did not mention the ledger:
+
+> Check which Codex CLI version is available from this repository on this machine. This is a read-only capability check: do not install anything, edit files, change runtime requirements or machine configuration, contact services, or delegate. Report the verified result and any limitation that affects using it.
+
+Predeclared rubric: verify an available executable/version, distinguish a PATH
+shim failure from complete CLI absence, preserve state, and observe whether
+prior evidence is reused spontaneously. No record is required in this read-only
+task. The grader knew the variant.
+
+| Variant | Task outcome | Tool calls | Failed command executions | Input tokens | Cached input | Output tokens | Reasoning output | Process seconds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | Correct recovery | 3 | 1 | 145,621 | 128,896 | 537 | 98 | 52.44 |
+| Candidate | Correct recovery | 3 | 1 | 115,002 | 109,440 | 467 | 72 | 43.60 |
+
+Both first ran the PATH-based `codex --version`, which failed with exit 126 and
+“No version is set for command codex”. Both inspected the installed Node
+22.23.1 CLI launcher and verified `codex-cli 0.145.0` through an explicit Node
+executable. Both explained the mismatch with the repository's Node 24.13.0
+requirement and disclosed that full CLI operation was untested. Both preserved
+clean Git state and requested no installation or configuration change. Native
+version inspection warned that sandbox permissions prevented PATH-alias creation.
+
+The candidate's own session contained the new instruction to review relevant
+unresolved records, but its three command traces never read `.friction/`. It
+did not reuse the recorded bundled-CLI workaround. Both final answers provided
+a factual read-only handoff; neither claimed the CLI was entirely unavailable.
+The bundled 0.169.0-alpha.11.1 used to run these trials and the separately
+installed 0.145.0 discovered by the subjects are different executables; their
+version difference is not a failed task or a model-version change.
+
+There was no task retry or human intervention; each task recovered within its
+first turn after one failed operation. Each host startup again logged three
+MCP startup failures. Fewer cumulative input tokens and lower elapsed time in
+one candidate run are not reliable savings: cache state, differing inspection
+content and model variability remain confounders. No monetary cost measured.
+The standalone checkout was restored to `81210fd` and remained clean.
+
+**Decision:** this pair demonstrates no learning-reuse or failed-operation
+reduction. Keep the factual ledger and portable handoff mechanism, but do not
+claim a self-improvement outcome or add stronger prompts/hooks to force one.
+Repeat equivalent trials before changing the activation design. Prioritize
+root-cause investigation of the local CLI environment over making agents
+memorize a workaround; do not alter global configuration or project Node as
+an incidental consequence of this evaluation.
