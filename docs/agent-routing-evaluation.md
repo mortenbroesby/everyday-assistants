@@ -206,9 +206,10 @@ records/continuations. Do not optimize capture rate by forcing records.
 Mechanical baseline probe: neutral hook stub failed normal Stop/Interrupt
 reminder assertions and missing-wiring assertion (3 failures); malformed-input
 neutrality passed. Candidate passed all four script/configuration tests. This
-proves neither native activation nor improved capture by agents. No matched
-agent trials, successful native hook activation, token savings or completion-rate
-improvements have been measured yet.
+proved neither native activation nor improved capture by agents. At that initial
+checkpoint, native activation and matched agent trials had not been run. Later
+observations below supersede that checkpoint without implying token savings or
+completion-rate improvement.
 
 Native semantics reviewed 2026-11-27:
 [Codex hooks](https://learn.chatgpt.com/docs/hooks) and
@@ -286,3 +287,74 @@ and Interrupt execution are verified for the standalone candidate. Improved
 agent behavior and activation in the original linked worktree remain unproven.
 The next evaluation should use the existing representative task matrix and
 measure useful capture, unnecessary records and context overhead separately.
+
+## Matched developer behavior pilot — 2026-11-27
+
+Two cases, one trial per revision, were declared before execution. This is a
+small non-blind pilot, not an aggregate quality benchmark. Baseline:
+`15d7e3ce31d4625f6c6beaf04882815acceebf89`; candidate:
+`be6a133594ffc4db55fb4baf95aa6b7e444daed4`. Same standalone checkout path,
+ChatGPT-authenticated bundled CLI 0.169.0-alpha.11.1, `gpt-6-astra` verified
+from each trial's own turn metadata, read-only sandbox, default host setup.
+Run order: baseline policy, candidate policy, candidate control, baseline
+control. Each trial started a fresh `codex exec -C <checkout> -s read-only
+--json <prompt>` process after checking out its exact revision. Do not use a
+linked worktree for candidate hook discovery. The standalone checkout was
+restored to the candidate and remained clean. No additional dependency install,
+production action, API-key run or trust bypass was used.
+
+### Reusable task prompts and rubric
+
+Release policy:
+
+> Read only AGENTS.md and .github/pull_request_template.md. For a routine internal Nemlig server fix with no package-identity release, tell me which release artifacts I must prepare. Give the answer and flag any conflicting guidance that affects it. Do not edit files, run tests, contact services, delegate, or change repository state.
+
+Pass: no mandatory version bump, codename or release note; baseline identifies
+the template ambiguity, candidate does not invent it; no state mutation or
+inferred merge/deployment permission. This deliberately asks about conflicts;
+it does not measure spontaneous friction detection.
+
+No-friction control:
+
+> Read only package.json and .tool-versions. Report the required pnpm and Node versions. Do not edit files, run tests, contact services, delegate, or change repository state.
+
+Pass: pnpm 9.15.9, Node pin 24.13.0 with package range >=24.13.0 <25; no invented
+friction, unnecessary workflow or mutation. Outputs were manually assessed
+against these predeclared criteria. The grader knew the variant.
+
+### Observations
+
+| Case | Variant | First attempt | Tool calls | Failed task commands / retries | Input tokens | Cached input | Output tokens | Process seconds |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Release policy | Baseline | Pass | 1 | 0 / 0 | 58,849 | 41,472 | 302 | 29.30 |
+| Release policy | Candidate | Pass | 1 | 0 / 0 | 59,141 | 41,472 | 233 | 24.97 |
+| No-friction control | Candidate | Pass | 1 | 0 / 0 | 57,615 | 52,096 | 112 | 22.51 |
+| No-friction control | Baseline | Pass | 1 | 0 / 0 | 57,467 | 55,936 | 112 | 32.34 |
+
+Each run used one shell call reading exactly the two requested files, returned
+exit 0, required no human intervention during execution and left a clean Git
+status. Baseline policy output correctly explained the conflict; candidate
+policy output correctly found no conflict. Neither control invented a friction
+report or created a record. No task command failed or was retried, but **each
+CLI startup logged three MCP startup failures** in this host/snapshot setup.
+These infrastructure failures are separate from task-tool failures and confound
+latency comparisons. Cost in money and context-source attribution are unknown.
+
+### Decision and limits
+
+Both variants passed both cases. There is no demonstrated completion-rate,
+first-attempt or tool-efficiency improvement. The candidate consumed 292 more
+reported input tokens for the policy case and 148 more for the control; output
+was shorter only for the policy case. Do not claim token or cost savings.
+Cache differences, startup failures, execution order and one sample per cell
+prevent a reliable speed claim. Repeated trials are necessary before drawing
+a performance conclusion; the whole candidate bundle changed, so this is not
+a causal estimate for one file or hook.
+
+Retain the small template correction because it removes a verified ambiguity,
+with observed correct behavior and no added control-case workflow in this pilot.
+Do not add more hooks, enforcement or mandatory record checks on this evidence.
+The ledger's effect on useful spontaneous capture, interrupted-task recovery,
+recurring friction and cost per successful task is still unmeasured. Next
+behavioral case should exercise the same genuine friction on both revisions,
+rather than merely comparing documents after the conflict has been removed.

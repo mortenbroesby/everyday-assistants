@@ -33,3 +33,13 @@ A later matched agent task can test whether this avoids an unnecessary artifact.
 Corrected in draft PR #371. Manual one-to-one policy comparison passes; actual
 agent behavior improvement is unmeasured. No release policy, runtime, version
 or production setting was changed.
+
+### Matched pilot follow-up
+The 2026-11-27 developer pilot compared baseline `15d7e3c` and candidate
+`be6a133` with the same read-only policy prompt and gpt-6-astra. Both answered
+correctly in one tool call and made no edits. Baseline explicitly identified
+the ambiguity; candidate correctly found no conflict. A no-friction version
+lookup control passed on both, without invented records. Candidate input
+usage was higher by 292 tokens on policy and 148 on control. This supports
+removing the ambiguous instruction, not a success-rate, speed or cost claim.
+See docs/agent-routing-evaluation.md for prompts, all four outcomes and limits.
