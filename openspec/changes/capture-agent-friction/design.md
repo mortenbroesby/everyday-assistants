@@ -19,4 +19,4 @@ Use one small Node script with bounded stdin handling and synthetic tests. Prese
 Deliver one draft PR, no merge/deployment. Host trust is explicit and not changed automatically. Rollback removes only the new hook entries/script and retains historical records.
 
 ## Evidence
-Official native semantics reviewed 2026-11-27: https://learn.chatgpt.com/docs/hooks and https://code.claude.com/docs/en/hooks. Bundled Codex CLI version observed: 0.169.0-alpha.11.1. Native activation and behavioral improvement are not yet measured.
+Official native semantics reviewed 2026-11-27: https://learn.chatgpt.com/docs/hooks and https://code.claude.com/docs/en/hooks. Bundled Codex CLI version observed: 0.169.0-alpha.11.1. Native discovery/trust and Stop/Interrupt execution were subsequently verified in a standalone candidate checkout (264 ms and 223 ms). Linked-worktree source resolution uses the main checkout. Comparative behavioral improvement remains unmeasured; see docs/agent-routing-evaluation.md for failed probes and limits.

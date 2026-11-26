@@ -57,3 +57,23 @@ This comparison supports linked-worktree source resolution as the cause. It
 proves discovery and persisted trust in the standalone checkout only, not
 activation in the original worktree or real Stop/Interrupt execution. The
 standalone checkout is retained locally for those remaining validation steps.
+
+### Source resolution and completed-turn execution
+Native app-server `hooks/list` subsequently returned the main checkout's hook
+source for the linked worktree, and the standalone JSON for the standalone
+checkout. This verifies the source-resolution diagnosis on the installed CLI.
+A read-only, no-tools native turn then reported Stop `hook/completed`, status
+completed, duration 264 ms and the expected advisory. Trust and Stop execution
+are now verified in the standalone checkout; original-worktree discovery
+remains unchanged. Measurements and limits are in the developer evaluation doc.
+
+### Interrupted-turn execution and probe failures
+The first native event reader timed out after receiving the completed Stop hook.
+Its buffered reader was corrected. A subsequent interruption request arrived
+before an active turn and was rejected with `no active turn to interrupt`.
+Waiting for `turn/started` before interrupting produced a completed Interrupt
+hook in 223 ms, with the expected advisory and interrupted turn status. Both
+failed attempts are preserved here; token usage for the interrupted attempt
+was not exposed. Temporary app-server processes exited; the candidate checkout
+remained clean. Both lifecycle events now have native execution evidence in
+the standalone checkout. The original linked-worktree limitation is unchanged.

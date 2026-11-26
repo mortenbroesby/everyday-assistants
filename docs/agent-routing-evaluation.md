@@ -248,3 +248,41 @@ review 0, with five unrelated hooks still awaiting review. No model task was
 submitted. Trust/discovery is verified for that standalone checkout; original
 linked-worktree activation, real event execution and comparative agent behavior
 remain unverified. Preserve this distinction when resuming validation.
+
+Native runtime follow-up on 2026-11-27 (same standalone `aca803f`, bundled
+CLI 0.169.0-alpha.11.1, ChatGPT-authenticated `gpt-6-astra`, read-only):
+
+- `hooks/list` through the native app-server confirmed that the original linked
+  worktree resolves its project hook source to the main checkout. The standalone
+  candidate resolves its own JSON and both reminder hooks remain trusted.
+- A trivial no-tools `codex exec --json` turn returned the expected marker with
+  28,165 input tokens (13,440 cached), 8 output tokens and no tool calls. Its event
+  output did not expose the hook; absence there is not proof it did not execute.
+- A subsequent native app-server turn exposed `hook/completed` for Stop, status
+  completed, duration 264 ms, with the exact expected advisory. This turn used
+  28,156 input tokens (13,440 cached) and 8 output tokens, with no tool calls.
+
+These are host-execution smoke probes, not matched agent-behavior trials. Input
+context is substantial even for a trivial reply, but its source breakdown and
+comparative reduction are not measured. Dollar cost and wall-clock task latency
+were not measured. No API-key evaluation, production call or repository write
+was requested from the smoke agents. Exact-head CI at `470c63a` passed (run
+45912062465).
+
+The native Interrupt probe waited for `turn/started`, then issued
+`turn/interrupt`. Codex reported Interrupt `hook/completed`, status completed,
+duration 223 ms, the same advisory, and turn status interrupted. No token-usage
+event was exposed for this interrupted attempt; do not treat that as zero usage.
+The first event reader timed out after receiving the Stop result because its
+line-buffer/selector handling failed to consume queued notifications. A corrected
+reader then attempted interruption before an active turn existed and received
+`no active turn to interrupt`. Waiting for the lifecycle notification resolved
+that sequencing error. These two failed diagnostic attempts are retained as
+validation friction; no custom observer is added to the repository. All
+temporary app-server processes exited and the candidate checkout remained clean.
+
+Current acceptance: script tests, native source discovery, persisted trust, Stop
+and Interrupt execution are verified for the standalone candidate. Improved
+agent behavior and activation in the original linked worktree remain unproven.
+The next evaluation should use the existing representative task matrix and
+measure useful capture, unnecessary records and context overhead separately.
