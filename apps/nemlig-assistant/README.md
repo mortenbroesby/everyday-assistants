@@ -82,7 +82,13 @@ this includes existing basket rows and does not clear the basket.
 
 ### Work with shopping lists and the basket
 
-- Inspect the current basket without changing it.
+- Inspect the current basket without changing it. After an uncertain submission,
+  inspect that exact draft to compare before, requested, expected and current
+  quantities from its durable receipt. Matching quantities alone cannot prove
+  that this operation succeeded and never permit an automatic retry.
+- Submission errors retain safe dispatch/readback stage, failure category and
+  HTTP status when known. A provider validation-failure array is represented
+  only by its presence, never by raw provider messages or shopping data.
 - Discover saved Nemlig shopping lists and load an exact list into a new
   temporary draft. The source list remains unchanged.
 - Add, remove, replace, and change quantities in the temporary draft; these
@@ -258,7 +264,8 @@ The MCP surface is organized around household actions:
 - Verify the Nemlig account connection: `check_nemlig_connection` performs a
   bounded read-only provider check and reports missing credentials, provider
   reauthentication, or provider unavailability separately.
-- See the actual Nemlig basket: `show_my_basket`.
+- See the actual Nemlig basket: `show_my_basket`. For read-only recovery of a
+  previous submission, supply its exact `draft_id`; do not guess handles.
 - Create a temporary draft or load a saved-list source with
   `start_product_review`. Exact `items` and positive quantities create a local
   draft without creating a Nemlig list. Pass `shopping_list_id` to load that

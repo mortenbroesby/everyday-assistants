@@ -29,9 +29,9 @@ script also excludes `src/**/generated/**`, `src/**/*.generated.ts`,
 
 From the repository root, `pnpm verify` runs fast lint only (no build, formatting,
 TypeScript check, or tests). Commits check staged whitespace and run the pinned
-Fallow audit with `--gate new-only`; pushes run fast lint. The audit reports
-changed-code findings relative to the upstream merge-base (or `main` without an
-upstream), not an isolated staged-index snapshot. It still builds the project
+Fallow audit with `--gate new-only`; pushes repeat the audit and run fast lint. The audit reports
+changed-code findings relative to `origin/main` (override `FALLOW_AUDIT_BASE` for another PR
+target), not an isolated staged-index snapshot. It still builds the project
 graph and may analyze the base revision to distinguish introduced findings.
 
 The required CI `verify` job retains OpenSpec/privacy checks, lint,

@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
 import {
+  BasketAdditionError,
   NemligClient,
   NemligError,
   SEARCH_GATEWAY_URL,
@@ -425,7 +426,7 @@ const friendlyCatalog = [
     ["search_term", "result_count"],
   ],
   ["get_profile", "Get my Nemlig profile", true, false, []],
-  ["show_my_basket", "Show my Nemlig basket", true, false, []],
+  ["show_my_basket", "Show my Nemlig basket", true, false, ["draft_id"]],
   [
     "show_product_review",
     "Show my temporary draft",
@@ -2625,7 +2626,15 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         current = { ...current, items: [...lines.values()] };
         if (uncertainNextSubmission) {
           uncertainNextSubmission = false;
-          throw new Error("Synthetic uncertain direct submission");
+          throw new BasketAdditionError(
+            "Bulk basket write was sent, but readback is unconfirmed; inspect the basket and do not retry.",
+            {
+              stage: "readback",
+              category: "http",
+              httpStatus: 503,
+              validationFailuresPresent: true,
+            },
+          );
         }
         return structuredClone(current);
       },
@@ -2663,6 +2672,7 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
       reviews,
     );
   let submittedDraftId: string | undefined;
+  let uncertainDraftId: string | undefined;
   try {
     const sharedReviews = new ProductReviewService(provider);
     await withMcpClient(server(sharedReviews), async (mcp) => {
@@ -2887,6 +2897,7 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
       const review = (
         loaded.structuredContent as { review: ProductReviewSnapshot }
       ).review;
+      uncertainDraftId = review.draftId;
       uncertainNextSubmission = true;
       const uncertain = await mcp.callTool({
         name: "submit_product_review_conversation",
@@ -2904,6 +2915,10 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
         },
       });
       assert.equal(uncertain.isError, true, toolText(uncertain));
+      assert.match(
+        toolText(uncertain),
+        /Diagnostic: readback\/http; HTTP 503\./u,
+      );
       assert.equal(
         basketWrites,
         2,
@@ -2948,6 +2963,37 @@ test("direct draft loads a read-only source, submits once, and saves the basket 
       );
     });
     await withMcpClient(server(), async (mcp) => {
+      const inspected = await mcp.callTool({
+        name: "show_my_basket",
+        arguments: { draft_id: uncertainDraftId },
+      });
+      assert.equal(inspected.isError, undefined, toolText(inspected));
+      const recovery = (
+        inspected.structuredContent as {
+          recovery: {
+            status: string;
+            comparison: string;
+            retry_allowed: boolean;
+            failure: unknown;
+            lines: unknown[];
+          };
+        }
+      ).recovery;
+      assert.equal(recovery.status, "unconfirmed");
+      assert.equal(recovery.comparison, "matches_expected");
+      assert.equal(recovery.retry_allowed, false);
+      assert.deepEqual(recovery.failure, {
+        stage: "readback",
+        category: "http",
+        httpStatus: 503,
+        validationFailuresPresent: true,
+      });
+      assert.equal(recovery.lines.length, 1);
+      assert.equal(
+        basketWrites,
+        2,
+        "restart recovery is read-only even when quantities match",
+      );
       const loadedAgain = await mcp.callTool({
         name: "start_product_review",
         arguments: { shopping_list_id: 55 },
