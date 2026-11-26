@@ -130,3 +130,42 @@ be recorded in #365. Merge/deployment/native acceptance are not implied.
 For this discovery-only run, NEM-CHATGPT-001 through NEM-CHATGPT-008 are NOT RUN:
 no native rendering, submission, recovery UI or language journey was exercised.
 Their existing evidence and outstanding acceptance remain in the compendium.
+
+## Iteration 2: compact review output schemas (#366)
+
+Starting from merged baseline `fbd78d8`, the six review tools now advertise
+Zod-native local `$defs`/`$ref` reuse. Their Standard Schema validation function
+is unchanged by identity, including parsed outputs and unknown-key stripping.
+Only output serialization is adapted; input schemas, tool annotations, result
+payloads and provider behavior are unchanged. There are no new dependencies.
+This preserves the existing logical contract, so no new OpenSpec requirement is
+introduced. The helper isolates the serialization policy for direct testing.
+
+The rejected experiment was a direct SDK `fromJsonSchema` substitution: it
+rejected unknown keys that the existing Zod validator accepts and strips.
+The implementation instead passes `libraryOptions.reused: "ref"` to Zod's
+Standard JSON Schema output converter, retaining its target/options and the
+original validator. References are local to each tool, never cross-tool.
+See [Zod JSON Schema](https://zod.dev/json-schema) and the
+[MCP 2026-07-28 tool contract](https://github.com/modelcontextprotocol/modelcontextprotocol/blob/main/docs/specification/2026-07-28/server/tools.mdx).
+
+| Serialized JSON measurement | Baseline | Candidate |
+| --- | ---: | ---: |
+| Full tools/list | 140,453 | 93,461 |
+| Model-visible tool array | 87,800 | 56,472 |
+| All output schemas | 115,434 | 68,442 |
+
+Tool counts remain 11 total / 8 model-visible. All five discovery response
+sizes and call counts above are unchanged. This is a 33.5% catalogue byte
+reduction; it does not establish model token savings or routing improvement.
+Native ChatGPT compatibility and actual model-context inclusion remain pending.
+
+The size regression first failed against identity serialization, while the
+validator-equivalence test passed. After implementation, 48 focused schema,
+protocol, interface and synthetic submission tests passed; type checks and lint
+passed. The schema test covers local reference resolution and identical parsed
+results for valid, unknown-key and invalid values. The protocol dataset checks
+that all six actual review-tool schemas advertise reusable definitions.
+Final CI, release and native evidence belong in #366 and its PR, not inferred
+from these local results. Existing English/Danish routing prompts in #347 remain
+the native acceptance dataset; they were not executed by the protocol tests.
