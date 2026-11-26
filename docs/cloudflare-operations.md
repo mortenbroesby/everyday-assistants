@@ -470,6 +470,25 @@ category, terminal outcome, HTTP status and elapsed milliseconds. Lifecycle even
 are limited to Container start/stop/error. No raw errors, headers, bodies, tokens,
 cookies, OAuth artifacts, prompts, arguments or shopping data are logged.
 
+The MCP application emits a closed `basket_submission_failed` stderr event
+when a typed bulk-add failure reaches its tool error boundary. Schema version 1
+contains only `stage` (`dispatch` or `readback`), `category` (`http`, `network`,
+`timeout`, `cancelled`, `invalid_response`, `readback_mismatch`), nullable
+`httpStatus` (100–599), and optional `validationFailuresPresent: true`. The
+HTTP status belongs to the failing provider response and is distinct from the
+Worker's HTTP status. HTTP 200 with `invalid_response` is not addition success.
+No account, draft, product or request identifiers are logged by this event.
+
+The same diagnostic is best-effort annotated on the existing owner-scoped
+submission receipt, alongside its exact dispatched quantities. Cancellation,
+process loss or storage failure can prevent annotation; the earlier durable
+claim still prevents replay. Authenticated `show_my_basket` with the exact
+`draft_id` reads that receipt and compares quantities without releasing it.
+Stderr retention and correlation in the hosted Container must be verified after
+deployment; absence of an event is not evidence that no provider write occurred.
+Do not export platform records wholesale or retry an uncertain addition to
+create evidence. See the [failure compendium](nemlig-failure-compendium.md).
+
 Workers Logs remains enabled at 100% sampling for bounded investigation. The
 closed schema limits event contents, not traffic or billing. The single sleeping
 `lite` Container, bounded deadlines/retries and manual `MCP_ENABLED` switch
