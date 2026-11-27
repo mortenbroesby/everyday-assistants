@@ -361,3 +361,46 @@ description and repeat the same four cases/order, retaining schema optionality
 for genuinely trusted conversation fallback. Do not infer improvement from a
 description-string test. The installed skill mismatch is separately recorded
 in draft #371's friction ledger; it is not established as this failure's cause.
+
+## Candidate: clarify known identity forwarding
+
+A description-only candidate after `baf691c` explicitly tells callers to pass
+available draft_id/review_context_id unchanged and reserves omission for
+trustworthy host context. No schema, validation, ownership, fallback, provider,
+or payload behavior changes; this clarifies the existing contract rather than
+introducing an OpenSpec contract. Catalogue bytes increase by 230 to 140,683;
+the model-eligible entry array increases to 88,030. Byte reduction is not the
+objective of this correction.
+
+Repeated the same four fresh-thread prompts in baseline order (English,
+Danish, Danish, English), same native model/version, synthetic fixture,
+seeding and grading. Only the display description changed in runtime source.
+
+| Prompt / order | Exact-target outcome | MCP / shell calls | Elapsed | Input / cached / output |
+| --- | --- | --- | ---: | --- |
+| English 1 | PASS | 1 / 2 | 21.92 s | 139288 / 112384 / 377 |
+| Danish 2 | PASS | 1 / 1 | 22.93 s | 138982 / 126592 / 329 |
+| Danish 3 | PASS | 1 / 1 | 20.24 s | 137964 / 126080 / 322 |
+| English 4 | FAIL: omitted identities, unavailable | 1 / 1 | 18.05 s | 134789 / 110336 / 260 |
+
+The first read both installed and repository skills; the other three read the
+installed 0.1.5 skill. All skill reads exited zero. All selected display;
+successful calls preserved the exact returned identity pair and one-item draft.
+No model retry occurred. Fixture counters: four seed detail reads, zero
+searches and forbidden operations. Native processes exited and temporary
+fixture source was removed.
+
+Observed exact-target completion is 3/4 versus baseline 1/4. Four samples per
+condition, sequential collection, variable skill reads and caching are too weak
+to establish a robust causal improvement or efficiency gain. The remaining
+failure is preserved. Retain the small clarification in draft for further
+replication; do not mark the routing defect resolved or weaken validation.
+ChatGPT native rendering and failure IDs remain untested.
+
+Validation: five protocol scenarios and 40 interface tests passed, plus lint
+and diff checks. The initial test command included a nonexistent mcp.test.ts
+path but tsx ran only the five existing protocol cases; the actual interface
+suite was then located and run separately. The first candidate observer exited
+before the fixture wrote its ready URL (zero model turns); after confirming
+server readiness, the observer was restarted. These are harness setup friction,
+not model failures. Latest exact-head CI remains separate.

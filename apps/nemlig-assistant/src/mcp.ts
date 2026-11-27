@@ -1302,7 +1302,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Show my temporary draft",
       description:
-        "Use this when the user wants to show, display, open, browse, review, or compare an existing current draft, including Danish requests such as “vis mig listen” or “åbn kladden”. It displays the draft without changing it. Use view=saved_lists only to display the read-only saved-list picker. Do not use for the actual Nemlig basket, text-only explanations, unrelated displays, or to create, edit, load, submit, or authorize a draft.",
+        "Use this when the user wants to show, display, open, browse, review, or compare an existing current draft, including Danish requests such as “vis mig listen” or “åbn kladden”. It displays the draft without changing it. When draft_id and review_context_id are available in the conversation or a previous result, pass both unchanged; do not omit known identities. Omit them only when the host supplies a trustworthy active-draft conversation context. Use view=saved_lists only to display the read-only saved-list picker. Do not use for the actual Nemlig basket, text-only explanations, unrelated displays, or to create, edit, load, submit, or authorize a draft.",
       inputSchema: showProductReviewInputSchema,
       outputSchema: durableReviewResultSchema,
       annotations: {
