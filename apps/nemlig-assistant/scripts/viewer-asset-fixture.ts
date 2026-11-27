@@ -72,7 +72,7 @@ const serveViewerAsset = async (
   const status = responseStatus(override, body);
   await route.fulfill({
     status,
-    body: body ?? "missing",
+    body: body instanceof Uint8Array ? Buffer.from(body) : (body ?? "missing"),
     ...(status === 200 && body
       ? { headers: responseHeaders(url.pathname) }
       : {}),
