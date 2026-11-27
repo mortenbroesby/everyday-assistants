@@ -169,3 +169,74 @@ that all six actual review-tool schemas advertise reusable definitions.
 Final CI, release and native evidence belong in #366 and its PR, not inferred
 from these local results. Existing English/Danish routing prompts in #347 remain
 the native acceptance dataset; they were not executed by the protocol tests.
+
+## Native Codex client compatibility checkpoint — 2026-11-27
+
+Candidate `a9169eb5aa4de11b8837ba01393abfffec99477f`, draft #369 / #366.
+A native Codex 0.169.0-alpha.11.1 app-server connected to the actual
+`createMcpServer` using an injected synthetic provider and a loopback-only HTTP
+endpoint. The SDK handler used `legacy: "stateless"`, matching production's
+transport compatibility setting. Unrelated configured MCP servers and plugins
+were disabled only in this probe process. No global configuration changed.
+
+The native `mcpServerStatus/list` response reported connected and retained all
+11 tools. All six review-tool output schemas still contained `$defs`. Native
+`mcpServer/tool/call` successfully executed `find_groceries`,
+`start_product_review` and `show_product_review`. The last two exercise compact
+review output schemas. The returned draft/context handles were preserved and
+the shown synthetic draft contained the exact one-product, quantity-one line.
+Provider counters: one search, two detail reads, zero forbidden operations.
+All other provider methods and provider-process fetch were throwing sentinels.
+No `turn/start` was sent: zero model requests, no routing or token-savings claim.
+
+The temporary fixture server and native client processes exited; the checkout
+was clean before this evidence update. No credentials, real product data,
+provider read/write, deployment or merge was used. The other four review tools
+were discovered but not called. This establishes bounded Codex transport/tool
+compatibility, not exhaustive client-side JSON Schema validation, ChatGPT
+compatibility, rendering, or behavior improvement. Existing automated SDK
+regressions remain the repeatable schema/validator safety checks.
+
+### Reproduction outline and failed probes
+
+1. Use the exact candidate with its pinned Node/pnpm dependencies. Reuse the
+   synthetic Product/ShoppingClient shape from `src/agent-evaluation.test.ts`,
+   adding a stable synthetic `providerIdentity`. Inject credentials and all
+   nonfixture operations as throwing sentinels; never use the default provider.
+2. Serve `createMcpServer` through `createMcpHandler` and `toNodeHandler` on
+   `127.0.0.1` with an ephemeral port and `legacy: "stateless"`.
+3. Use the bundled CLI's generated app-server JSON schema for the installed
+   version. Initialize the native stdio API, send `initialized`, create a
+   read-only thread and register the loopback fixture through process-only MCP
+   configuration. Do not start a model turn or persist a connector.
+4. Inspect `mcpServerStatus/list` for the fixture server, then call the three
+   tools above. Map `review.draftId` / `review.reviewContextId` in structured
+   output to `draft_id` / `review_context_id` input without guessing handles.
+5. Assert exact line/handle readback and zero forbidden counters; close both
+   processes and remove the temporary fixture from the working tree.
+
+The first fixture launch used a wrongly nested relative path and exited with
+module-not-found. The first native observer then timed out because quoted
+configuration-key segments created an invalid MCP transport; the observer
+initially hid stderr and did not notice process exit. Correcting the key path
+and adding exit detection resolved that setup failure. No server call occurred
+in those attempts. A subsequent fixture omitted provider identity, and draft
+creation failed closed with “Direct basket identity is unavailable.” Adding
+only a synthetic identity resolved it. Finally, the observer initially looked
+for snake-case handles in camel-case structured output; reading the actual
+returned contract corrected the probe. These are developer-probe failures, not
+new demonstrated production incidents. Preserve them; do not install the
+one-off observer as another repository runtime or weaken app validation.
+
+### Stable native failure IDs
+
+| Failure ID | Outcome | Reason |
+| --- | --- | --- |
+| NEM-CHATGPT-001 | NOT RUN | Codex MCP catalogue verified; installed ChatGPT catalogue/renderer not exercised. |
+| NEM-CHATGPT-002 | NOT RUN | Successful draft roundtrip is not failed-edit recovery acceptance. |
+| NEM-CHATGPT-003 | NOT RUN | No real or synthetic submission attempted. |
+| NEM-CHATGPT-004 | NOT RUN | No uncertain-write recovery/quantity-baseline journey. |
+| NEM-CHATGPT-005 | NOT RUN | No rendered submission progress. |
+| NEM-CHATGPT-006 | NOT RUN | No rendered row controls. |
+| NEM-CHATGPT-007 | NOT RUN | No rendered replacement affordance. |
+| NEM-CHATGPT-008 | NOT RUN | No rendered language journey. |
