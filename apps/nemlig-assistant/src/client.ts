@@ -7,13 +7,15 @@ import {
 } from "./nemlig-error.js";
 import {
   asId,
-  asNumber,
   asRecord,
   asRecords,
   asString,
   normalizeBasket,
-  normalizeDepartments,
+  storefrontDepartments,
+  storefrontCategoryPage,
   normalizeProducts,
+  normalizeStorefrontSearch,
+  normalizeStorefrontDetail,
   normalizeShoppingList,
   normalizeShoppingListOverviewPage,
   type Basket,
@@ -40,6 +42,7 @@ export {
 } from "./nemlig-error.js";
 
 const API_BASE_URL = "https://www.nemlig.com/webapi";
+const PRODUCT_BFF_URL = "https://webapi.prod.knl.nemlig.it/productbff/api";
 export const SEARCH_GATEWAY_URL =
   "https://webapi.prod.knl.nemlig.it/searchgateway/api";
 export const NEMLIG_API_ATTEMPT_TIMEOUT_MS = 120_000;
@@ -250,7 +253,6 @@ export class NemligClient {
   private userId?: string;
   private productTimestamp?: string;
   private correlationId?: string;
-  private deliveryZoneId = 1;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
   private timeslot: string;
@@ -320,7 +322,7 @@ export class NemligClient {
       }
       const timeslot = asString(data.TimeslotUtc);
       await this.refreshSession();
-      if (timeslot) {
+      if (timeslot && !this.timeslotId) {
         this.timeslot = timeslot;
       }
       this.loggedIn = true;
@@ -397,12 +399,10 @@ export class NemligClient {
       throw new NemligError("Search limit must be positive.");
     }
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
+    await this.ensureCatalogueSlot(signal);
 
     const primary = this.rememberProducts(
-      await this.searchGateway(query, limit, signal),
+      await this.searchStorefront(query, limit, signal),
     );
     if (primary.length || !this.accessToken) {
       return primary;
@@ -465,22 +465,33 @@ export class NemligClient {
     }
   }
 
+  private async ensureCatalogueSlot(signal?: AbortSignal): Promise<void> {
+    if (!this.productTimestamp || !this.timeslotId) {
+      await this.refreshSession(signal);
+    }
+    if (!this.timeslotId) {
+      throw new NemligError(
+        "Catalogue lookup requires a current delivery slot.",
+      );
+    }
+  }
+
   private async fetchExactProduct(
     productId: number,
     signal?: AbortSignal,
   ): Promise<Product> {
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
+    await this.ensureCatalogueSlot(signal);
+    const endpoint = `${PRODUCT_BFF_URL}/web/productDetails/${productId}`;
     let response: Record<string, unknown>;
     try {
       response = asRecord(
         await this.json(
-          `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+          `${endpoint}?${new URLSearchParams({ timeslot: String(this.timeslotId) })}`,
           { signal },
           `Get product ${productId}`,
+          true,
+          true,
         ),
       );
     } catch (error) {
@@ -489,16 +500,7 @@ export class NemligClient {
       }
       throw error;
     }
-    const payload =
-      asRecord(response.Product).Id === undefined
-        ? response
-        : asRecord(response.Product);
-    const product = normalizeProducts([payload], 1)[0];
-    if (!product || product.id !== productId) {
-      throw new NemligError(
-        `Product ${productId} could not be resolved exactly.`,
-      );
-    }
+    const product = normalizeStorefrontDetail(response, productId);
     return this.rememberProducts([product], true)[0]!;
   }
 
@@ -579,11 +581,18 @@ export class NemligClient {
   }
 
   async listDepartments(): Promise<Department[]> {
-    const page = await this.optionalJson(
-      "https://www.nemlig.com/?GetAsJson=1",
-      "Get departments",
+    if (!this.productTimestamp) {
+      await this.refreshSession();
+    }
+    return storefrontDepartments(
+      await this.json(
+        `${PRODUCT_BFF_URL}/web/menu`,
+        {},
+        "Get departments",
+        true,
+        true,
+      ),
     );
-    return normalizeDepartments(page);
   }
 
   async browseDepartment(
@@ -603,9 +612,23 @@ export class NemligClient {
     if (!department) {
       throw new NemligError("Unknown department ID; list departments again.");
     }
-    const products = this.rememberProducts(
-      await this.productsByCategory(department.id, limit, page),
+    await this.ensureCatalogueSlot();
+    const slug = department.id.slice(1);
+    const params = new URLSearchParams({
+      categoryPath: slug,
+      timeslotId: String(this.timeslotId),
+      skip: String((page - 1) * limit),
+      take: String(limit + 1),
+    });
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/v3/web/categories/products?${params}`,
+      {},
+      "Browse department",
+      true,
+      true,
     );
+    const result = storefrontCategoryPage(response, slug, limit);
+    const products = this.rememberProducts(result.products);
     const seen = new Set<number>();
     const unique = products.filter((product) => {
       if (product.id === undefined) {
@@ -617,7 +640,7 @@ export class NemligClient {
       seen.add(product.id);
       return true;
     });
-    return { products: unique, page, hasNext: products.length === limit };
+    return { products: unique, page, hasNext: result.hasNext };
   }
 
   async getCart(signal?: AbortSignal): Promise<Basket> {
@@ -1169,7 +1192,6 @@ export class NemligClient {
     this.correlationId = undefined;
     this.timeslot = this.defaultTimeslot;
     this.timeslotId = 0;
-    this.deliveryZoneId = 1;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
   }
@@ -1226,9 +1248,6 @@ export class NemligClient {
         signal,
       ),
     );
-    this.productTimestamp =
-      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
-      DEFAULT_PRODUCT_TIMESTAMP;
     this.correlationId =
       asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
     const user = asRecord(
@@ -1245,50 +1264,39 @@ export class NemligClient {
     }
     const delivery = asRecord(
       await this.optionalJson(
-        `${API_BASE_URL}/Order/DeliverySpot`,
-        "Get delivery spot",
+        `${API_BASE_URL}/basket/GetBasket`,
+        "Get catalogue delivery context",
         false,
         signal,
       ),
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
-    this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
-    this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
+    this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
+    this.productTimestamp =
+      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
+      DEFAULT_PRODUCT_TIMESTAMP;
   }
 
-  private async searchGateway(
+  private async searchStorefront(
     query: string,
     limit: number | undefined,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    if (!this.accessToken || !this.productTimestamp) {
-      return [];
-    }
+    const take = limit ?? 20;
     const params = new URLSearchParams({
       query,
       skip: "0",
-      recipeCount: "0",
-      timestamp: this.productTimestamp,
-      timeslotUtc: this.timeslot,
-      deliveryZoneId: String(this.deliveryZoneId),
-      includeFavorites: this.userId ?? "0",
-      TimeSlotId: String(this.timeslotId),
+      take: String(take),
+      timeslotId: String(this.timeslotId),
     });
-    params.set("take", String(limit ?? 20));
-    const response = asRecord(
-      await this.json(
-        `${SEARCH_GATEWAY_URL}/search?${params}`,
-        { signal },
-        "Search products",
-        true,
-        true,
-      ),
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/v2/web/search/products?${params}`,
+      { signal },
+      "Search products",
+      true,
+      true,
     );
-    const products = response.Products;
-    return normalizeProducts(
-      Array.isArray(products) ? products : asRecord(products).Products,
-      limit,
-    );
+    return normalizeStorefrontSearch(response, take);
   }
 
   private rememberProducts(products: Product[], hydrated = false): Product[] {

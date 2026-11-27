@@ -250,6 +250,10 @@ test("CLI search and favorites preserve product list output and empty messages",
   assert.deepEqual(await run("favorites", [product, secondProduct]), [
     expectedList,
   ]);
+  const [unknown] = await run("search", [
+    { ...product, price: undefined, available: undefined },
+  ]);
+  assert.match(unknown!, /—.*Availability unknown/u);
   assert.deepEqual(await run("search", []), ["No products found."]);
   assert.deepEqual(await run("favorites", []), ["No favorites found."]);
 });
@@ -1915,16 +1919,19 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
       if (url.pathname.endsWith("/user/GetCurrentUser")) {
         return json({ DebitorId: 42 });
       }
-      if (url.pathname.endsWith("/Order/DeliverySpot")) {
+      if (url.pathname.endsWith("/basket/GetBasket")) {
         return json({
           TimeslotUtc: "2026092915-60-240",
-          TimeslotId: 7,
+          DeliveryTimeSlot: { Id: "7" },
           DeliveryZoneId: 9,
         });
       }
-      if (url.origin + url.pathname === `${SEARCH_GATEWAY_URL}/search`) {
+      if (
+        url.origin + url.pathname ===
+        "https://webapi.prod.knl.nemlig.it/productbff/api/v2/web/search/products"
+      ) {
         assert.equal(url.searchParams.get("query"), "salmiak");
-        return json({}, status);
+        return json({ searchResult: { items: [] } }, status);
       }
       if (url.origin + url.pathname === `${SEARCH_GATEWAY_URL}/quick`) {
         return json({ Categories: [] });
@@ -1959,14 +1966,17 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
     [],
   );
   assert.match(toolText(empty.result), /No products found/u);
-  assert.equal(empty.calls.filter((url) => url.includes("/search?")).length, 1);
+  assert.equal(
+    empty.calls.filter((url) => url.includes("/search/products?")).length,
+    1,
+  );
   assert.equal(empty.calls.filter((url) => url.includes("/quick?")).length, 1);
 
   const failed = await callSearch(500);
   assert.equal(failed.result.isError, true);
   assert.equal(toolText(failed.result), "Search products failed (HTTP 500).");
   assert.equal(
-    failed.calls.filter((url) => url.includes("/search?")).length,
+    failed.calls.filter((url) => url.includes("/search/products?")).length,
     1,
   );
   assert.equal(

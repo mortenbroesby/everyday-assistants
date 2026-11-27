@@ -23,6 +23,7 @@ const usages = new Set([
   "observed-only",
 ]);
 const bases = {
+  PRODUCT_BFF_URL: "https://webapi.prod.knl.nemlig.it/productbff/api",
   API_BASE_URL: "https://www.nemlig.com/webapi",
   SEARCH_GATEWAY_URL: "https://webapi.prod.knl.nemlig.it/searchgateway/api",
 };

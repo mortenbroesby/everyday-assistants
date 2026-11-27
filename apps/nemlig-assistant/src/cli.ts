@@ -90,7 +90,7 @@ const formatProduct = (product: Product): string => {
     .filter(Boolean)
     .join(" | ");
   return [
-    `${String(product.id ?? "").padEnd(8)} ${(product.name ?? "Unknown").slice(0, 28).padEnd(28)}  ${(product.price ?? 0).toFixed(2).padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available ? "✓ In Stock" : "✗ Sold Out"}`,
+    `${String(product.id ?? "").padEnd(8)} ${(product.name ?? "Unknown").slice(0, 28).padEnd(28)}  ${(product.price?.toFixed(2) ?? "—").padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available === undefined ? "Availability unknown" : product.available ? "✓ In Stock" : "✗ Sold Out"}`,
     ...(details ? [`         ${details}`] : []),
   ].join("\n");
 };
@@ -254,13 +254,10 @@ export function createProgram(
           options.page,
         );
         dependencies.out(
-          result.products.length
-            ? [
-                "ID Name Price Size Status",
-                ...result.products.map(formatProduct),
-                ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
-              ].join("\n")
-            : "No products found.",
+          [
+            formatProductList(result.products, "No products found."),
+            ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
+          ].join("\n"),
         );
       },
     );
