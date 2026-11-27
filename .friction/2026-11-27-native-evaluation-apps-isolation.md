@@ -58,3 +58,15 @@ Metadata-only preflight with both native feature overrides succeeded: 11 fixture
 tools, zero tools on every other server row, no pagination. The bounded rerun
 now checks this before every turn and preserves partial events. Completion and
 selection outcomes remain recorded separately in the selection evaluation.
+
+Native containment follow-up (CLI 0.169.0-alpha.11.1, no model turn): effective
+web_search read back disabled; thread/start reported readOnly with
+networkAccess=false and approvalPolicy=never. Native command/exec under that
+policy read a synthetic canary, rejected its write, and rejected a TCP connection
+to a task-owned loopback listener, each denial PermissionError/errno 1. An
+unsandboxed positive control reached the listener, and the canary stayed
+unchanged. No external request or persistent configuration change occurred.
+This is direct command-sandbox evidence, not universal native-tool containment;
+MCP and other capabilities need their separate gates. The corrected four-case
+selection batch predates this expanded preflight and is not retroactively
+claimed to have used it. See draft #373's routing and selection runbooks.
