@@ -22,7 +22,7 @@ import {
   type LocalBasketStorageAccess,
 } from "./local-basket-storage.js";
 
-const product = (id: number): Product => ({
+const product = (id: number): Product & { id: number } => ({
   id,
   name: `Product ${id}`,
   price: 5,
@@ -1855,6 +1855,73 @@ test("suggested alternatives keep the source subcategory while explicit searches
       view.status === "complete" ? view.product.id : view.product_id,
     ),
     [2, 3],
+  );
+});
+
+test("suggested alternatives for another oat drink across mixed subcategories", async (t) => {
+  // Constructed comparison pool from #241. It is not a provider response replay.
+  const oatDrink = {
+    ...product(1),
+    name: "Havredrik",
+    category: "Køl",
+    subcategory: "Øvrig mælk",
+  };
+  const otherOatDrink = {
+    ...product(2),
+    name: "Havredrik barista",
+    category: "Drikke",
+    subcategory: "Soyadrik mm",
+  };
+  const dairyMilk = {
+    ...product(3),
+    name: "Sødmælk",
+    category: "Køl",
+    subcategory: "Øvrig mælk",
+    isDairy: true,
+  };
+  const chocolate = {
+    ...product(4),
+    name: "Chokoladeknapper",
+    category: "Slik",
+    subcategory: "Chokolade",
+  };
+  const pool = [oatDrink, dairyMilk, chocolate, otherOatDrink];
+  const service = new ProductReviewService({
+    ...client,
+    getProduct: async (id: number) => {
+      const match = pool.find((candidate) => candidate.id === id);
+      assert.ok(match);
+      return match;
+    },
+    searchProducts: async () => pool,
+  });
+  await service.startDirectBasket("owner", [
+    { product_id: oatDrink.id, quantity: 2 },
+  ]);
+  const review = await service.update("owner", {
+    kind: "alternatives",
+    product_id: oatDrink.id,
+    query: oatDrink.subcategory,
+    suggested: true,
+  });
+  assert.ok(review.alternatives);
+  const shown = review.alternatives.views.map((view) => {
+    assert.equal(view.status, "complete");
+    return view.product.id;
+  });
+  assert.ok(!shown.includes(oatDrink.id), "omit products already in the draft");
+  assert.ok(!shown.includes(chocolate.id), "exclude unrelated confectionery");
+  assert.deepEqual(
+    review.items.map(({ product_id, quantity }) => [product_id, quantity]),
+    [[oatDrink.id, 2]],
+  );
+
+  await t.test(
+    "the only like-for-like candidate is the other oat drink",
+    { todo: "#241: subcategory equality currently selects dairy milk" },
+    () => {
+      assert.deepEqual(shown, [otherOatDrink.id]);
+    },
   );
 });
 
