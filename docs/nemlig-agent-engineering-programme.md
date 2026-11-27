@@ -654,3 +654,30 @@ solely to chase this observation. The next useful experiment would isolate
 skill/context differences or use broader native acceptance, not claim the UI
 copy fixed model advice. Native ChatGPT NEM-CHATGPT-001 through 008 remain
 NOT RUN in this iteration; no rendered host or real-provider action occurred.
+
+## Indirect display coverage (2026-11-27)
+
+The mission audit found that the existing acceptance matrix included “Let me
+compare them” but the versioned native dataset had only direct display prompts.
+Added that prompt and “Lad mig sammenligne dem” under explicit-draft context,
+bringing the dataset to ten cases without changing runtime behavior. This is
+coverage of an existing contract, not a new natural-language requirement.
+
+At 7c07615 plus this dataset change, two fresh read-only native gpt-6-astra
+threads used the same Codex host/current MCP dependencies and fixture procedure.
+Both selected show_product_review with exact seeded handles, returned the same
+product 900001 at quantity 1 and made no mutation call. Each performed one MCP
+call and one successful installed shopping-skill 0.1.5 read.
+
+| Case | Seconds | Input / cached / output tokens | Observation |
+| --- | --- | --- | --- |
+| English indirect | 20.81 | 136697 / 125440 / 349 | Exact draft returned; correctly reported only one comparison item |
+| Danish indirect | 20.66 | 139668 / 126976 / 345 | Exact draft returned; correctly reported only one comparison item |
+
+The fixture exited with zero searches, two seed detail reads and zero forbidden
+operations. Native observer exited. Exact result identities and rows/quantities
+were checked against independently captured seed values. These are two routing
+observations, not a comparison-quality evaluation: the fixture has only one
+product. No rendered ChatGPT/native acceptance is inferred; NEM-CHATGPT-001
+through 008 remain NOT RUN in this iteration. Raw traces stay local/private.
+No before/after behavioral improvement or cost saving is claimed.

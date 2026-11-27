@@ -54,5 +54,19 @@
     "context": "expired-draft",
     "expectedTool": "show_product_review",
     "expectedOutcome": "Report the expired exact target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-indirect-draft-en",
+    "prompt": "Let me compare them",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded exact draft for comparison without editing or submitting it."
+  },
+  {
+    "id": "display-indirect-draft-da",
+    "prompt": "Lad mig sammenligne dem",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded exact draft for comparison without editing or submitting it."
   }
 ]
