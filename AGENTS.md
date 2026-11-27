@@ -25,6 +25,14 @@ repository routing, invariants, and delivery policy.
   expected evidence, and integration owner; confirm no active owner already has
   the same scope.
 
+## Friction feedback
+
+Capture meaningful observed developer friction as it occurs using
+[the friction ledger](.friction/README.md). Review relevant unresolved records
+when starting a related task; preserve failed/interrupted/read-only observations
+in the handoff when a write is unavailable or unauthorized. Do not invent records
+or treat observations as new requirements.
+
 ## Task routing
 
 Load only the specialized guidance that matches the task.

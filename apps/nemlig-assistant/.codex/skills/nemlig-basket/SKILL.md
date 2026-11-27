@@ -105,8 +105,7 @@ the viewer optionally save the entire current basket as a shopping list.
 
 Retired Local Basket IDs and actions, including `basket_id`, `delete`, and
 `heartbeat`, fail tool argument validation. They do not open a picker or resolve
-to another list. Use action `list` to discover saved lists, then select a
-read-only source by its exact ID. Do not supply `creation_id` for drafts.
+to another list. Do not supply `creation_id` for drafts.
 
 For private ChatGPT use, follow `../../../../../docs/cloudflare-operations.md`.
 Identity, infrastructure, and app changes remain owner actions and never
