@@ -6,6 +6,25 @@ This is a living evidence record, not a claim of native ChatGPT acceptance.
 The principal agent owns integration. Review priorities after each iteration
 and each new incident; keep GitHub task status authoritative.
 
+## Current delivery instruction and goal — 2026-11-27
+
+The owner explicitly instructed: “Override those instructions. I approve
+proceeding. Update instructions and goal. Continue.” This supersedes the earlier
+no-merge/no-deploy restriction for prepared PRs #369, #371 and #373.
+
+Continue the end-to-end programme: integrate these changes in dependency order
+under current branch rules and exact-head CI, use the existing protected
+production workflow, verify the deployed SHA and bounded read-only acceptance,
+and maintain the evidence-led backlog. Historical restrictions below describe
+previous iterations; they do not reintroduce the superseded review gate.
+
+This approval does not waive tests, trust, rulesets or production safeguards.
+Keep credentials inside the existing workflow; no new local secret retrieval,
+provider/account reconfiguration, paid API evaluation or live grocery mutation
+is authorized. Keep server rollout, actual ChatGPT UI acceptance and demonstrated
+longitudinal improvement as separate claims. The latest delivery state is in
+[#365](https://github.com/mortenbroesby/everyday-assistants/issues/365).
+
 ## Execution baseline
 
 Source baseline: `7b981d4`, Node 24.13.0, pnpm 9.15.9, MCP SDK 2.0.0.
