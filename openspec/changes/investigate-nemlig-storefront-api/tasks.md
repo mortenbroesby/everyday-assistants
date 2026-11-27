@@ -13,7 +13,7 @@
 ## 3. Assess adjacent journeys
 
 - [ ] 3.1 Compare page and menu navigation, product groups, favorites and suggestions for coverage and personalization.
-- [ ] 3.2 Inventory recipe discovery and ingredient-to-product mapping. Document user value and gaps before proposing new functionality.
+- [x] 3.2 Inventory recipe discovery and ingredient-to-product mapping. Document user value and gaps before proposing new functionality.
 - [x] 3.3 Classify session, basket and list dependencies from source and existing evidence. Record verification limits for sensitive flows.
 
 ## 4. Decide and hand off
@@ -21,3 +21,11 @@
 - [ ] 4.1 Publish a disposition for every journey with evidence quality, benefit, compatibility risks and unresolved questions.
 - [ ] 4.2 For each adoption candidate, identify affected callers, contract tests, rollout and rollback, request volume and cost implications.
 - [ ] 4.3 Link implementation follow-ups only for accepted changes and close the epic after reviewing coverage and outstanding deferrals.
+
+## 5. Migrate approved catalog reads
+
+- [ ] 5.1 Resolve delivery context for guest and authenticated search. Use scoped, bounded reads and test missing context and cancellation.
+- [ ] 5.2 Switch product search to v2 and exact lookup to the storefront detail endpoint with fixture-backed mappings for price, pack, availability, promotions, unknown fields and exact identity.
+- [ ] 5.3 Switch department listing and browsing to menu and v3 categories after verifying category ID compatibility and pagination. Preserve existing quick suggestions.
+- [ ] 5.4 Verify favorite membership and pagination under the authorized account, then migrate if the replacement preserves them.
+- [ ] 5.5 Update the provider manifest, run CLI and hosted read acceptance, and document rollback per changed adapter. Obtain explicit approval before any live basket or other external data change.

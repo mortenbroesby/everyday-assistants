@@ -67,3 +67,15 @@ The normal guest browser supplied a nonempty timeslotId to v2 search. The assist
 | Coffee promotion for 5062680 | Same 200 g pack. Legacy base price 79.95 and unit price 399.75 DKK/kg; v2 detail 7995 and 39975 with type Weight. Legacy campaign has MinQuantity 2 and TotalPrice 149. V2 search campaignLines displayed two for 149; the sampled line had no campaignType, and the detail campaignLabel supplied no period value. | Preserve the regular single-unit price. An absent original price does not establish absence of a multibuy offer. Keep conditions as display text unless a structured contract is verified. |
 
 For the observed cold guest legacy search, four bootstrap requests preceded the search. The comparison used one extra guest basket read to obtain actual context. The new search and detail each succeeded in one catalog call once context was available. A switch does not yet justify assuming lower total request volume. An implementation decision needs a design for session-bound context reuse, expiry and fresh availability.
+
+## Migration decision and authenticated reads
+
+The owner selected migration to the storefront catalog routes as protection against possible legacy deprecation. Deprecation timing is unknown. Stage search and exact detail separately from category browsing and favorites so each adapter can be reverted independently. Compare reads offline after collecting bounded samples. Avoid routine production dual reads. Recipes remain a separate feature decision.
+
+A fresh client signed in with basket merging disabled. A positive current-user identity confirmed account context. The client bootstrap had no usable slot. A read of the existing basket supplied the delivery tuple. With identical context, authenticated legacy and v2 milk search each returned five products with four overlapping IDs. V2 search and exact detail both returned 200, and the detail ID matched the selected result. No account identifiers, personalized product selections, or basket contents are retained here. Sign-in was the sole POST.
+
+## Recipe and discovery evidence
+
+The public recipe index supplies category trees and paginated recipe cards. The selected roast recipe exposed ingredients, instructions, serving limits, and product previews. A guest GET of recipeProductDialog for two and four servings returned four included ingredient rows and two self-supplied rows in both cases. Each included row had a suggested product and pack count, with zero to four alternatives in this sample. The returned serving count changed while the suggested pack counts stayed at one. An eventual recipe-to-draft feature can preserve pantry choices and display alternatives. Ingredient measures and purchasable packs must remain separate. Defer the feature pending explicit product scope.
+
+The existing quick suggestion route returned three named category URLs and three string suggestions for mælk. V3 category browsing exposes category hierarchy and requestedCategory.items plus totalCount. Preserve quick suggestions; evaluate v3 against the CLI's existing department IDs. Personalized favorite membership requires separate authenticated evidence.

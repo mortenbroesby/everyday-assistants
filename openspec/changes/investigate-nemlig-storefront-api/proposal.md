@@ -4,7 +4,7 @@ The November 27 storefront bundle uses a different search and product-detail API
 
 ## What Changes
 
-Establish a recurring provider compatibility assessment. Inventory the assistant's actual calls, compare ordinary storefront journeys, and publish a decision for each operation. Split approved migrations into independently reversible follow-ups.
+Establish a recurring provider compatibility assessment. Inventory the assistant's actual calls, compare ordinary storefront journeys, and publish a decision for each operation. Migrate catalog reads to the current storefront endpoints in independently reversible changes. Prioritize v2 search and exact detail, followed by v3 category browsing. Verify personalized favorites before selecting its replacement. The owner approved authenticated reads on November 27. Live writes require a separate owner checkpoint.
 
 ## Capabilities
 
@@ -18,4 +18,4 @@ None.
 
 ## Impact
 
-Research covers the Nemlig client, product normalization, category discovery and review consumers. It informs later changes to the provider adapter. The deliverable is a comparison and decision record.
+Research covers the Nemlig client, product normalization, category discovery and review consumers. It informs later changes to the provider adapter. This epic owns the comparison, migration sequence, and acceptance evidence for each adapter switch.
