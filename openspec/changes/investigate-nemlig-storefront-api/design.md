@@ -25,3 +25,11 @@ Trace exported client methods to their reachable CLI, MCP and hosted callers. Di
 ## Risks / Trade-offs
 
 A different delivery slot or guest context can change assortment and prices. Mark an unmatched pair inconclusive. Missing eligibility or unit information can turn a promotion into a misleading price. Keep such fields unknown. Record only allowlisted observations. Keep private captures local, omit headers, tokens, cookies, account data and full URLs with private parameters. Stop a journey on access refusal or apparent mutation. Limit live samples and avoid persistent dual reads.
+
+## First guest observations, November 27
+
+A fresh Chrome guest searched for `mælk` using the site's search field and reached `/soeg`. The browser received HTTP 200 on GET requests to both the v2 product search and the quick suggestions route. The search response has top-level keys `searchResult` and `structuredData`. The assistant currently expects `Products` or `Products.Products`. A guest can exercise the normal search journey. The earlier bare-request 401 did not establish that an account is required.
+
+The public HTML for [product 103368](https://www.nemlig.com/produkt/103368) supplied a server-rendered transfer-cache response for the detail API. The legacy detail route returned the same ID, title, brand and pack description directly. Legacy returned `Price: 12.95` and `UnitPrice: "12,95 kr./Ltr."`. The storefront detail envelope contained `product.price: 1295`, `currency: "DKK"`, and `pricePerUnit: {value: 1295, unitType: "Volume"}`; the product page displayed 12.95 kr. for one litre. A future adapter must test currency scale explicitly. This sample does not settle unit denominators for other pack sizes. The new record's availability is an object with type Available, while quantity is zero. Quantity is unsuitable as a stand-alone stock indicator. The two guest reads had no proven common delivery slot, so this is schema evidence only.
+
+The homepage transfer cache contains a menu response with separate highlighted, categories and aboutNemlig arrays. Category entries expose title, URL and image. This establishes a candidate source for top-level navigation; stock, pagination and favorites remain open.
