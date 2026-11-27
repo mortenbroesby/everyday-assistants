@@ -287,3 +287,48 @@ catalogue bytes returned to 140,453 and model-eligible catalogue bytes to
 `fbd78d8`, the final source diff contains only diagnostic naming/comment
 changes in the evaluation test; `mcp.ts` is byte-identical to that baseline.
 Full exact-head CI remains a separate delivery check.
+
+## First model-routing pilot — 2026-11-27
+
+Baseline runtime `7ac7167`, bundled Codex 0.169.0-alpha.11.1, confirmed
+`gpt-6-astra`, existing ChatGPT authentication, two fresh read-only threads.
+The same loopback synthetic fixture described above seeded one product with
+quantity one per thread via native API, outside the measured model turn.
+The user message was exactly `Active temporary draft: draft_id=<seeded ID>,
+review_context_id=<seeded ID>.` followed by one of the matrix prompts below.
+Only the fixture MCP server was enabled in process configuration; plugin tools
+were disabled. No API-key evaluation, real provider or basket operation.
+
+Predefined success: select display, preserve both supplied handles, return the
+seeded one-line draft, and make no provider mutation. A selected display tool
+alone is insufficient. Recorded completed native items gave:
+
+| Prompt | Outcome | MCP calls / shell calls | Elapsed | Input / cached / output tokens |
+| --- | --- | --- | ---: | --- |
+| Show my draft | PASS: exact handles, seeded draft returned | 1 / 1 | 18.28 s | 137269 / 111488 / 275 |
+| Vis mig listen | FAIL: display selected, handles omitted, unavailable returned | 1 / 1 | 20.26 s | 136158 / 110976 / 312 |
+
+Each shell call successfully read a shopping skill: the English trial used the
+repository Nemlig basket skill; the Danish trial used the installed grocery
+shopping plugin skill. These instructions remained discoverable despite
+process-level plugin tool disabling. This is an observed context difference,
+not proof that either skill caused the omitted handles. Both model turns
+completed without a retry. Aggregate provider counters were zero searches,
+two detail reads for seed creation, and zero forbidden operations. English
+returned the synthetic item; Danish reported unavailable without recreating or
+submitting. Native events attached the shell resource URI but no rendered UI
+was observed. NEM-CHATGPT-001 through -008 remain NOT RUN.
+
+This is one run per prompt under a developer-oriented Codex harness, not a
+ChatGPT production success rate, language comparison or candidate improvement.
+Usage is the final cumulative native token counter, not catalogue bytes;
+elapsed values include model/tool execution, exclude seeding and startup, and
+are not cost or latency comparisons. Raw local synthetic traces are excluded
+from version control. Native client and fixture server were stopped.
+
+Next regression: repeat both prompts with the same explicit-handle context and
+record skill selection, exact arguments and result independently. Then compare
+with a matched skill/context condition before changing tool descriptions or
+instructions. Never weaken the exact-target ownership guard to make omitted
+identities appear successful. The existing display matrix supplies this case;
+no competing evaluation framework is needed.
