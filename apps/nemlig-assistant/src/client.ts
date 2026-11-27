@@ -1296,7 +1296,7 @@ export class NemligClient {
       true,
       true,
     );
-    return normalizeStorefrontSearch(response, take);
+    return normalizeStorefrontSearch(response, limit);
   }
 
   private rememberProducts(products: Product[], hydrated = false): Product[] {

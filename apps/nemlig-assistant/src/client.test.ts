@@ -1056,26 +1056,34 @@ test("v2 search maps product cards, skips banners, and uses current delivery con
   assert.equal(requests.length, 0);
 });
 
-test("search without an explicit count requests Nemlig's default 20-item page", async () => {
-  const products = Array.from({ length: 12 }, (_, index) => ({
+test("search preserves the returned products unless the caller sets a count", async () => {
+  const products = Array.from({ length: 23 }, (_, index) => ({
     id: index + 1,
     title: `Product ${index + 1}`,
   }));
-  const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
-    {
-      match: searchPath,
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("take"), "20"),
-      response: searchResult(...products),
-    },
-  ];
-  const results = await new NemligClient(mockFetch(requests)).searchProducts(
-    "products",
-  );
-  assert.equal(results.length, products.length);
-  assert.equal(results.at(-1)?.name, "Product 12");
-  assert.equal(requests.length, 0);
+  for (const limit of [undefined, 3]) {
+    const requests: ExpectedRequest[] = [
+      ...sessionRequests(),
+      {
+        match: searchPath,
+        inspect: (url) =>
+          assert.equal(
+            new URL(url).searchParams.get("take"),
+            String(limit ?? 20),
+          ),
+        response: searchResult(...products),
+      },
+    ];
+    const results = await new NemligClient(mockFetch(requests)).searchProducts(
+      "products",
+      limit,
+    );
+    assert.deepEqual(
+      results.map((row) => row.id),
+      products.slice(0, limit).map((row) => row.id),
+    );
+    assert.equal(requests.length, 0);
+  }
 });
 
 test("search rejects a malformed successful response", async () => {
