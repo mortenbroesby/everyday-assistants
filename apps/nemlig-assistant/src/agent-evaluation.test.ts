@@ -124,7 +124,7 @@ for (const scenario of cases) {
     const close = await connectModern(server, client);
     try {
       const catalog = await client.listTools();
-      const modelTools = catalog.tools.filter((tool) => {
+      const modelEligibleTools = catalog.tools.filter((tool) => {
         const ui = tool._meta?.ui as { visibility?: string[] } | undefined;
         return !ui?.visibility || ui.visibility.includes("model");
       });
@@ -162,8 +162,11 @@ for (const scenario of cases) {
         JSON.stringify({
           case: scenario.id,
           toolCount: catalog.tools.length,
-          modelToolCount: modelTools.length,
-          modelToolsBytes: Buffer.byteLength(JSON.stringify(modelTools)),
+          modelToolCount: modelEligibleTools.length,
+          // Catalogue entries retain output schemas/metadata; this is not model input.
+          modelEligibleCatalogToolsBytes: Buffer.byteLength(
+            JSON.stringify(modelEligibleTools),
+          ),
           outputSchemasBytes: Buffer.byteLength(
             JSON.stringify(catalog.tools.map((tool) => tool.outputSchema)),
           ),
