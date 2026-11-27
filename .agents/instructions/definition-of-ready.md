@@ -5,7 +5,11 @@ applicable criteria below are satisfied and evidenced from the request,
 repository, or current external state.
 
 - **Outcome/scope:** State the observable outcome, affected assistant/files,
-  non-goals, and sibling-worktree conflicts.
+  non-goals, and sibling-worktree conflicts. For guidance/harness audits or
+  suspected version drift, establish the checkout revision and compare relevant
+  guidance with the integration branch and active sibling work before proposing
+  fixes. Verify the actually loaded skill/plugin version and hook source when
+  they affect the diagnosis; tracked files alone do not prove host activation.
 - **Acceptance:** Define testable success and failure behavior, including
   readback for state changes. Treat the GitHub issue as the task contract.
 - **Authority/dependencies:** Confirm access and prerequisites without exposing

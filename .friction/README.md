@@ -73,6 +73,10 @@ unknowns and separate implementation tests from observed agent behavior. Repeat
 model trials when variability could explain a result. Count recurrence per
 comparable task, not raw record volume. A reduction in reporting is not evidence
 of reduced friction. Reconsider changes that fail to demonstrate benefit.
+The [guidance maintenance decisions](../docs/agent-routing-evaluation.md#guidance-maintenance-decisions)
+bound this experiment: repeated comparable behavioral evidence must justify
+additional hooks, stronger prompts, or mandatory record checks. Prefer fixing a
+reproduced tool/environment defect over adding workaround instructions.
 
 Completion and interruption reminders are advisory. They must not write records,
 inspect transcripts, block stopping, force another model turn, or infer success.

@@ -11,10 +11,17 @@ when every applicable criterion below is satisfied with current evidence.
   matching filenames. CI owns the full build, type checks, tests, formatting,
   and smoke checks. Do not duplicate those suites locally by default; run a
   broader local check only to investigate a failure or answer a concrete risk.
-  Documentation-only changes need only relevant file checks. Reuse completed
-  evidence while its inputs are unchanged, report pending CI as pending, and
-  do not treat lint as proof of behavior. Inspect the final diff for secrets,
-  accidental edits, and unjustified complexity.
+  Documentation-only changes need only relevant file checks. Inspect the final
+  diff for secrets, accidental edits, and unjustified complexity.
+- **Evidence:** Before a completion claim, identify the check that supports that
+  claim and inspect its complete result. Record command, working directory,
+  revision/relevant working-tree state, and result. Reuse completed evidence
+  while its inputs are unchanged; rerun after relevant edits or for a concrete
+  unresolved concern. A yielded or timed-out check is running or unknown:
+  resume/inspect its process before retrying. Report pending CI and untested
+  behavior explicitly; lint does not prove behavior, and local checks do not
+  prove deployment. For consequential changes with uncertain consumers or
+  invariants, use the conditional [independent challenge review](../skills/verification-before-completion/SKILL.md#independent-challenge-review).
 - **Documentation:** Update affected instructions, docs, backlog, and OpenSpec
   artifacts; do not leave planning or task state misleading.
 - **Implementation handoff:** Commit and push the scoped change, report the

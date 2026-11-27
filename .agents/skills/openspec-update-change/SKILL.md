@@ -62,15 +62,16 @@ Revise a change's existing planning artifacts and keep them coherent. Never edit
    - Revise only files that already exist (`existingOutputPaths`). Do NOT create artifacts that don't exist yet, and do NOT invent new files under a glob artifact - note them and point the user to `$openspec-continue-change (Codex) or /openspec-continue-change (other agents)` to create them.
    - If the change is already coherent, say so and make no edits.
 
-5. **Confirm and apply, one artifact at a time**
-   - Show each proposed revision and why. Write only after the user confirms.
+5. **Apply authorized revisions coherently**
+   - Explain the revisions and apply them within the requested scope. Ask before material unresolved decisions or at an explicit user review checkpoint.
    - If the user rejects a revision, do not write it - leave that artifact unchanged.
    - When a substantial rewrite is needed, get that artifact's rules and template first:
      ```bash
      openspec instructions "<artifact-id>" --change "<name>" --json
      ```
 
-6. **Point to the next step (guidance only - NEVER act on it)**
+6. **Hand off to the next workflow**
+   - For a plan-only request, report the next step and stop. Continue through another workflow only when the user has authorized that work; preserve explicit review checkpoints.
    - Artifacts still missing -> suggest `$openspec-continue-change (Codex) or /openspec-continue-change (other agents)` to create them.
    - Change already implemented (tasks checked off / already applied) -> the code may no longer match the revised plan; suggest `$openspec-apply-change (Codex) or /openspec-apply-change (other agents)` to carry the delta into code.
    - Everything done and implemented -> suggest `$openspec-archive-change (Codex) or /openspec-archive-change (other agents)`.
@@ -83,9 +84,9 @@ After each invocation, show:
 - Where the change stands and the recommended next command
 
 **Guardrails**
-- Planning artifacts only - NEVER edit implementation code. If the revised plan implies code changes, stop and point to `$openspec-apply-change (Codex) or /openspec-apply-change (other agents)`.
+- This workflow edits planning artifacts. Code changes use the apply workflow under the authorization boundary in step 6; revising a plan alone does not authorize implementation.
 - Use the artifact ids and paths reported by `openspec status`; never branch on hardcoded artifact names.
 - Edit only the concrete files in `existingOutputPaths`; never write to a glob `resolvedOutputPath`.
 - Do not advance the build frontier: no new artifacts, no new files under glob artifacts - that is `$openspec-continue-change (Codex) or /openspec-continue-change (other agents)`'s job.
-- Confirm every edit with the user before writing.
+- User authorization persists across artifact edits; do not create a per-file approval requirement.
 - If the request changes the change's *intent* rather than refining it, first verify whether the optional `$openspec-new-change (Codex) or /openspec-new-change (other agents)` workflow is available. If it is, recommend starting fresh with `$openspec-new-change (Codex) or /openspec-new-change (other agents)` (the "Update vs. Start Fresh" heuristic). If it is unavailable, ask for a distinct unused change name and recommend `openspec new change "<new-change-name>"` instead.
