@@ -104,7 +104,8 @@ test("local CLI help and MCP surface need no credentials or network", async () =
   assert.doesNotMatch(stdout, /feature-request/);
   assert.match(stdout, /cart/);
   assert.match(stdout, /add/);
-  assert.doesNotMatch(stdout, /\bremove\b/u);
+  assert.match(stdout, /remove <product-id>/u);
+  assert.match(stdout, /clear-basket/u);
   assert.doesNotMatch(stdout, /parse|checkout|--password/);
 
   const unavailable = async (): Promise<never> => {
@@ -151,8 +152,10 @@ test("local CLI help and MCP surface need no credentials or network", async () =
         .sort(),
       [
         "check_nemlig_connection",
+        "confirm_basket_deletion",
         "find_groceries",
         "get_profile",
+        "review_basket_deletion",
         "show_my_basket",
         "show_product_review",
         "start_product_review",
