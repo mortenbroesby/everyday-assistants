@@ -33,3 +33,23 @@ A fresh Chrome guest searched for `mælk` using the site's search field and reac
 The public HTML for [product 103368](https://www.nemlig.com/produkt/103368) supplied a server-rendered transfer-cache response for the detail API. The legacy detail route returned the same ID, title, brand and pack description directly. Legacy returned `Price: 12.95` and `UnitPrice: "12,95 kr./Ltr."`. The storefront detail envelope contained `product.price: 1295`, `currency: "DKK"`, and `pricePerUnit: {value: 1295, unitType: "Volume"}`; the product page displayed 12.95 kr. for one litre. A future adapter must test currency scale explicitly. This sample does not settle unit denominators for other pack sizes. The new record's availability is an object with type Available, while quantity is zero. Quantity is unsuitable as a stand-alone stock indicator. The two guest reads had no proven common delivery slot, so this is schema evidence only.
 
 The homepage transfer cache contains a menu response with separate highlighted, categories and aboutNemlig arrays. Category entries expose title, URL and image. This establishes a candidate source for top-level navigation; stock, pagination and favorites remain open.
+
+## Caller and evidence inventory
+
+The checked-in `apps/nemlig-assistant/nemlig-api.openapi.json` distinguishes client-used and observed-only operations. Its maintenance procedure in the [app README](../../../apps/nemlig-assistant/README.md#reverse-engineered-nemlig-api) calls for dated first-party bundle references, anonymous browser traces and synthetic fixtures. Reuse the request and response cases in `src/client.test.ts` for the old adapter. At baseline, the inventory covers both legacy search routes and does not describe the v2 catalog routes.
+
+| Operation | Reachable consumer and decision |
+|---|---|
+| Search and exact detail | CLI search and MCP product discovery use search results. Discovery and draft review hydrate individual items. Hosted HTTP and stdio share createMcpServer. Assess v2 search as an independent read adapter. Keep fresh detail on the legacy adapter until equivalent slot, identity and availability checks pass. |
+| Departments, browsing and favorites | cli.ts calls listDepartments, browseDepartment and listFavorites. Legacy empty-search recovery also follows category pages and groups. Keep favorite pagination and fallback coverage separate from top-level menu replacement. |
+| Session | CLI login and hosted credential validation enter different client methods. A guest browser used AntiForgery, Token and GetCurrentUser. Retain established account binding and credential validation. |
+| Basket | CLI uses getCart, addToCart and addManyToCart. MCP reads the basket and reviewed direct submission calls addManyToCart only after fresh lookup. Keep existing behavior. |
+| Saved lists | ProductReviewService lists saved lists, loads an exact list into a local draft, and saves a current basket as a list. Standalone create, edit, delete and add-list-to-cart client methods are separate from those review flows. Retain existing read and write routes. No provider write is needed to assess reachability. |
+
+Direct submission compares ID, name, brand, unit and unit size across complete views. Confirmed unavailability or an exact 404 skips the item. Unknown availability, changed identity or ambiguous lookup blocks dispatch. Price-only changes are accepted by the existing review contract. Three focused synthetic direct-submit tests passed on the assistant baseline 18c9ba7. These exercise the legacy contract and do not validate a candidate adapter.
+
+## Guest search and adjacent flows
+
+On November 27, the server-rendered GET for `/soeg?query=mælk` contained 80 entries under `searchResult.items`. The first entry wrapped a product in a typed item. The unlikely query `zzqvnemligzz` produced an empty items array under the same envelope. The result also carries separate product and recipe totals. Decode item type before product normalization and distinguish malformed responses from valid empty results.
+
+The guest recipes page included an allRecipes response with categories, filters and a total count. The guest favorites page included a generic page response. Neither proves ingredient substitution or personalized favorites. A direct GET to the category slug /frugt-og-groent returned 404 despite that value appearing in the menu. Resolve the actual storefront navigation URL before adopting menu slugs as fetch paths.
