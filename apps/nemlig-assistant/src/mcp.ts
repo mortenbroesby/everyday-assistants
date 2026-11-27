@@ -249,7 +249,16 @@ const showProductReviewInputSchema = z
   .meta({
     anyOf: [
       {
-        properties: { view: { const: "draft" } },
+        properties: {
+          view: { const: "draft" },
+          // Some host type renderers render union branches without parent fields.
+          ...z.toJSONSchema(
+            z.object({
+              draft_id: reviewTargetFields.draft_id,
+              review_context_id: reviewTargetFields.review_context_id,
+            }),
+          ).properties,
+        },
         required: ["draft_id", "review_context_id"],
       },
       {

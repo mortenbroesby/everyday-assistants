@@ -681,3 +681,44 @@ observations, not a comparison-quality evaluation: the fixture has only one
 product. No rendered ChatGPT/native acceptance is inferred; NEM-CHATGPT-001
 through 008 remain NOT RUN in this iteration. Raw traces stay local/private.
 No before/after behavioral improvement or cost saving is claimed.
+
+## Exact-handle visibility in union-rendered declarations (2026-11-27)
+
+While inspecting the connected host's available tool metadata, the exposed
+show_product_review argument declaration was a three-branch union containing
+only optional view literals (draft, draft, saved_lists). Neither draft_id nor
+review_context_id appeared. This is direct host-declaration evidence, not a
+live tool call, deployed-SHA attribution or proof of the underlying host cause.
+The connected declaration still had the older display description; draft #369
+has not been deployed and no metadata refresh was requested.
+
+Local source explains a compatible failure mechanism: the Zod object's root
+properties define both handles, but its anyOf branch properties previously
+defined only view. The inspected installed-version Codex type renderer returns
+rendered anyOf variants before processing sibling properties:
+[exact-tag source](https://github.com/openai/codex/blob/rust-v0.169.0-alpha.11.1/codex-rs/code-mode-protocol/src/json_schema_types.rs).
+That source behavior is consistent with the observed declaration. It does not
+prove this renderer/version produced the connected host's declaration, nor
+explain every earlier handle omission in the separate native Codex trials.
+
+The exact-target branch now includes the same two Zod-generated property
+schemas as the parent, preserving UUID format/pattern and descriptions without
+hand-maintained duplicates. Root validation, paired-handle superRefine, branch
+required/not constraints, ownership and read-only behavior remain unchanged.
+The repeated constraints do not change accepted input instances; they make the
+required fields visible to branch-only type rendering. No adapter or dependency
+was added. Other tool union shapes need their own evidence/review; this change
+is scoped to exact-draft display.
+
+Validation: the published-catalog regression failed before the change because
+the first branch lacked both schemas, then passed with branch/parent equality.
+All 45 protocol/interface cases and lint passed. Catalogue bytes are 141291
+(model-eligible catalogue bytes 88638); these are not model token measurements.
+Actual connected-host declaration readback, fresh native behavioral comparison
+and deployment remain unrun. Do not mark native ChatGPT acceptance or a model
+reliability gain from this schema regression alone.
+
+Independent read-only challenge found no material objection: duplicate parent
+constraints are redundant under JSON Schema conjunction, and the inspected
+renderer enumerates branch properties/required fields. The optional no-handle
+branch remains intentional; visibility does not guarantee model forwarding.

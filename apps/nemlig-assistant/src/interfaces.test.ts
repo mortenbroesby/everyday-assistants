@@ -617,9 +617,17 @@ test("direct draft catalog exposes its input contract and loading status", async
         tool._meta?.["openai/toolInvocation/invoked"],
         "Draft prepared; display it to review",
       );
+      // Union renderers must not have to merge parent properties into branches.
+      assert.ok(display.inputSchema.properties?.draft_id);
+      assert.ok(display.inputSchema.properties?.review_context_id);
       assert.deepEqual(display.inputSchema.anyOf, [
         {
-          properties: { view: { const: "draft" } },
+          properties: {
+            view: { const: "draft" },
+            draft_id: display.inputSchema.properties?.draft_id,
+            review_context_id:
+              display.inputSchema.properties?.review_context_id,
+          },
           required: ["draft_id", "review_context_id"],
         },
         {
