@@ -4,6 +4,7 @@ import {
   normalizeBasket,
   normalizeDepartments,
   normalizeProducts,
+  normalizeStorefrontDetail,
   normalizeShoppingList,
   normalizeShoppingListOverviewPage,
 } from "./provider-response.js";
@@ -154,4 +155,43 @@ test("pure department parsing keeps only unique relative provider paths", () => 
     }),
     [{ id: "/mejeri", name: "Mejeri" }],
   );
+});
+
+test("storefront detail preserves price scale, pack, declaration, and confirmed availability without inferring stock from basket quantity", () => {
+  const item = {
+    id: "23",
+    title: "Coffee",
+    price: 7995,
+    currency: "DKK",
+    brandName: "Example",
+    description: "200 g / Example",
+    pricePerUnit: { value: 39975, unitType: "Weight" },
+    detailGeneral: "**Roast:** Dark",
+    detailDeclaration: [
+      {
+        content: "Coffee beans",
+        tableHeader: ["Per 100 g", "Value"],
+        tableItems: [["Fat", "2 g"]],
+      },
+    ],
+    quantity: 0,
+    campaignLines: [{ text: "2 stk. 149,-" }],
+  };
+  const read = (type: string) =>
+    normalizeStorefrontDetail(
+      { product: { ...item, availability: { type } } },
+      23,
+    );
+  const result = read("Available");
+  assert.equal(result.price, 79.95);
+  assert.equal(result.unit, "kr./Kg.");
+  assert.equal(result.unitPrice, 399.75);
+  assert.equal(result.unitSize, item.description);
+  assert.equal(result.brand, item.brandName);
+  assert.deepEqual(result.details, [{ key: "Roast", value: "Dark" }]);
+  assert.match(result.declaration ?? "", /Coffee beans.*Per 100 g.*Fat 2 g/u);
+  assert.equal(result.available, true);
+  assert.equal(read("SoldOut").available, false);
+  assert.equal(read("Discontinued").available, false);
+  assert.equal(read("FutureStatus").available, undefined);
 });

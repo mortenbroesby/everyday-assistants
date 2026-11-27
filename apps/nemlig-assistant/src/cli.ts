@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { Command, InvalidArgumentError } from "commander";
+import { createInterface } from "node:readline/promises";
+import { reviewDeletion, confirmDeletion } from "./basket-deletion.js";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import {
@@ -28,6 +30,7 @@ interface CliDependencies {
   prompt: (username?: string) => Promise<Credentials>;
   save: (credentials: Credentials) => Promise<void>;
   clear: () => Promise<void>;
+  confirm: (prompt: string) => Promise<boolean>;
   out: (message: string) => void;
 }
 
@@ -90,7 +93,7 @@ const formatProduct = (product: Product): string => {
     .filter(Boolean)
     .join(" | ");
   return [
-    `${String(product.id ?? "").padEnd(8)} ${(product.name ?? "Unknown").slice(0, 28).padEnd(28)}  ${(product.price ?? 0).toFixed(2).padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available ? "✓ In Stock" : "✗ Sold Out"}`,
+    `${String(product.id ?? "").padEnd(8)} ${(product.name ?? "Unknown").slice(0, 28).padEnd(28)}  ${(product.price?.toFixed(2) ?? "—").padEnd(8)} ${product.unitSize.slice(0, 10).padEnd(10)} ${product.available === undefined ? "Availability unknown" : product.available ? "✓ In Stock" : "✗ Sold Out"}`,
     ...(details ? [`         ${details}`] : []),
   ].join("\n");
 };
@@ -115,6 +118,22 @@ export function createProgram(
     prompt: promptCredentials,
     save: saveCredentials,
     clear: clearCredentials,
+    confirm: async (prompt) => {
+      if (!process.stdin.isTTY) {
+        throw new Error(
+          "An interactive terminal is required for basket deletion.",
+        );
+      }
+      const reader = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      try {
+        return (await reader.question(prompt)) === "DELETE";
+      } finally {
+        reader.close();
+      }
+    },
     out: console.log,
     ...overrides,
   };
@@ -192,6 +211,33 @@ export function createProgram(
       dependencies.out(formatBasket(await dependencies.client.getCart()));
     });
 
+  const deleteReviewed = async (productId?: number) => {
+    await ensureLoggedIn(dependencies.client, dependencies.credentials);
+    const edit =
+      productId === undefined
+        ? { kind: "clear" as const }
+        : { kind: "remove" as const, productId };
+    const review = await reviewDeletion(dependencies.client, "cli", edit);
+    dependencies.out(review.prompt);
+    if (!(await dependencies.confirm("Type DELETE to confirm: "))) {
+      dependencies.out("Cancelled.");
+      return;
+    }
+    dependencies.out(
+      formatBasket(
+        await confirmDeletion(dependencies.client, "cli", review.review_id),
+      ),
+    );
+  };
+  program
+    .command("remove <product-id>")
+    .description("Review and remove a whole basket line.")
+    .action(async (id: string) => deleteReviewed(positiveInteger(id)));
+  program
+    .command("clear-basket")
+    .description("Review and clear the entire basket.")
+    .action(async () => deleteReviewed());
+
   program
     .command("favorites")
     .description(
@@ -254,13 +300,10 @@ export function createProgram(
           options.page,
         );
         dependencies.out(
-          result.products.length
-            ? [
-                "ID Name Price Size Status",
-                ...result.products.map(formatProduct),
-                ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
-              ].join("\n")
-            : "No products found.",
+          [
+            formatProductList(result.products, "No products found."),
+            ...(result.hasNext ? [`Next page: ${result.page + 1}`] : []),
+          ].join("\n"),
         );
       },
     );

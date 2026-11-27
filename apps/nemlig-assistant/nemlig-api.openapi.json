@@ -29,7 +29,7 @@
   ],
   "x-nemlig": {
     "status": "reverse-engineered-private-contract",
-    "lastObserved": "2026-09-30",
+    "lastObserved": "2026-11-27",
     "maintainer": "Nemlig Assistant contributors",
     "clientSource": "apps/nemlig-assistant/src/client.ts",
     "confidenceScale": {
@@ -166,10 +166,10 @@
         "summary": "Get current delivery and timeslot context",
         "security": [{}, { "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.refreshSession", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["first-party main.js bundle 2026-11-27; guest GET returned 404"]
         },
         "responses": {
           "200": {
@@ -184,7 +184,7 @@
         }
       }
     },
-    "/searchgateway/api/search": {
+    "/productbff/api/v2/web/search/products": {
       "get": {
         "operationId": "searchProducts",
         "tags": ["Catalogue"],
@@ -192,10 +192,42 @@
         "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
         "security": [{ "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.searchGateway", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["NemligClient.searchStorefront", "paired guest and authenticated catalog reads 2026-11-27"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/SearchQuery" },
+          { "name": "take", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "skip", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "timeslotId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shallow product-card search results; rich product text is normally absent.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["searchResult"], "properties": { "searchResult": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "type": "object", "required": ["type"], "additionalProperties": true } } } } }, "additionalProperties": true }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/searchgateway/api/search": {
+      "get": {
+        "operationId": "legacySearchProducts",
+        "tags": ["Catalogue"],
+        "summary": "Search catalogue product cards",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "observed-only",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["paired legacy reads 2026-11-27", "first-party main.js bundle 2026-09-13"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/SearchQuery" },
@@ -251,17 +283,40 @@
         }
       }
     },
-    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/Get": {
+    "/productbff/api/web/productDetails/{productId}": {
       "get": {
         "operationId": "getProduct",
+        "tags": ["Catalogue"],
+        "summary": "Get an exact storefront product in the current delivery slot",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.fetchExactProduct", "guest and authenticated exact reads 2026-11-27"]
+        },
+        "parameters": [
+          { "name": "productId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "timeslot", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Exact storefront product; price and pricePerUnit.value are minor currency units.", "content": { "application/json": { "schema": { "type": "object", "required": ["product"], "properties": { "product": { "type": "object", "required": ["id", "title"], "additionalProperties": true } }, "additionalProperties": true } } } },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/Get": {
+      "get": {
+        "operationId": "legacyGetProduct",
         "tags": ["Catalogue"],
         "summary": "Get one exact product with rich detail",
         "security": [{ "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.fetchExactProduct", "first-party main.js bundle and read-only fixture 2026-09-13"]
+          "evidence": ["paired legacy detail reads 2026-11-27", "first-party main.js bundle and read-only fixture 2026-09-13"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/ProductTimestamp" },
@@ -322,6 +377,110 @@
         }
       }
     },
+    "/productbff/api/web/menu": {
+      "get": {
+        "operationId": "getStorefrontMenu",
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "List storefront departments",
+        "servers": [
+          {
+            "url": "https://webapi.prod.knl.nemlig.it"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": [
+            "First-party storefront navigation and guest read 2026-11-27"
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Menu categories with title and slug."
+          },
+          "default": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        }
+      }
+    },
+    "/productbff/api/v3/web/categories/products": {
+      "get": {
+        "operationId": "browseStorefrontCategory",
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "Read a storefront category window",
+        "servers": [
+          {
+            "url": "https://webapi.prod.knl.nemlig.it"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": [
+            "First-party storefront navigation and guest read 2026-11-27"
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "requestedCategory with its leaf categoryPath, full breadcrumb URLs and ordered mixed items."
+          },
+          "default": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "categoryPath",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeslotId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
     "/": {
       "get": {
         "operationId": "getDepartmentPageModel",
@@ -329,10 +488,10 @@
         "summary": "Get the home-page JSON model used to discover departments",
         "security": [],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.listDepartments", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["legacy homepage JSON read 2026-11-27", "first-party main.js bundle 2026-09-13"]
         },
         "parameters": [{ "$ref": "#/components/parameters/GetAsJson" }],
         "responses": {
@@ -375,16 +534,35 @@
       }
     },
     "/{cataloguePath}": {
+      "head": {
+        "operationId": "resolveCategoryLink",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Resolve a legacy quick-search link to its canonical storefront category",
+        "security": [],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.productsByCategory", "Same-origin milk, coffee and cheese redirects observed 2026-11-27"]
+        },
+        "parameters": [
+          { "name": "cataloguePath", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "301": { "description": "Canonical category or other storefront destination in Location." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      },
       "get": {
         "operationId": "getCategoryPageModel",
         "tags": ["Catalogue", "Website"],
         "summary": "Get a category page as JSON",
         "security": [],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.productsByCategory"]
+          "evidence": ["Legacy category page model"]
         },
         "parameters": [
           { "name": "cataloguePath", "in": "path", "required": true, "description": "A same-origin path returned by the department or quick-search page model.", "schema": { "type": "string" } },
@@ -405,13 +583,13 @@
       "get": {
         "operationId": "getBasket",
         "tags": ["Basket"],
-        "summary": "Get the current authenticated basket",
-        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "summary": "Read the current basket and catalogue delivery context",
+        "security": [{}, { "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.getCart", "blocked anonymous Playwright request 2026-09-13"]
+          "evidence": ["NemligClient.getCart and refreshSession", "guest and authenticated read comparisons 2026-11-27"]
         },
         "responses": {
           "200": {
@@ -429,12 +607,12 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Nemlig Assistant sends only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
+        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Additions send only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. Whole-line removal sends quantity zero and AffectPartialQuantity=true only after a separate confirmation bound to a fresh full-basket review. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",
           "confidence": "high",
-          "safety": "assistant-add-only-positive-quantity-after-fresh-read-and-readback",
+          "safety": "reviewed-addition-or-confirmed-whole-line-removal-with-readback",
           "evidence": ["NemligClient.writeBasket", "owner decision 2026-09-29"]
         },
         "requestBody": {
@@ -445,6 +623,25 @@
         },
         "responses": {
           "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/ClearBasket": {
+      "post": {
+        "operationId": "clearReviewedBasket",
+        "tags": ["Basket"],
+        "summary": "Clear the reviewed current basket after separate explicit confirmation",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "medium",
+          "safety": "destructive-confirmed-exact-basket-with-fresh-preflight-and-readback",
+          "evidence": ["Storefront basket service JavaScript inspected 2026-11-27; fixture-tested request and readback"]
+        },
+        "requestBody": { "content": { "text/plain": { "schema": { "type": "string", "const": "" } } } },
+        "responses": {
+          "200": { "description": "Independently read the basket to verify its identity and empty contents." },
           "default": { "$ref": "#/components/responses/ProviderError" }
         }
       }
@@ -899,6 +1096,9 @@
       "Basket": {
         "type": "object",
         "properties": {
+          "DeliveryTimeSlot": { "type": ["object", "null"], "properties": { "Id": { "oneOf": [{ "type": "integer" }, { "type": "string" }] } }, "additionalProperties": true },
+          "TimeslotUtc": { "type": "string" },
+          "DeliveryZoneId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
           "Lines": {
             "type": "array",
             "items": {
@@ -926,10 +1126,14 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["ProductId", "quantity", "AffectPartialQuantity", "disableQuantityValidation"],
+        "oneOf": [
+          { "properties": { "quantity": { "minimum": 1 }, "AffectPartialQuantity": { "const": false } } },
+          { "properties": { "quantity": { "const": 0 }, "AffectPartialQuantity": { "const": true } } }
+        ],
         "properties": {
           "ProductId": { "type": "integer", "minimum": 1 },
           "quantity": { "type": "integer", "minimum": 0 },
-          "AffectPartialQuantity": { "type": "boolean", "const": false },
+          "AffectPartialQuantity": { "type": "boolean" },
           "disableQuantityValidation": { "type": "boolean", "const": false }
         }
       },

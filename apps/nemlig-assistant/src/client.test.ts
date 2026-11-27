@@ -8,7 +8,6 @@ import {
   ProductNotFoundError,
   type Product,
   NEMLIG_API_ATTEMPT_TIMEOUT_MS,
-  SEARCH_GATEWAY_URL,
   normalizeDepartments,
   normalizeProducts,
 } from "./client.js";
@@ -56,6 +55,14 @@ const antiForgeryRequest = (): ExpectedRequest => ({
   },
 });
 
+const searchPath = "/productbff/api/v2/web/search/products";
+const searchResult = (...products: Record<string, unknown>[]) =>
+  json({
+    searchResult: {
+      items: products.map((product) => ({ type: "product", product })),
+    },
+  });
+
 const sessionRequests = (): ExpectedRequest[] => [
   { match: "/Token$", response: json({ access_token: "token-value" }) },
   {
@@ -67,10 +74,10 @@ const sessionRequests = (): ExpectedRequest[] => [
   },
   { match: "/user/GetCurrentUser$", response: json({ DebitorId: 42 }) },
   {
-    match: "/Order/DeliverySpot$",
+    match: "/basket/GetBasket$",
     response: json({
       TimeslotUtc: "2026083115-60-240",
-      TimeslotId: 7,
+      DeliveryTimeSlot: { Id: "7" },
       DeliveryZoneId: 9,
     }),
   },
@@ -530,7 +537,7 @@ test("primary catalogue failures are not converted into empty results", async ()
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
+      match: searchPath,
       response: json({}, { status: 503 }),
     },
   ];
@@ -632,9 +639,9 @@ test("catalogue and basket reads pass caller signals through initialization, fal
   const fallbackRequests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
+      match: searchPath,
       inspect: (_url, init) => assert.equal(init?.signal?.aborted, false),
-      response: json({ Products: [] }),
+      response: searchResult(),
     },
     {
       match: "/quick\\?",
@@ -642,7 +649,7 @@ test("catalogue and basket reads pass caller signals through initialization, fal
       response: json({ Categories: [{ Url: "/one" }, { Url: "/two" }] }),
     },
     {
-      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      match: "https://www.nemlig.com/one$",
       inspect: (_url, init) => {
         assert.equal(init?.signal?.aborted, false);
         fallbackAbort.abort(fallbackReason);
@@ -959,21 +966,81 @@ test("product normalization bounds parser depth and child nodes without warnings
   assert.deepEqual(warnings, []);
 });
 
-test("search accepts nested products and sends the current session values", async () => {
+test("search stops before dispatch when delivery context has no usable slot", async () => {
+  const requests = sessionRequests();
+  requests[requests.length - 1] = {
+    match: "/basket/GetBasket$",
+    response: json({ DeliveryTimeSlot: null }),
+  };
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.searchProducts("test"), /current delivery slot/u);
+  assert.equal(requests.length, 0);
+});
+
+test("search retries session initialization after cancellation during delivery context lookup", async () => {
+  const controller = new AbortController();
+  const started = sessionRequests();
+  started[started.length - 1] = {
+    match: "/basket/GetBasket$",
+    response: () => {
+      controller.abort(new Error("cancel delivery read"));
+      throw controller.signal.reason;
+    },
+  };
+  const requests = [
+    ...started,
+    ...sessionRequests(),
+    {
+      match: searchPath,
+      response: searchResult({ id: 1, title: "Test" }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(
+    client.searchProducts("test", 1, controller.signal),
+    /cancel delivery read/u,
+  );
+  assert.equal((await client.searchProducts("test", 1))[0]?.id, 1);
+  assert.equal(requests.length, 0);
+});
+
+test("v2 search maps product cards, skips banners, and uses current delivery context", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
+      match: searchPath,
       inspect: (url, init) => {
         const parsed = new URL(url);
         assert.equal(parsed.searchParams.get("take"), "2");
-        assert.equal(parsed.searchParams.get("timestamp"), "product-stamp");
-        assert.equal(parsed.searchParams.get("TimeSlotId"), "7");
-        assert.equal(parsed.searchParams.get("deliveryZoneId"), "9");
+        assert.deepEqual([...parsed.searchParams.keys()].sort(), [
+          "query",
+          "skip",
+          "take",
+          "timeslotId",
+        ]);
+        assert.equal(parsed.searchParams.get("timeslotId"), "7");
         assert.equal(new Headers(init?.headers).has("content-type"), false);
       },
       response: json({
-        Products: { Products: [{ Id: 1, Name: "Mælk", Price: 10 }] },
+        searchResult: {
+          items: [
+            { type: "banner" },
+            {
+              type: "product",
+              product: {
+                id: "1",
+                title: "Mælk",
+                price: 1295,
+                currency: "DKK",
+                description: "1 l",
+                unitOfMeasure: "Ltr.",
+                pricePerUnit: { value: 1295, unitType: "Volume" },
+                availability: { type: "Available" },
+                quantity: 0,
+              },
+            },
+          ],
+        },
       }),
     },
   ];
@@ -982,60 +1049,73 @@ test("search accepts nested products and sends the current session values", asyn
     2,
   );
   assert.equal(products[0]?.name, "Mælk");
+  assert.equal(products[0]?.price, 12.95);
+  assert.equal(products[0]?.unitPrice, 12.95);
+  assert.equal(products[0]?.unit, "kr./Ltr.");
+  assert.equal(products[0]?.available, true);
   assert.equal(requests.length, 0);
 });
 
-test("search without an explicit count requests Nemlig's default 20-item page", async () => {
-  const products = Array.from({ length: 12 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Product ${index + 1}`,
+test("search preserves the returned products unless the caller sets a count", async () => {
+  const products = Array.from({ length: 23 }, (_, index) => ({
+    id: index + 1,
+    title: `Product ${index + 1}`,
   }));
-  const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
-    {
-      match: `${SEARCH_GATEWAY_URL}/search`,
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("take"), "20"),
-      response: json({ Products: products }),
-    },
-  ];
-  const results = await new NemligClient(mockFetch(requests)).searchProducts(
-    "products",
-  );
-  assert.equal(results.length, products.length);
-  assert.equal(results.at(-1)?.name, "Product 12");
-  assert.equal(requests.length, 0);
+  for (const limit of [undefined, 3]) {
+    const requests: ExpectedRequest[] = [
+      ...sessionRequests(),
+      {
+        match: searchPath,
+        inspect: (url) =>
+          assert.equal(
+            new URL(url).searchParams.get("take"),
+            String(limit ?? 20),
+          ),
+        response: searchResult(...products),
+      },
+    ];
+    const results = await new NemligClient(mockFetch(requests)).searchProducts(
+      "products",
+      limit,
+    );
+    assert.deepEqual(
+      results.map((row) => row.id),
+      products.slice(0, limit).map((row) => row.id),
+    );
+    assert.equal(requests.length, 0);
+  }
 });
 
-test("search accepts the upstream flat product response", async () => {
-  const requests: ExpectedRequest[] = [
+test("search rejects a malformed successful response", async () => {
+  const requests = [
     ...sessionRequests(),
-    {
-      match: `${SEARCH_GATEWAY_URL}/search`,
-      response: json({ Products: [{ Id: "2", Name: "Flat milk", Price: 11 }] }),
-    },
+    { match: searchPath, response: json({}) },
   ];
-  const products = await new NemligClient(mockFetch(requests)).searchProducts(
-    "mælk",
-    1,
+  await assert.rejects(
+    new NemligClient(mockFetch(requests)).searchProducts("mælk"),
+    /invalid search response/i,
   );
-  assert.equal(products[0]?.name, "Flat milk");
-  assert.equal(products[0]?.id, 2);
 });
 
 test("exact product lookup uses current session context and returns only the requested product", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match:
-        "/webapi/product-stamp/2026083115-60-240/9/42/Products/Get\\?id=424242",
+      match: "/productbff/api/web/productDetails/424242\\?timeslot=7",
       inspect: (_url, init) => {
         const headers = new Headers(init?.headers);
         assert.equal(init?.method, undefined);
         assert.equal(headers.get("authorization"), "Bearer token-value");
-        assert.equal(headers.get("platform"), "web");
+        assert.equal(headers.has("cookie"), false);
       },
-      response: json({ Id: 424242, Name: "Test Product", Price: 12.34 }),
+      response: json({
+        product: {
+          id: "424242",
+          title: "Test Product",
+          price: 1234,
+          currency: "DKK",
+        },
+      }),
     },
   ];
   assert.equal(
@@ -1049,24 +1129,33 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Shallow", Price: 12.34 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Shallow",
+        price: 1234,
+        currency: "DKK",
       }),
     },
     {
-      match: "/Products/Get\\?id=424242",
+      match: "/web/productDetails/424242\\?timeslot=7",
       response: json({
-        Id: 424242,
-        Name: "Detailed",
-        Price: 13.45,
-        Text: "<p>Current detail</p>",
+        product: {
+          id: "424242",
+          title: "Detailed",
+          price: 1345,
+          currency: "DKK",
+          detailDescription: "<p>Current detail</p>",
+        },
       }),
     },
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Later shallow", Price: 10 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Later shallow",
+        price: 1000,
+        currency: "DKK",
       }),
     },
   ];
@@ -1086,14 +1175,19 @@ test("fresh exact product lookup bypasses a previously observed product", async 
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Observed",
+        price: 1234,
+        currency: "DKK",
       }),
     },
     {
-      match: "/Products/Get\\?id=424242",
-      response: json({ Id: 424242, Name: "Current", Price: 13.45 }),
+      match: "/web/productDetails/424242\\?timeslot=7",
+      response: json({
+        product: { id: 424242, title: "Current", price: 1345, currency: "DKK" },
+      }),
     },
   ];
   const client = new NemligClient(mockFetch(requests));
@@ -1112,14 +1206,14 @@ test("exact product reads retry network failure, preserve cancellation, and keep
     if (attempts === 1) {
       throw new TypeError("offline");
     }
-    return json({ Id: 7, Name: "Recovered" });
+    return json({ product: { id: 7, title: "Recovered" } });
   }) as typeof fetch);
   Object.assign(client, {
     accessToken: "token",
     productTimestamp: "stamp",
     userId: "42",
     timeslot: "slot",
-    deliveryZoneId: 9,
+    timeslotId: 7,
   });
   assert.equal((await client.getProduct(7)).name, "Recovered");
   assert.equal(attempts, 2);
@@ -1153,7 +1247,10 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
   const client = new NemligClient(
     mockFetch([
       ...sessionRequests(),
-      { match: "/Products/Get\\?id=7", response: json({}, { status: 404 }) },
+      {
+        match: "/web/productDetails/7\\?timeslot=7",
+        response: json({}, { status: 404 }),
+      },
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
@@ -1172,8 +1269,8 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
     mockFetch([
       ...sessionRequests(),
       {
-        match: "/Products/Get\\?id=7",
-        response: json({ Id: 8, Name: "Other product" }),
+        match: "/web/productDetails/7\\?timeslot=7",
+        response: json({ product: { id: 8, title: "Other product" } }),
       },
     ]),
   );
@@ -1190,7 +1287,7 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
 test("empty gateway search tries no more than three safe fallback categories", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [] }) },
+    { match: searchPath, response: searchResult() },
     {
       match: "/quick\\?",
       response: json({
@@ -1203,11 +1300,11 @@ test("empty gateway search tries no more than three safe fallback categories", a
       }),
     },
     {
-      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      match: "https://www.nemlig.com/one$",
       response: json({ content: [] }),
     },
     {
-      match: "https://www.nemlig.com/three\\?GetAsJson=1",
+      match: "https://www.nemlig.com/three$",
       response: json({ content: [] }),
     },
   ];
@@ -1218,27 +1315,75 @@ test("empty gateway search tries no more than three safe fallback categories", a
   assert.equal(requests.length, 0);
 });
 
-test("category fallback returns the first non-empty product group", async () => {
+test("category fallback resolves a credential-free redirect and validates the complete category breadcrumb", async () => {
+  const category = "mejeri-og-aeg/maelk/minimaelk";
+  const result = (crumb: string, id: number) =>
+    json({
+      requestedCategory: {
+        categoryPath: "minimaelk",
+        breadcrumbs: [{ url: "kategori/" + crumb }],
+        items: [{ type: "product", product: { id, title: "Fallback milk" } }],
+      },
+    });
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: { Products: [] } }) },
-    { match: "/quick\\?", response: json({ Categories: [{ Url: "/milk" }] }) },
+    { match: searchPath, response: searchResult() },
     {
-      match: "https://www.nemlig.com/milk\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "group-1" }] }),
+      match: "/quick",
+      response: json({
+        Categories: [
+          { Url: "/dagligvarer/old" },
+          { Url: "/kategori/other/minimaelk" },
+          { Url: "/dagligvarer/milk" },
+        ],
+      }),
     },
     {
-      match: "/Products/GetByProductGroupId\\?",
-      response: json({
-        Products: [{ Id: 9, Name: "Fallback milk", Category: "Køl" }],
+      match: "/dagligvarer/old$",
+      response: Response.redirect(
+        "https://elsewhere.example/kategori/other/minimaelk",
+        301,
+      ),
+    },
+    {
+      match: "/v3/web/categories/products",
+      response: result(category, 11),
+    },
+    {
+      match: "/dagligvarer/milk$",
+      inspect: (_url, init) => {
+        assert.equal(init?.method, "HEAD");
+        assert.equal(init.redirect, "manual");
+        assert.equal(init.credentials, "omit");
+        assert.equal(new Headers(init.headers).has("authorization"), false);
+        assert.equal(new Headers(init.headers).has("cookie"), false);
+      },
+      response: new Response(null, {
+        status: 301,
+        headers: { location: "/kategori/" + category },
       }),
+    },
+    {
+      match: "/v3/web/categories/products",
+      inspect: (url) => {
+        const params = new URL(url).searchParams;
+        assert.equal(params.get("categoryPath"), category);
+        assert.equal(params.get("timeslotId"), "7");
+        assert.equal(params.get("skip"), "0");
+        assert.equal(params.get("take"), "3");
+      },
+      response: result(category, 9),
     },
   ];
   const products = await new NemligClient(mockFetch(requests)).searchProducts(
     "milk",
     3,
   );
-  assert.equal(products[0]?.id, 9);
+  assert.deepEqual(
+    products.map((product) => product.id),
+    [9],
+  );
+  assert.equal(requests.length, 0);
 });
 
 test("favorites follows authenticated show-all groups, deduplicates, and never mutates", async () => {
@@ -2285,66 +2430,75 @@ test("departments normalize opaque same-origin paths and browsing revalidates pa
     [{ id: "/frugt-og-groent", name: "Frugt & grønt" }],
   );
   const requests: ExpectedRequest[] = [
+    ...sessionRequests(),
     {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
+      match: "/web/menu$",
       response: json({
-        content: [{ Url: "/frugt-og-groent", Name: "Frugt & grønt" }],
+        categories: [{ url: "frugt-og-groent", title: "Frugt & grønt" }],
       }),
     },
     {
-      match: "https://www.nemlig.com/frugt-og-groent\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "produce" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
+      match: "/v3/web/categories/products",
       inspect: (url) => {
-        const parsed = new URL(url);
-        assert.equal(parsed.searchParams.get("pageIndex"), "1");
-        assert.equal(parsed.searchParams.get("pagesize"), "2");
+        const params = new URL(url).searchParams;
+        assert.equal(params.get("categoryPath"), "frugt-og-groent");
+        assert.equal(params.get("timeslotId"), "7");
+        assert.equal(params.get("skip"), "2");
+        assert.equal(params.get("take"), "3");
       },
-      response: json({ Products: [{ Id: 5, Name: "Æbler" }] }),
+      response: json({
+        requestedCategory: {
+          categoryPath: "frugt-og-groent",
+          items: [
+            { type: "product", product: { id: "5", title: "Æbler" } },
+            { type: "adCard" },
+            { type: "product", product: { id: "8", title: "Next page" } },
+          ],
+        },
+      }),
     },
   ];
-  const client = new NemligClient(mockFetch(requests));
-  const result = await client.browseDepartment("/frugt-og-groent", 2, 2);
-  assert.equal(result.products[0]?.name, "Æbler");
-  assert.equal(result.hasNext, false);
+  const result = await new NemligClient(mockFetch(requests)).browseDepartment(
+    "/frugt-og-groent",
+    2,
+    2,
+  );
+  assert.deepEqual(
+    result.products.map((p) => p.name),
+    ["Æbler"],
+  );
+  assert.equal(result.hasNext, true);
   assert.equal(requests.length, 0);
 });
 
 test("unknown departments and invalid pages fail before product browsing", async () => {
-  const requests: ExpectedRequest[] = [
-    {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
-      response: json({ content: [] }),
-    },
+  const requests = [
+    ...sessionRequests(),
+    { match: "/web/menu$", response: json({ categories: [] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.browseDepartment("/missing", 20, 0), /positive/);
   await assert.rejects(
     client.browseDepartment("/missing", 20, 1),
     /Unknown department/,
   );
+  assert.equal(requests.length, 0);
 });
 
 test("department browsing honors caller counts above 50 without truncation", async () => {
-  const products = Array.from({ length: 55 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Product ${index + 1}`,
+  const items = Array.from({ length: 55 }, (_, i) => ({
+    type: "product",
+    product: { id: String(i + 1), title: "Product " + i },
   }));
-  const requests: ExpectedRequest[] = [
+  const requests = [
+    ...sessionRequests(),
     {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
-      response: json({ content: [{ Url: "/produce", Name: "Produce" }] }),
+      match: "/web/menu$",
+      response: json({ categories: [{ url: "produce", title: "Produce" }] }),
     },
     {
-      match: "https://www.nemlig.com/produce\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "produce" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("pagesize"), "55"),
-      response: json({ Products: products }),
+      match: "/web/categories/products",
+      response: json({ requestedCategory: { categoryPath: "produce", items } }),
     },
   ];
   const result = await new NemligClient(mockFetch(requests)).browseDepartment(
@@ -2353,6 +2507,182 @@ test("department browsing honors caller counts above 50 without truncation", asy
     1,
   );
   assert.equal(result.products.length, 55);
-  assert.equal(result.hasNext, true);
+  assert.equal(result.hasNext, false);
+});
+
+const editBasket = (
+  lines: { Id: number; Quantity: number; Name: string }[],
+  extra = {},
+) => ({
+  BasketGuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  IsBackedByOrder: false,
+  BackedByOrderNumber: "",
+  Lines: lines,
+  MealBoxes: [],
+  Recipes: [],
+  Coupons: [],
+  NumberOfProducts: lines.reduce((sum, line) => sum + line.Quantity, 0),
+  ...extra,
+});
+const apples = { Id: 10, Quantity: 3, Name: "Apples" };
+const pears = { Id: 11, Quantity: 2, Name: "Pears" };
+const editClient = async (steps: ExpectedRequest[]) => {
+  const requests = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    ...steps,
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("fixture@example.test", "fixture");
+  return { client, requests };
+};
+const editRead = (basket: unknown): ExpectedRequest => ({
+  match: "/basket/GetBasket$",
+  response: json(basket),
+});
+
+test("reviewed edits send the storefront request once and verify every remaining line", async () => {
+  const before = editBasket([apples, pears]);
+  for (const edit of [
+    { kind: "remove", productId: 10 },
+    { kind: "clear" },
+  ] as const) {
+    const clear = edit.kind === "clear";
+    const { client, requests } = await editClient([
+      editRead(before),
+      editRead(before),
+      {
+        match: clear ? "/basket/ClearBasket$" : "/basket/AddToBasket$",
+        response: json({}),
+        inspect: (_url, init) => {
+          assert.equal(init?.method, "POST");
+          assert.equal(init?.redirect, "error");
+          if (clear) {
+            assert.equal(init?.body, "");
+          } else {
+            assert.deepEqual(JSON.parse(String(init?.body)), {
+              ProductId: 10,
+              quantity: 0,
+              AffectPartialQuantity: true,
+              disableQuantityValidation: false,
+            });
+          }
+        },
+      },
+      editRead(editBasket(clear ? [] : [pears])),
+    ]);
+    const review = await client.reviewBasketEdit(edit);
+    assert.equal(review.basket.items.length, 2);
+    const after = await client.applyReviewedBasketEdit(
+      edit,
+      review.fingerprint,
+    );
+    assert.equal(after.items.length, clear ? 0 : 1);
+    assert.equal(requests.length, 0);
+  }
+});
+test("destructive preflight refuses changed scope, basket identity, and partially observable state", async () => {
+  const edit = { kind: "clear" } as const;
+  const before = editBasket([apples, pears]);
+  for (const changed of [
+    { ...before, Lines: null },
+    { ...before, Lines: [null] },
+    { ...before, Lines: [{ ...apples, ProductId: pears.Id }, pears] },
+    {
+      ...before,
+      Lines: [{ ...apples, Id: "invalid", ProductId: apples.Id }, pears],
+    },
+    { ...before, Lines: [{ ...apples, Quantity: 0.5 }, pears] },
+    { ...before, Lines: [{ ...apples, Quantity: "3" }, pears] },
+    { ...before, Lines: {}, NumberOfProducts: 0 },
+    { ...before, BasketGuid: "00000000-0000-0000-0000-000000000000" },
+
+    { ...before, NumberOfProducts: 1 },
+    { ...before, IsBackedByOrder: true },
+    { ...before, BackedByOrderNumber: "1234" },
+    { ...before, MealBoxes: [{}] },
+    { ...before, Recipes: [{}] },
+    { ...before, Coupons: [{}] },
+    { ...before, BasketGuid: "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+    editBasket([apples, apples]),
+  ]) {
+    const { client, requests } = await editClient([
+      editRead(before),
+      editRead(changed),
+    ]);
+    const review = await client.reviewBasketEdit(edit);
+    await assert.rejects(
+      client.applyReviewedBasketEdit(edit, review.fingerprint),
+    );
+    assert.equal(requests.length, 0);
+  }
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+  ]);
+  const review = await client.reviewBasketEdit({
+    kind: "remove",
+    productId: 10,
+  });
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, review.fingerprint),
+  );
+  assert.equal(requests.length, 0);
+});
+test("reviewed removal rejects unrelated readback changes and never resends the write", async () => {
+  const edit = { kind: "remove", productId: 10 } as const;
+  const before = editBasket([apples, pears]);
+  let writes = 0;
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+    {
+      match: "/basket/AddToBasket$",
+      response: json({}),
+      inspect: () => {
+        writes++;
+      },
+    },
+    editRead(editBasket([])),
+  ]);
+  const trust = await client.reviewBasketEdit(edit);
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, trust.fingerprint),
+    /unconfirmed/i,
+  );
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
+});
+
+test("an in-flight basket edit excludes additions and dispatch failures are not replayed", async () => {
+  const before = editBasket([apples, pears]);
+  const edit = { kind: "clear" } as const;
+  let overlap: Promise<void> | undefined;
+  let writes = 0;
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+    {
+      match: "/basket/ClearBasket$",
+      inspect: () => {
+        writes++;
+        overlap = assert.rejects(
+          client.addToCart(12),
+          /another basket change/i,
+        );
+      },
+      response: () => {
+        throw new Error("Connection lost after send.");
+      },
+    },
+  ]);
+  const review = await client.reviewBasketEdit(edit);
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, review.fingerprint),
+    /unconfirmed/i,
+  );
+  await overlap;
+  assert.equal(writes, 1);
   assert.equal(requests.length, 0);
 });

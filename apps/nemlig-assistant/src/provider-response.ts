@@ -57,6 +57,20 @@ export function normalizeDepartments(value: unknown): Department[] {
   });
 }
 
+export function storefrontDepartments(value: unknown): Department[] {
+  const { categories } = asRecord(value);
+  if (!Array.isArray(categories)) {
+    throw new NemligError("Invalid department menu: missing categories.");
+  }
+  const content = asRecords(categories).flatMap((category) => {
+    const slug = asString(category.url);
+    return slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)
+      ? [{ Url: `/${slug}`, Name: category.title }]
+      : [];
+  });
+  return normalizeDepartments({ content });
+}
+
 export interface Basket {
   items: Array<{
     id?: number;
@@ -93,7 +107,7 @@ export const asRecords = (value: unknown): Array<Record<string, unknown>> => {
 };
 export const asString = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
-export const asNumber = (value: unknown): number | undefined =>
+const asNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 export const asId = (value: unknown): number | undefined => {
   const id =
@@ -280,6 +294,178 @@ const assertUniqueShoppingListOverviewIds = (
     throw new NemligError("Shopping-list inventory response is incomplete.");
   }
 };
+
+const dkkFromMinorUnits = (value: unknown, currency: unknown) =>
+  currency === "DKK" &&
+  typeof value === "number" &&
+  Number.isSafeInteger(value) &&
+  value >= 0
+    ? value / 100
+    : undefined;
+
+const storefrontAvailability = new Map<unknown, boolean>([
+  ["Available", true],
+  ["SoldOut", false],
+  ["Discontinued", false],
+]);
+const storefrontPriceUnits = new Map<unknown, string>([
+  ["Volume", "Ltr."],
+  ["Weight", "Kg."],
+  ["Pieces", "Stk."],
+]);
+
+function storefrontProductFields(product: Record<string, unknown>) {
+  if (!asId(product.id) || !asString(product.title)?.trim()) {
+    throw new NemligError(
+      "Invalid catalogue response: incomplete product identity.",
+    );
+  }
+  const availability = asRecord(product.availability).type;
+  const available = storefrontAvailability.get(availability);
+  const unitPrice = asRecord(product.pricePerUnit);
+  const tracking = asRecord(product.tracking);
+  const unit =
+    asString(product.unitOfMeasure) ??
+    storefrontPriceUnits.get(unitPrice.unitType);
+  return {
+    Id: product.id,
+    Name: product.title,
+    Brand: product.brandName ?? tracking.item_brand,
+    Description: product.description,
+    Price: dkkFromMinorUnits(product.price, product.currency),
+    UnitPriceCalc: dkkFromMinorUnits(unitPrice.value, product.currency),
+    UnitPriceLabel: unit ? `kr./${unit}` : undefined,
+    Category: tracking.item_category,
+    SubCategory: tracking.item_category2,
+    PrimaryImage: asRecord(product.image).source,
+    Labels: asRecords(product.certificates).map(
+      (certificate) => certificate.text,
+    ),
+    Availability: {
+      IsDeliveryAvailable: available,
+      IsAvailableInStock: available,
+    },
+    DiscountItem:
+      typeof product.priceOriginal === "number" &&
+      typeof product.price === "number" &&
+      product.priceOriginal > product.price
+        ? true
+        : undefined,
+  };
+}
+
+function storefrontDeclaration(value: unknown): string {
+  return asRecords(value)
+    .slice(0, 20)
+    .flatMap((section) => {
+      const rows = Array.isArray(section.tableItems)
+        ? section.tableItems.slice(0, 40)
+        : [];
+      return [
+        section.title,
+        section.content,
+        ...[section.tableHeader, ...rows].map((row) =>
+          Array.isArray(row)
+            ? row
+                .slice(0, 6)
+                .map((cell) => boundedText(cell, 300))
+                .filter(Boolean)
+                .join(" ")
+            : undefined,
+        ),
+      ]
+        .map((part) => asString(part)?.slice(0, 4000))
+        .filter(Boolean);
+    })
+    .join("\n")
+    .slice(0, 4000);
+}
+
+export function normalizeStorefrontDetail(
+  response: unknown,
+  expectedId: number,
+): Product {
+  const item = asRecord(asRecord(response).product);
+  if (asId(item.id) !== expectedId) {
+    throw new NemligError(
+      `Product ${expectedId} could not be resolved exactly.`,
+    );
+  }
+  const crumbs = asRecords(item.breadcrumbs);
+  const fields = storefrontProductFields(item);
+  const general = asString(item.detailGeneral)?.slice(0, 4000);
+  return normalizeProducts(
+    [
+      {
+        ...fields,
+        PrimaryImage: asRecords(item.images)[0]?.source ?? fields.PrimaryImage,
+        Category: crumbs[0]?.title ?? fields.Category,
+        SubCategory:
+          crumbs.length > 2
+            ? crumbs[crumbs.length - 2]?.title
+            : fields.SubCategory,
+        Text: item.detailDescription,
+        DeclarationLabel: storefrontDeclaration(item.detailDeclaration),
+        Attributes: general
+          ?.split(/\n+/u)
+          .slice(0, 20)
+          .flatMap((line) => {
+            const pair = /^\*\*([^*]+?):\*\*\s*(.+)$/u.exec(line);
+            return pair ? [{ Key: pair[1], Value: pair[2] }] : [];
+          }),
+      },
+    ],
+    1,
+  )[0]!;
+}
+
+export function normalizeStorefrontSearch(
+  value: unknown,
+  limit?: number,
+): Product[] {
+  const { items } = asRecord(asRecord(value).searchResult);
+  if (!Array.isArray(items)) {
+    throw new NemligError("Invalid search response: missing items.");
+  }
+  return normalizeStorefrontItems(items, limit);
+}
+
+function normalizeStorefrontItems(items: unknown[], limit?: number): Product[] {
+  const products = items.flatMap((item) => {
+    const row = asRecord(item);
+    if (!asString(row.type)) {
+      throw new NemligError("Invalid search response: missing item type.");
+    }
+    return row.type === "product"
+      ? [storefrontProductFields(asRecord(row.product))]
+      : [];
+  });
+  return normalizeProducts(products, limit);
+}
+
+export function storefrontCategoryPage(
+  response: unknown,
+  slug: string,
+  limit: number,
+  requireBreadcrumb = false,
+) {
+  const category = asRecord(asRecord(response).requestedCategory);
+  if (
+    category.categoryPath !== slug.split("/").at(-1) ||
+    (requireBreadcrumb &&
+      asRecords(category.breadcrumbs).at(-1)?.url !== `kategori/${slug}`) ||
+    !Array.isArray(category.items)
+  ) {
+    throw new NemligError(
+      "Invalid department response: requested category is missing.",
+    );
+  }
+  const products = normalizeStorefrontItems(
+    category.items.slice(0, limit),
+    limit,
+  );
+  return { products, hasNext: category.items.length > limit };
+}
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
   const records =

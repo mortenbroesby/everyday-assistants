@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  inspectEditableBasket,
+  reviewedFingerprint,
+  verifyEditedBasket,
+  type BasketEdit,
+  type BasketEditReview,
+} from "./reviewed-basket.js";
+export type { BasketEdit, BasketEditReview } from "./reviewed-basket.js";
+import {
   BasketAdditionError,
   NemligError,
   type BasketAdditionFailure,
@@ -7,13 +15,15 @@ import {
 } from "./nemlig-error.js";
 import {
   asId,
-  asNumber,
   asRecord,
   asRecords,
   asString,
   normalizeBasket,
-  normalizeDepartments,
+  storefrontDepartments,
+  storefrontCategoryPage,
   normalizeProducts,
+  normalizeStorefrontSearch,
+  normalizeStorefrontDetail,
   normalizeShoppingList,
   normalizeShoppingListOverviewPage,
   type Basket,
@@ -40,6 +50,7 @@ export {
 } from "./nemlig-error.js";
 
 const API_BASE_URL = "https://www.nemlig.com/webapi";
+const PRODUCT_BFF_URL = "https://webapi.prod.knl.nemlig.it/productbff/api";
 export const SEARCH_GATEWAY_URL =
   "https://webapi.prod.knl.nemlig.it/searchgateway/api";
 export const NEMLIG_API_ATTEMPT_TIMEOUT_MS = 120_000;
@@ -47,6 +58,9 @@ const NEMLIG_READ_MAX_RETRIES = 1;
 const KNOWN_PRODUCT_LIMIT = 1_000;
 const SHOPPING_LIST_PAGE_SIZE = 6;
 const MAX_SHOPPING_LIST_PAGES = 100;
+
+const isStorefrontPage = (url: URL): boolean =>
+  url.origin === "https://www.nemlig.com" && !url.username && !url.password;
 
 const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
 const DEFAULT_CORRELATION_ID = "YFA_17hS";
@@ -245,12 +259,12 @@ export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
   private readonly defaultTimeslot: string;
   private loggedIn = false;
+  private basketMutationInProgress = false;
   private sessionGeneration = 0;
   private accessToken?: string;
   private userId?: string;
   private productTimestamp?: string;
   private correlationId?: string;
-  private deliveryZoneId = 1;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
   private timeslot: string;
@@ -320,7 +334,7 @@ export class NemligClient {
       }
       const timeslot = asString(data.TimeslotUtc);
       await this.refreshSession();
-      if (timeslot) {
+      if (timeslot && !this.timeslotId) {
         this.timeslot = timeslot;
       }
       this.loggedIn = true;
@@ -397,12 +411,10 @@ export class NemligClient {
       throw new NemligError("Search limit must be positive.");
     }
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
+    await this.ensureCatalogueSlot(signal);
 
     const primary = this.rememberProducts(
-      await this.searchGateway(query, limit, signal),
+      await this.searchStorefront(query, limit, signal),
     );
     if (primary.length || !this.accessToken) {
       return primary;
@@ -423,7 +435,7 @@ export class NemligClient {
         continue;
       }
       const products = this.rememberProducts(
-        await this.productsByCategory(path, limit, 1, signal),
+        await this.productsByCategory(path, limit, signal),
       );
       if (products.length) {
         return products;
@@ -465,22 +477,33 @@ export class NemligClient {
     }
   }
 
+  private async ensureCatalogueSlot(signal?: AbortSignal): Promise<void> {
+    if (!this.productTimestamp || !this.timeslotId) {
+      await this.refreshSession(signal);
+    }
+    if (!this.timeslotId) {
+      throw new NemligError(
+        "Catalogue lookup requires a current delivery slot.",
+      );
+    }
+  }
+
   private async fetchExactProduct(
     productId: number,
     signal?: AbortSignal,
   ): Promise<Product> {
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
+    await this.ensureCatalogueSlot(signal);
+    const endpoint = `${PRODUCT_BFF_URL}/web/productDetails/${productId}`;
     let response: Record<string, unknown>;
     try {
       response = asRecord(
         await this.json(
-          `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+          `${endpoint}?${new URLSearchParams({ timeslot: String(this.timeslotId) })}`,
           { signal },
           `Get product ${productId}`,
+          true,
+          true,
         ),
       );
     } catch (error) {
@@ -489,16 +512,7 @@ export class NemligClient {
       }
       throw error;
     }
-    const payload =
-      asRecord(response.Product).Id === undefined
-        ? response
-        : asRecord(response.Product);
-    const product = normalizeProducts([payload], 1)[0];
-    if (!product || product.id !== productId) {
-      throw new NemligError(
-        `Product ${productId} could not be resolved exactly.`,
-      );
-    }
+    const product = normalizeStorefrontDetail(response, productId);
     return this.rememberProducts([product], true)[0]!;
   }
 
@@ -579,11 +593,18 @@ export class NemligClient {
   }
 
   async listDepartments(): Promise<Department[]> {
-    const page = await this.optionalJson(
-      "https://www.nemlig.com/?GetAsJson=1",
-      "Get departments",
+    if (!this.productTimestamp) {
+      await this.refreshSession();
+    }
+    return storefrontDepartments(
+      await this.json(
+        `${PRODUCT_BFF_URL}/web/menu`,
+        {},
+        "Get departments",
+        true,
+        true,
+      ),
     );
-    return normalizeDepartments(page);
   }
 
   async browseDepartment(
@@ -603,9 +624,15 @@ export class NemligClient {
     if (!department) {
       throw new NemligError("Unknown department ID; list departments again.");
     }
-    const products = this.rememberProducts(
-      await this.productsByCategory(department.id, limit, page),
+    await this.ensureCatalogueSlot();
+    const slug = department.id.slice(1);
+    const response = await this.fetchCategory(
+      slug,
+      (page - 1) * limit,
+      limit + 1,
     );
+    const result = storefrontCategoryPage(response, slug, limit);
+    const products = this.rememberProducts(result.products);
     const seen = new Set<number>();
     const unique = products.filter((product) => {
       if (product.id === undefined) {
@@ -617,7 +644,7 @@ export class NemligClient {
       seen.add(product.id);
       return true;
     });
-    return { products: unique, page, hasNext: products.length === limit };
+    return { products: unique, page, hasNext: result.hasNext };
   }
 
   async getCart(signal?: AbortSignal): Promise<Basket> {
@@ -630,6 +657,112 @@ export class NemligClient {
         "Get basket",
       ),
     );
+  }
+
+  private acquireBasketMutation(): Disposable {
+    if (this.basketMutationInProgress) {
+      throw new BasketPreflightError(
+        "Another basket change is already in progress.",
+      );
+    }
+    this.basketMutationInProgress = true;
+    return {
+      [Symbol.dispose]: () => {
+        this.basketMutationInProgress = false;
+      },
+    };
+  }
+
+  private async readEditableBasket(signal?: AbortSignal) {
+    const account = this.providerIdentity();
+    if (!asId(account)) {
+      throw new BasketPreflightError("A verified Nemlig account is required.");
+    }
+    const generation = this.sessionGeneration;
+    const raw = await this.json(
+      `${API_BASE_URL}/basket/GetBasket`,
+      { signal },
+      "Review basket",
+    );
+    this.verifyBasketSession(account, generation);
+    return { account, generation, ...inspectEditableBasket(raw) };
+  }
+
+  private verifyBasketSession(account: string, generation: number): void {
+    if (
+      !this.loggedIn ||
+      this.userId !== account ||
+      this.sessionGeneration !== generation
+    ) {
+      throw new BasketSnapshotChangedError();
+    }
+  }
+
+  async reviewBasketEdit(
+    edit: BasketEdit,
+    signal?: AbortSignal,
+  ): Promise<BasketEditReview> {
+    const snapshot = await this.readEditableBasket(signal);
+    return {
+      basket: snapshot.basket,
+      fingerprint: reviewedFingerprint(edit, snapshot, snapshot.account),
+    };
+  }
+
+  async applyReviewedBasketEdit(
+    edit: BasketEdit,
+    fingerprint: string,
+    signal?: AbortSignal,
+  ): Promise<Basket> {
+    const action = { ...edit };
+    using _lease = this.acquireBasketMutation();
+    this.requireLogin("apply a reviewed basket edit");
+    throwIfAborted(signal);
+    try {
+      await this.ensureAntiForgery(signal);
+    } catch {
+      throw new BasketPreflightError(
+        "Anti-forgery state could not be prepared; no provider write was sent.",
+      );
+    }
+    const before = await this.readEditableBasket(signal);
+    if (reviewedFingerprint(action, before, before.account) !== fingerprint) {
+      throw new BasketSnapshotChangedError();
+    }
+    throwIfAborted(signal);
+    this.verifyBasketSession(before.account, before.generation);
+    const clear = action.kind === "clear";
+    const request = clear
+      ? { body: "", headers: { "Content-Type": "text/plain;charset=UTF-8" } }
+      : {
+          body: JSON.stringify({
+            ProductId: action.productId,
+            quantity: 0,
+            AffectPartialQuantity: true,
+            disableQuantityValidation: false,
+          }),
+        };
+    try {
+      await this.json(
+        clear
+          ? `${API_BASE_URL}/basket/ClearBasket`
+          : `${API_BASE_URL}/basket/AddToBasket`,
+        { method: "POST", redirect: "error", signal, ...request },
+        "Apply reviewed basket edit",
+        false,
+        false,
+        true,
+        true,
+      );
+      const after = await this.readEditableBasket(signal);
+      this.verifyBasketSession(before.account, before.generation);
+      verifyEditedBasket(action, before, after);
+      return after.basket;
+    } catch {
+      throw new NemligError(
+        "Basket edit outcome is unconfirmed. Inspect your basket before taking further action. Do not retry.",
+      );
+    }
   }
 
   providerIdentity(): string {
@@ -819,6 +952,7 @@ export class NemligClient {
     listId: number,
     signal?: AbortSignal,
   ): Promise<void> {
+    using _lease = this.acquireBasketMutation();
     this.requireLogin("add a shopping list to the basket");
     if (!Number.isSafeInteger(listId) || listId < 1) {
       throw new NemligError("Shopping list ID must be positive.");
@@ -844,6 +978,7 @@ export class NemligClient {
     quantity = 1,
     expectedBasket?: Basket,
   ): Promise<Basket> {
+    using _lease = this.acquireBasketMutation();
     if (!this.loggedIn) {
       throw new BasketPreflightError("Must be logged in to add items.");
     }
@@ -973,6 +1108,7 @@ export class NemligClient {
       beforeDispatch?: (baseline: Basket) => Promise<void>;
     } = {},
   ): Promise<Basket> {
+    using _lease = this.acquireBasketMutation();
     const requested = parseBasketAdditions(additions);
     this.requireLogin("add items to the basket");
     const products = [...requested].map(([productId, quantity]) => ({
@@ -1169,7 +1305,6 @@ export class NemligClient {
     this.correlationId = undefined;
     this.timeslot = this.defaultTimeslot;
     this.timeslotId = 0;
-    this.deliveryZoneId = 1;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
   }
@@ -1226,9 +1361,6 @@ export class NemligClient {
         signal,
       ),
     );
-    this.productTimestamp =
-      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
-      DEFAULT_PRODUCT_TIMESTAMP;
     this.correlationId =
       asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
     const user = asRecord(
@@ -1245,50 +1377,39 @@ export class NemligClient {
     }
     const delivery = asRecord(
       await this.optionalJson(
-        `${API_BASE_URL}/Order/DeliverySpot`,
-        "Get delivery spot",
+        `${API_BASE_URL}/basket/GetBasket`,
+        "Get catalogue delivery context",
         false,
         signal,
       ),
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
-    this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
-    this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
+    this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
+    this.productTimestamp =
+      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
+      DEFAULT_PRODUCT_TIMESTAMP;
   }
 
-  private async searchGateway(
+  private async searchStorefront(
     query: string,
     limit: number | undefined,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    if (!this.accessToken || !this.productTimestamp) {
-      return [];
-    }
+    const take = limit ?? 20;
     const params = new URLSearchParams({
       query,
       skip: "0",
-      recipeCount: "0",
-      timestamp: this.productTimestamp,
-      timeslotUtc: this.timeslot,
-      deliveryZoneId: String(this.deliveryZoneId),
-      includeFavorites: this.userId ?? "0",
-      TimeSlotId: String(this.timeslotId),
+      take: String(take),
+      timeslotId: String(this.timeslotId),
     });
-    params.set("take", String(limit ?? 20));
-    const response = asRecord(
-      await this.json(
-        `${SEARCH_GATEWAY_URL}/search?${params}`,
-        { signal },
-        "Search products",
-        true,
-        true,
-      ),
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/v2/web/search/products?${params}`,
+      { signal },
+      "Search products",
+      true,
+      true,
     );
-    const products = response.Products;
-    return normalizeProducts(
-      Array.isArray(products) ? products : asRecord(products).Products,
-      limit,
-    );
+    return normalizeStorefrontSearch(response, limit);
   }
 
   private rememberProducts(products: Product[], hydrated = false): Product[] {
@@ -1317,39 +1438,82 @@ export class NemligClient {
     return products;
   }
 
+  private fetchCategory(
+    path: string,
+    skip: number,
+    take: number,
+    signal?: AbortSignal,
+  ) {
+    const params = new URLSearchParams({
+      categoryPath: path,
+      timeslotId: String(this.timeslotId),
+      skip: String(skip),
+      take: String(take),
+    });
+    return this.json(
+      `${PRODUCT_BFF_URL}/v3/web/categories/products?${params}`,
+      { signal },
+      "Browse department",
+      true,
+      true,
+    );
+  }
+
+  private async resolveCategoryPath(
+    path: string,
+    signal?: AbortSignal,
+  ): Promise<string | undefined> {
+    let url = new URL(path, "https://www.nemlig.com");
+    if (!isStorefrontPage(url)) {
+      return undefined;
+    }
+    if (!url.pathname.startsWith("/kategori/")) {
+      const timeout = AbortSignal.timeout(NEMLIG_API_ATTEMPT_TIMEOUT_MS);
+      const response = await this.fetcher(url.toString(), {
+        method: "HEAD",
+        redirect: "manual",
+        credentials: "omit",
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      });
+      if (response.status === 401) {
+        throw new NemligError("Get category failed (HTTP 401).", 401, "http");
+      }
+      const location = response.headers.get("location");
+      if (!location || ![301, 302, 303, 307, 308].includes(response.status)) {
+        return undefined;
+      }
+      url = new URL(location, url);
+    }
+    if (!isStorefrontPage(url)) {
+      return undefined;
+    }
+    return /^\/kategori\/([a-z0-9-]+(?:\/[a-z0-9-]+)*)\/?$/u.exec(
+      url.pathname,
+    )?.[1];
+  }
+
   private async productsByCategory(
     path: string,
-    limit: number | undefined,
-    page = 1,
+    limit = 20,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    const pageUrl = new URL(path, "https://www.nemlig.com");
-    if (pageUrl.origin !== "https://www.nemlig.com") {
+    try {
+      throwIfAborted(signal);
+      const category = await this.resolveCategoryPath(path, signal);
+      if (!category) {
+        return [];
+      }
+      const result = await this.fetchCategory(category, 0, limit, signal);
+      return storefrontCategoryPage(result, category, limit, true).products;
+    } catch (error) {
+      if (signal?.aborted) {
+        throw abortReason(signal);
+      }
+      if (error instanceof NemligError && error.status === 401) {
+        throw error;
+      }
       return [];
     }
-    pageUrl.searchParams.set("GetAsJson", "1");
-    const categoryPage = asRecord(
-      await this.optionalJson(
-        pageUrl.toString(),
-        "Get category",
-        false,
-        signal,
-      ),
-    );
-    const group = asRecords(categoryPage.content).find(
-      (entry) => entry.ProductGroupId,
-    )?.ProductGroupId;
-    if (typeof group !== "string" && typeof group !== "number") {
-      return [];
-    }
-
-    return this.productsByGroup(
-      group,
-      limit,
-      "Get category products",
-      page,
-      signal,
-    );
   }
 
   private async productsByGroup(
@@ -1590,7 +1754,15 @@ export type ShoppingClient = Pick<
   | "getCart"
   | "addToCart"
 > &
-  Partial<Pick<NemligClient, "addManyToCart" | "createShoppingListFromBasket">>;
+  Partial<
+    Pick<
+      NemligClient,
+      | "addManyToCart"
+      | "createShoppingListFromBasket"
+      | "reviewBasketEdit"
+      | "applyReviewedBasketEdit"
+    >
+  >;
 
 export type ShoppingListClient = Pick<
   NemligClient,
