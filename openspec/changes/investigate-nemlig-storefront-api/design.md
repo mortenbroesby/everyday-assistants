@@ -85,3 +85,9 @@ The existing quick suggestion route returned three named category URLs and three
 The authenticated client issued two independent GET requests to web/productDetails/{id}, both with the current basket slot and both HTTP 200. The second call used getFreshProduct after ordinary hydration. Identity, single-unit price, pack, brand, description, declaration, attributes and image were present for the sample milk. The gateway request uses the bearer session without forwarding website cookies. An exact HTTP 404 still means missing product. Other errors and ID mismatches remain ambiguous.
 
 The storefront bundle explicitly classifies SoldOut and Discontinued as unavailable. Synthetic fixtures verified these states, Available with quantity zero, and an unknown future state. No live out-of-stock claim is based on those fixtures. Unit-price fixtures preserve 7995 as 79.95 DKK per pack and 39975 as 399.75 DKK/kg even with a separate multibuy campaign. The client, normalization and review suites exercise exact lookup, cache bypass, cancellation, unknown availability and pre-dispatch validation. Reverting the detail migration commit restores the legacy exact route independently of v2 search.
+
+## Authenticated favorites comparison
+
+In the same authenticated session, a read of the storefront page for /favoritter returned product-list sections. All cards checked carried isFavorite=true. Comparing unique product IDs against the legacy client's complete list found 109 IDs only in the legacy result and 36 only in the storefront page. Only one of five IDs overlapped at each of the first two matching page positions. Counts are aggregate; account records and individual IDs are omitted.
+
+Decision: retain the current favorites client pending verification of the section-level navigation links under /favoritter. Directly flattening the page would change membership as well as ordering. Neither result independently proves the user's complete set of favorites.
