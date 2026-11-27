@@ -22,7 +22,7 @@ import {
   type LocalBasketStorageAccess,
 } from "./local-basket-storage.js";
 
-const product = (id: number): Product => ({
+const product = (id: number): Product & { id: number } => ({
   id,
   name: `Product ${id}`,
   price: 5,
