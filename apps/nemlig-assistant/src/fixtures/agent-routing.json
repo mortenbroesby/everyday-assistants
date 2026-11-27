@@ -2,11 +2,29 @@
   {
     "id": "display-explicit-draft-en",
     "prompt": "Show my draft",
-    "expectedTool": "show_product_review"
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded draft with both exact identities."
   },
   {
     "id": "display-explicit-draft-da",
     "prompt": "Vis mig listen",
-    "expectedTool": "show_product_review"
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded draft with both exact identities."
+  },
+  {
+    "id": "display-text-only-en",
+    "prompt": "In plain text, explain what a temporary draft is. Do not open or change it.",
+    "context": "explicit-draft",
+    "expectedTool": null,
+    "expectedOutcome": "Explain without calling a display or mutation tool."
+  },
+  {
+    "id": "display-ambiguous-en",
+    "prompt": "Show me the list.",
+    "context": "none",
+    "expectedTool": null,
+    "expectedOutcome": "Clarify which list without guessing a draft or creating one."
   }
 ]

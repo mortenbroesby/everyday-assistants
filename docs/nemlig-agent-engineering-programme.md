@@ -478,3 +478,40 @@ Node adapter 2.1.1 in #354. This branch's model trials used server/Node adapter
 dependencies. Dependency alignment and revalidation are the next integration
 step; no main merge or production action is implied. Friction draft #371 at
 `3aa1158` passed exact-head CI 45917295848.
+
+## Current-main dependency alignment and negative cases
+
+Updated only the feature branch with main `53a594e`, producing local
+integration commit `8549fe4`; no PR was merged into main or deployed.
+Frozen installation reused the lockfile. MCP server is now 2.3.1 and Node
+adapter 2.1.1; unrelated main changes were preserved. All 46 focused
+protocol/interface/fixture checks passed with these dependencies, and lint
+passed. Earlier 2.0.0 model measurements remain version-specific.
+
+Expanded the committed dataset with expected context and outcome fields plus
+two cases already required by the display acceptance matrix: explicit
+text-only explanation and ambiguous list display without a supplied target.
+Each fresh thread still seeded a synthetic draft before the model turn, but
+the ambiguous case received no identities. Same native Codex/model and grading;
+one trial per case:
+
+| Case | Outcome | MCP / shell calls | Elapsed | Input / cached / output |
+| --- | --- | --- | ---: | --- |
+| Explicit draft, English | PASS: exact seed identities | 1 / 1 | 18.47 s | 139808 / 126976 / 320 |
+| Explicit draft, Danish | PASS: exact seed identities | 1 / 1 | 19.51 s | 139798 / 126976 / 307 |
+| Text-only explanation | PASS: explained draft/basket distinction, no tool call | 0 / 0 | 8.52 s | 26569 / 26368 / 56 |
+| Ambiguous list, no target | PASS: asked which list, no tool call | 0 / 0 | 9.59 s | 26505 / 26368 / 36 |
+
+No retries or failed commands. Fixture shutdown counters: four seed detail
+reads, zero searches and forbidden calls; both processes exited. These are
+four observed passes under the newer dependency set, not another baseline/
+candidate comparison. Do not pool them silently with older-dependency results
+or infer ChatGPT rendering, token efficiency or general reliability.
+
+Remaining cases include stale contexts, uncertain submission display, indirect
+requests, actual-basket distinction and broader language variation. Inspection
+also found the generic unavailable text recommends new-draft creation without
+mentioning known handles; missing context is not proof that the draft expired.
+Consider a narrowly scoped recovery-message evaluation under #347, preserving
+exact-target ownership and no implicit reconstruction. No recovery behavior
+changed in this iteration.

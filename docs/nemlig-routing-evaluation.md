@@ -60,16 +60,18 @@ switch to an API-key backend or an unbounded paid run.
    identities. Seed setup is not a model-selected action.
 4. Use a case from
    [agent-routing.json](../apps/nemlig-assistant/src/fixtures/agent-routing.json).
-   The complete user message is exactly:
+   For context=explicit-draft, the complete user message is exactly:
    `Active temporary draft: draft_id=<seeded ID>, review_context_id=<seeded ID>.`
-   followed by a newline and the case prompt. Do not add advice about which
+   followed by a newline and the case prompt. For context=none, send only
+   the prompt; do not reveal the seeded draft identities. Do not add advice about which
    tool, skill or arguments the model should use.
 5. Start one native model turn. Record completed tool/command items, exact
    arguments, results, final text, native final cumulative usage and elapsed
    time. Measure elapsed from turn submission through completion, excluding
    startup/seeding. Bound observation at 150 seconds; on expiry interrupt and
    record incomplete, never silently restart a live turn.
-6. Finish each case in a fresh thread. For the initial comparison use order
+6. Finish each case in a fresh thread. The dataset also includes text-only and ambiguous-target negatives; grade
+   their expectedOutcome rather than requiring a returned draft. For the initial comparison use order
    English, Danish, Danish, English per condition, with a four-turn cap.
    Record failed trials as well as successful ones. Keep differing skill
    activation, cache and context as potential confounders.
@@ -81,7 +83,8 @@ switch to an API-key backend or an unbounded paid run.
 
 Grade each dimension independently:
 
-- Selection: the selected MCP tool matches expectedTool.
+- Selection: the selected MCP tool matches expectedTool. When expectedTool is null,
+  no MCP call is expected; grade the text against expectedOutcome separately.
 - Arguments: both identities equal the independently saved seed values.
 - Outcome: returned identities match the seed, with the seeded one-product
   quantity-one draft. An unavailable result or fabricated textual list fails.
