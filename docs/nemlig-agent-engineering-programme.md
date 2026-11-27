@@ -566,3 +566,35 @@ the final fixture check passed again after preserving the UI-recognized
 draft-unavailable wording. Lint and diff checks passed. Earlier dependency-
 aligned head a249960 passed full CI 45918835537; this new head requires its
 own exact-head result. No new durable schema, dependency or agent runtime.
+
+## Real service TTL in the synthetic fixture
+
+The earlier invalid UUID cases did not simulate expiry. The fixture now offers
+an opt-in --expired-draft mode using ProductReviewService's existing injected
+clock: create one valid synthetic draft, retain only its exact handles in the
+readiness record, then advance the service clock three hours past its two-hour
+idle TTL. The normal mode is unchanged. No new control endpoint, dependency,
+production flag or model loop was introduced.
+
+The new fixture test first failed because the mode did not exist. Both modes
+then passed exact boundary/counter checks. A mutant removing the clock advance
+made the expired case return a valid draft and fail the rejection assertion;
+restoring the advance passed. Thus the result depends on TTL expiry, not merely
+a fabricated or incorrectly owned handle. Type checking exposed an optional
+Product.id and an untyped argv callback; a fixed synthetic ID constant and
+explicit callback annotation resolved them. App/UI type checks and lint passed.
+
+Native Codex gpt-6-astra, same version/dependencies as the preceding batch,
+two fresh threads using the once-valid expired handles:
+
+| Prompt | Exact-target rejection / effects | Recovery explanation | MCP / shell calls | Elapsed | Input / cached / output |
+| --- | --- | --- | --- | ---: | --- |
+| English | PASS; no fallback/recreation | Reported unavailable, no unsupported next action | 1 / 1 | 18.30 s | 139287 / 112640 / 294 |
+| Danish | PASS; no fallback/recreation | Suggested reopening the expired draft for a new reference; unsupported in this fixture | 1 / 1 | 22.90 s | 137077 / 125952 / 305 |
+
+Do not count the Danish journey as fully successful merely because its tool
+selection and safety passed. The remaining recovery-advice failure is preserved;
+do not respond automatically with another instruction. This is two observations,
+not a general language comparison. Fixture shutdown: one initial seed detail
+read, zero searches/forbidden operations. Native client/server exited. No live
+provider, real basket, ChatGPT rendering or uncertain-submission state was tested.

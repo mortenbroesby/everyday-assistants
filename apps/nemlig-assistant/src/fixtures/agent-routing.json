@@ -40,5 +40,19 @@
     "context": "invalid-draft",
     "expectedTool": "show_product_review",
     "expectedOutcome": "Report the explicit target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-expired-draft-en",
+    "prompt": "Show my draft",
+    "context": "expired-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the expired exact target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-expired-draft-da",
+    "prompt": "Vis mig listen",
+    "context": "expired-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the expired exact target unavailable without fallback, recreation or submission."
   }
 ]
