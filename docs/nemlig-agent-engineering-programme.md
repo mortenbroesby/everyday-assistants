@@ -404,3 +404,39 @@ suite was then located and run separately. The first candidate observer exited
 before the fixture wrote its ready URL (zero model turns); after confirming
 server readiness, the observer was restarted. These are harness setup friction,
 not model failures. Latest exact-head CI remains separate.
+
+## Reproducible fixture and grading handoff
+
+The temporary probe is now preserved as
+`apps/nemlig-assistant/scripts/agent-routing-fixture.ts`, using only existing
+SDK dependencies, loopback, injected synthetic data and throwing provider/
+credential/fetch boundaries. It does not own a model loop or start inference.
+The two prompts are versioned in `src/fixtures/agent-routing.json`; the
+[native evaluation runbook](nemlig-routing-evaluation.md) specifies readiness,
+seeding, native configuration, exact message construction, observation bounds,
+grading, counters, shutdown and known confounders.
+
+The fixture integration check confirms exact seeded readback, unavailable when
+handles are omitted, and rejection of a forbidden basket-read attempt. That
+deliberate check expects one forbidden call; model trials still require zero.
+Regraded all eight saved synthetic trial traces against the identities in the
+original seeded-context user message, independently of returned output:
+baseline 1/4, candidate 3/4 unchanged. No additional model trials were needed.
+
+Implementation checks first exposed missing explicit Node imports under the
+repository's JavaScript lint policy and an uncleared test deadline keeping the
+test process alive for 25 seconds. Added the imports and cleared the deadline
+after child exit. These were test-harness defects, not production behavior or
+new model-routing failures. The fixture and observer processes are stopped.
+
+Final fixture check passed in 2.79 seconds including process startup/shutdown;
+lint and diff checks passed. A deliberate mutant replacing the throwing basket
+reader with an empty-result function failed on the missing forbidden-call
+counter, and restoring the guard passed. This validates that the check detects
+an accidentally enabled provider path. Prior description head `02e702c`
+passed full exact-head CI run 45917587441; the new harness head requires its
+own CI result.
+
+The first commit gate rejected the fixture as unreachable because the test
+launches it by child-process path. Added the explicit package script
+`eval:routing:fixture` and updated the runbook rather than suppressing Fallow.

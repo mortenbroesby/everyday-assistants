@@ -1,0 +1,12 @@
+[
+  {
+    "id": "display-explicit-draft-en",
+    "prompt": "Show my draft",
+    "expectedTool": "show_product_review"
+  },
+  {
+    "id": "display-explicit-draft-da",
+    "prompt": "Vis mig listen",
+    "expectedTool": "show_product_review"
+  }
+]
