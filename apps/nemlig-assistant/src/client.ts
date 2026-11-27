@@ -14,6 +14,7 @@ import {
   normalizeDepartments,
   normalizeProducts,
   normalizeStorefrontSearch,
+  normalizeStorefrontDetail,
   normalizeShoppingList,
   normalizeShoppingListOverviewPage,
   type Basket,
@@ -251,7 +252,6 @@ export class NemligClient {
   private userId?: string;
   private productTimestamp?: string;
   private correlationId?: string;
-  private deliveryZoneId = 1;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
   private timeslot: string;
@@ -398,12 +398,7 @@ export class NemligClient {
       throw new NemligError("Search limit must be positive.");
     }
     throwIfAborted(signal);
-    if (!this.productTimestamp || !this.timeslotId) {
-      await this.refreshSession(signal);
-    }
-    if (!this.timeslotId) {
-      throw new NemligError("Search requires a current delivery slot.");
-    }
+    await this.ensureCatalogueSlot(signal);
 
     const primary = this.rememberProducts(
       await this.searchStorefront(query, limit, signal),
@@ -469,22 +464,33 @@ export class NemligClient {
     }
   }
 
+  private async ensureCatalogueSlot(signal?: AbortSignal): Promise<void> {
+    if (!this.productTimestamp || !this.timeslotId) {
+      await this.refreshSession(signal);
+    }
+    if (!this.timeslotId) {
+      throw new NemligError(
+        "Catalogue lookup requires a current delivery slot.",
+      );
+    }
+  }
+
   private async fetchExactProduct(
     productId: number,
     signal?: AbortSignal,
   ): Promise<Product> {
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/${this.deliveryZoneId}/${this.userId ?? "0"}/Products/Get`;
+    await this.ensureCatalogueSlot(signal);
+    const endpoint = `${PRODUCT_BFF_URL}/web/productDetails/${productId}`;
     let response: Record<string, unknown>;
     try {
       response = asRecord(
         await this.json(
-          `${endpoint}?${new URLSearchParams({ id: String(productId) })}`,
+          `${endpoint}?${new URLSearchParams({ timeslot: String(this.timeslotId) })}`,
           { signal },
           `Get product ${productId}`,
+          true,
+          true,
         ),
       );
     } catch (error) {
@@ -493,16 +499,7 @@ export class NemligClient {
       }
       throw error;
     }
-    const payload =
-      asRecord(response.Product).Id === undefined
-        ? response
-        : asRecord(response.Product);
-    const product = normalizeProducts([payload], 1)[0];
-    if (!product || product.id !== productId) {
-      throw new NemligError(
-        `Product ${productId} could not be resolved exactly.`,
-      );
-    }
+    const product = normalizeStorefrontDetail(response, productId);
     return this.rememberProducts([product], true)[0]!;
   }
 
@@ -1173,7 +1170,6 @@ export class NemligClient {
     this.correlationId = undefined;
     this.timeslot = this.defaultTimeslot;
     this.timeslotId = 0;
-    this.deliveryZoneId = 1;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
   }
@@ -1254,7 +1250,6 @@ export class NemligClient {
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
     this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
-    this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
     this.productTimestamp =
       asString(settings.CombinedProductsAndSitecoreTimestamp) ??
       DEFAULT_PRODUCT_TIMESTAMP;

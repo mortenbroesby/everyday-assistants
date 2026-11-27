@@ -283,17 +283,40 @@
         }
       }
     },
-    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/Get": {
+    "/productbff/api/web/productDetails/{productId}": {
       "get": {
         "operationId": "getProduct",
+        "tags": ["Catalogue"],
+        "summary": "Get an exact storefront product in the current delivery slot",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.fetchExactProduct", "guest and authenticated exact reads 2026-11-27"]
+        },
+        "parameters": [
+          { "name": "productId", "in": "path", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "timeslot", "in": "query", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": { "description": "Exact storefront product; price and pricePerUnit.value are minor currency units.", "content": { "application/json": { "schema": { "type": "object", "required": ["product"], "properties": { "product": { "type": "object", "required": ["id", "title"], "additionalProperties": true } }, "additionalProperties": true } } } },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/Get": {
+      "get": {
+        "operationId": "legacyGetProduct",
         "tags": ["Catalogue"],
         "summary": "Get one exact product with rich detail",
         "security": [{ "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.fetchExactProduct", "first-party main.js bundle and read-only fixture 2026-09-13"]
+          "evidence": ["paired legacy detail reads 2026-11-27", "first-party main.js bundle and read-only fixture 2026-09-13"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/ProductTimestamp" },

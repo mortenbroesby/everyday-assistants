@@ -289,17 +289,30 @@ const dkkFromMinorUnits = (value: unknown, currency: unknown) =>
     ? value / 100
     : undefined;
 
+const storefrontAvailability = new Map<unknown, boolean>([
+  ["Available", true],
+  ["SoldOut", false],
+  ["Discontinued", false],
+]);
+const storefrontPriceUnits = new Map<unknown, string>([
+  ["Volume", "Ltr."],
+  ["Weight", "Kg."],
+  ["Pieces", "Stk."],
+]);
+
 function storefrontProductFields(product: Record<string, unknown>) {
   if (!asId(product.id) || !asString(product.title)?.trim()) {
     throw new NemligError(
-      "Invalid search response: incomplete product identity.",
+      "Invalid catalogue response: incomplete product identity.",
     );
   }
   const availability = asRecord(product.availability).type;
-  const available = availability === "Available" ? true : undefined;
+  const available = storefrontAvailability.get(availability);
   const unitPrice = asRecord(product.pricePerUnit);
   const tracking = asRecord(product.tracking);
-  const unit = asString(product.unitOfMeasure);
+  const unit =
+    asString(product.unitOfMeasure) ??
+    storefrontPriceUnits.get(unitPrice.unitType);
   return {
     Id: product.id,
     Name: product.title,
@@ -325,6 +338,71 @@ function storefrontProductFields(product: Record<string, unknown>) {
         ? true
         : undefined,
   };
+}
+
+function storefrontDeclaration(value: unknown): string {
+  return asRecords(value)
+    .slice(0, 20)
+    .flatMap((section) => {
+      const rows = Array.isArray(section.tableItems)
+        ? section.tableItems.slice(0, 40)
+        : [];
+      return [
+        section.title,
+        section.content,
+        ...[section.tableHeader, ...rows].map((row) =>
+          Array.isArray(row)
+            ? row
+                .slice(0, 6)
+                .map((cell) => boundedText(cell, 300))
+                .filter(Boolean)
+                .join(" ")
+            : undefined,
+        ),
+      ]
+        .map((part) => asString(part)?.slice(0, 4000))
+        .filter(Boolean);
+    })
+    .join("\n")
+    .slice(0, 4000);
+}
+
+export function normalizeStorefrontDetail(
+  response: unknown,
+  expectedId: number,
+): Product {
+  const item = asRecord(asRecord(response).product);
+  if (asId(item.id) !== expectedId) {
+    throw new NemligError(
+      `Product ${expectedId} could not be resolved exactly.`,
+    );
+  }
+  const crumbs = asRecords(item.breadcrumbs);
+  const fields = storefrontProductFields(item);
+  const general = asString(item.detailGeneral)?.slice(0, 4000);
+  return normalizeProducts(
+    [
+      {
+        ...fields,
+        PrimaryImage: asRecords(item.images)[0]?.source ?? fields.PrimaryImage,
+        Category: crumbs[0]?.title ?? fields.Category,
+        SubCategory:
+          crumbs.length > 2
+            ? crumbs[crumbs.length - 2]?.title
+            : fields.SubCategory,
+        Text: item.detailDescription,
+        DeclarationLabel: storefrontDeclaration(item.detailDeclaration),
+        Attributes: general
+          ?.split(/\n+/u)
+          .slice(0, 20)
+          .flatMap((line) => {
+            const pair = /^\*\*([^*]+?):\*\*\s*(.+)$/u.exec(line);
+            return pair ? [{ Key: pair[1], Value: pair[2] }] : [];
+          }),
+      },
+    ],
+    1,
+  )[0]!;
 }
 
 export function normalizeStorefrontSearch(

@@ -1093,15 +1093,21 @@ test("exact product lookup uses current session context and returns only the req
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match:
-        "/webapi/product-stamp/2026083115-60-240/9/42/Products/Get\\?id=424242",
+      match: "/productbff/api/web/productDetails/424242\\?timeslot=7",
       inspect: (_url, init) => {
         const headers = new Headers(init?.headers);
         assert.equal(init?.method, undefined);
         assert.equal(headers.get("authorization"), "Bearer token-value");
-        assert.equal(headers.get("platform"), "web");
+        assert.equal(headers.has("cookie"), false);
       },
-      response: json({ Id: 424242, Name: "Test Product", Price: 12.34 }),
+      response: json({
+        product: {
+          id: "424242",
+          title: "Test Product",
+          price: 1234,
+          currency: "DKK",
+        },
+      }),
     },
   ];
   assert.equal(
@@ -1124,12 +1130,15 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
       }),
     },
     {
-      match: "/Products/Get\\?id=424242",
+      match: "/web/productDetails/424242\\?timeslot=7",
       response: json({
-        Id: 424242,
-        Name: "Detailed",
-        Price: 13.45,
-        Text: "<p>Current detail</p>",
+        product: {
+          id: "424242",
+          title: "Detailed",
+          price: 1345,
+          currency: "DKK",
+          detailDescription: "<p>Current detail</p>",
+        },
       }),
     },
     {
@@ -1167,8 +1176,10 @@ test("fresh exact product lookup bypasses a previously observed product", async 
       }),
     },
     {
-      match: "/Products/Get\\?id=424242",
-      response: json({ Id: 424242, Name: "Current", Price: 13.45 }),
+      match: "/web/productDetails/424242\\?timeslot=7",
+      response: json({
+        product: { id: 424242, title: "Current", price: 1345, currency: "DKK" },
+      }),
     },
   ];
   const client = new NemligClient(mockFetch(requests));
@@ -1187,14 +1198,14 @@ test("exact product reads retry network failure, preserve cancellation, and keep
     if (attempts === 1) {
       throw new TypeError("offline");
     }
-    return json({ Id: 7, Name: "Recovered" });
+    return json({ product: { id: 7, title: "Recovered" } });
   }) as typeof fetch);
   Object.assign(client, {
     accessToken: "token",
     productTimestamp: "stamp",
     userId: "42",
     timeslot: "slot",
-    deliveryZoneId: 9,
+    timeslotId: 7,
   });
   assert.equal((await client.getProduct(7)).name, "Recovered");
   assert.equal(attempts, 2);
@@ -1228,7 +1239,10 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
   const client = new NemligClient(
     mockFetch([
       ...sessionRequests(),
-      { match: "/Products/Get\\?id=7", response: json({}, { status: 404 }) },
+      {
+        match: "/web/productDetails/7\\?timeslot=7",
+        response: json({}, { status: 404 }),
+      },
     ]),
   );
   await assert.rejects(client.getProduct(0), /Product ID must be positive/);
@@ -1247,8 +1261,8 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
     mockFetch([
       ...sessionRequests(),
       {
-        match: "/Products/Get\\?id=7",
-        response: json({ Id: 8, Name: "Other product" }),
+        match: "/web/productDetails/7\\?timeslot=7",
+        response: json({ product: { id: 8, title: "Other product" } }),
       },
     ]),
   );

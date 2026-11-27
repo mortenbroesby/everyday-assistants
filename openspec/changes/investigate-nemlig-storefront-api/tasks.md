@@ -7,8 +7,8 @@
 ## 2. Compare catalog behavior
 
 - [x] 2.1 Pair search and detail reads under identical delivery context. Compare identity, ranking, quantity, unit price, discounts and availability.
-- [ ] 2.2 Check Danish queries, pagination, empty results and unavailable products. Compare request counts and bootstrap dependencies.
-- [ ] 2.3 Trace fresh-product validation into review and pre-add callers. Identify fields whose absence must fail closed and test candidate mappings against sanitized fixtures.
+- [x] 2.2 Check Danish queries, pagination, empty results and unavailable products. Compare request counts and bootstrap dependencies.
+- [x] 2.3 Trace fresh-product validation into review and pre-add callers. Identify fields whose absence must fail closed and test candidate mappings against sanitized fixtures.
 
 ## 3. Assess adjacent journeys
 
@@ -26,7 +26,7 @@
 
 - [x] 5.1 Resolve delivery context for guest and authenticated search. Use scoped, bounded reads and test missing context and cancellation.
 - [x] 5.2a Switch product search to v2. Verify guest and authenticated delivery context, result envelopes, typed listings and minor-unit prices.
-- [ ] 5.2b Switch exact lookup to the storefront detail endpoint with fixture-backed mappings for price, pack, availability, promotions, unknown fields and exact identity.
+- [x] 5.2b Switch exact lookup to the storefront detail endpoint with fixture-backed mappings for price, pack, availability, promotions, unknown fields and exact identity.
 - [ ] 5.3 Switch department listing and browsing to menu and v3 categories after verifying category ID compatibility and pagination. Preserve existing quick suggestions.
 - [ ] 5.4 Verify favorite membership and pagination under the authorized account, then migrate if the replacement preserves them.
 - [ ] 5.5 Update the provider manifest, run CLI and hosted read acceptance, and document rollback per changed adapter. Obtain explicit approval before any live basket or other external data change.
