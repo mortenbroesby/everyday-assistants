@@ -281,6 +281,72 @@ const assertUniqueShoppingListOverviewIds = (
   }
 };
 
+const dkkFromMinorUnits = (value: unknown, currency: unknown) =>
+  currency === "DKK" &&
+  typeof value === "number" &&
+  Number.isSafeInteger(value) &&
+  value >= 0
+    ? value / 100
+    : undefined;
+
+function storefrontProductFields(product: Record<string, unknown>) {
+  if (!asId(product.id) || !asString(product.title)?.trim()) {
+    throw new NemligError(
+      "Invalid search response: incomplete product identity.",
+    );
+  }
+  const availability = asRecord(product.availability).type;
+  const available = availability === "Available" ? true : undefined;
+  const unitPrice = asRecord(product.pricePerUnit);
+  const tracking = asRecord(product.tracking);
+  const unit = asString(product.unitOfMeasure);
+  return {
+    Id: product.id,
+    Name: product.title,
+    Brand: product.brandName ?? tracking.item_brand,
+    Description: product.description,
+    Price: dkkFromMinorUnits(product.price, product.currency),
+    UnitPriceCalc: dkkFromMinorUnits(unitPrice.value, product.currency),
+    UnitPriceLabel: unit ? `kr./${unit}` : undefined,
+    Category: tracking.item_category,
+    SubCategory: tracking.item_category2,
+    PrimaryImage: asRecord(product.image).source,
+    Labels: asRecords(product.certificates).map(
+      (certificate) => certificate.text,
+    ),
+    Availability: {
+      IsDeliveryAvailable: available,
+      IsAvailableInStock: available,
+    },
+    DiscountItem:
+      typeof product.priceOriginal === "number" &&
+      typeof product.price === "number" &&
+      product.priceOriginal > product.price
+        ? true
+        : undefined,
+  };
+}
+
+export function normalizeStorefrontSearch(
+  value: unknown,
+  limit: number,
+): Product[] {
+  const { items } = asRecord(asRecord(value).searchResult);
+  if (!Array.isArray(items)) {
+    throw new NemligError("Invalid search response: missing items.");
+  }
+  const products = items.flatMap((item) => {
+    const row = asRecord(item);
+    if (!asString(row.type)) {
+      throw new NemligError("Invalid search response: missing item type.");
+    }
+    return row.type === "product"
+      ? [storefrontProductFields(asRecord(row.product))]
+      : [];
+  });
+  return normalizeProducts(products, limit);
+}
+
 export function normalizeProducts(value: unknown, limit?: number): Product[] {
   const records =
     limit === undefined ? asRecords(value) : asRecords(value).slice(0, limit);

@@ -184,7 +184,7 @@
         }
       }
     },
-    "/searchgateway/api/search": {
+    "/productbff/api/v2/web/search/products": {
       "get": {
         "operationId": "searchProducts",
         "tags": ["Catalogue"],
@@ -192,10 +192,42 @@
         "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
         "security": [{ "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.searchGateway", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["NemligClient.searchStorefront", "paired guest and authenticated catalog reads 2026-11-27"]
+        },
+        "parameters": [
+          { "$ref": "#/components/parameters/SearchQuery" },
+          { "name": "take", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } },
+          { "name": "skip", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },
+          { "name": "timeslotId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shallow product-card search results; rich product text is normally absent.",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object", "required": ["searchResult"], "properties": { "searchResult": { "type": "object", "required": ["items"], "properties": { "items": { "type": "array", "items": { "type": "object", "required": ["type"], "additionalProperties": true } } } } }, "additionalProperties": true }
+              }
+            }
+          },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/searchgateway/api/search": {
+      "get": {
+        "operationId": "legacySearchProducts",
+        "tags": ["Catalogue"],
+        "summary": "Search catalogue product cards",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "observed-only",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["paired legacy reads 2026-11-27", "first-party main.js bundle 2026-09-13"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/SearchQuery" },

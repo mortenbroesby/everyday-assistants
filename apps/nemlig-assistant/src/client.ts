@@ -13,6 +13,7 @@ import {
   normalizeBasket,
   normalizeDepartments,
   normalizeProducts,
+  normalizeStorefrontSearch,
   normalizeShoppingList,
   normalizeShoppingListOverviewPage,
   type Basket,
@@ -39,6 +40,7 @@ export {
 } from "./nemlig-error.js";
 
 const API_BASE_URL = "https://www.nemlig.com/webapi";
+const PRODUCT_BFF_URL = "https://webapi.prod.knl.nemlig.it/productbff/api";
 export const SEARCH_GATEWAY_URL =
   "https://webapi.prod.knl.nemlig.it/searchgateway/api";
 export const NEMLIG_API_ATTEMPT_TIMEOUT_MS = 120_000;
@@ -404,7 +406,7 @@ export class NemligClient {
     }
 
     const primary = this.rememberProducts(
-      await this.searchGateway(query, limit, signal),
+      await this.searchStorefront(query, limit, signal),
     );
     if (primary.length || !this.accessToken) {
       return primary;
@@ -1258,39 +1260,26 @@ export class NemligClient {
       DEFAULT_PRODUCT_TIMESTAMP;
   }
 
-  private async searchGateway(
+  private async searchStorefront(
     query: string,
     limit: number | undefined,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    if (!this.accessToken || !this.productTimestamp) {
-      return [];
-    }
+    const take = limit ?? 20;
     const params = new URLSearchParams({
       query,
       skip: "0",
-      recipeCount: "0",
-      timestamp: this.productTimestamp,
-      timeslotUtc: this.timeslot,
-      deliveryZoneId: String(this.deliveryZoneId),
-      includeFavorites: this.userId ?? "0",
-      TimeSlotId: String(this.timeslotId),
+      take: String(take),
+      timeslotId: String(this.timeslotId),
     });
-    params.set("take", String(limit ?? 20));
-    const response = asRecord(
-      await this.json(
-        `${SEARCH_GATEWAY_URL}/search?${params}`,
-        { signal },
-        "Search products",
-        true,
-        true,
-      ),
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/v2/web/search/products?${params}`,
+      { signal },
+      "Search products",
+      true,
+      true,
     );
-    const products = response.Products;
-    return normalizeProducts(
-      Array.isArray(products) ? products : asRecord(products).Products,
-      limit,
-    );
+    return normalizeStorefrontSearch(response, take);
   }
 
   private rememberProducts(products: Product[], hydrated = false): Product[] {

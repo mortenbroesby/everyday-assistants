@@ -8,7 +8,6 @@ import {
   ProductNotFoundError,
   type Product,
   NEMLIG_API_ATTEMPT_TIMEOUT_MS,
-  SEARCH_GATEWAY_URL,
   normalizeDepartments,
   normalizeProducts,
 } from "./client.js";
@@ -55,6 +54,14 @@ const antiForgeryRequest = (): ExpectedRequest => ({
     );
   },
 });
+
+const searchPath = "/productbff/api/v2/web/search/products";
+const searchResult = (...products: Record<string, unknown>[]) =>
+  json({
+    searchResult: {
+      items: products.map((product) => ({ type: "product", product })),
+    },
+  });
 
 const sessionRequests = (): ExpectedRequest[] => [
   { match: "/Token$", response: json({ access_token: "token-value" }) },
@@ -530,7 +537,7 @@ test("primary catalogue failures are not converted into empty results", async ()
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
+      match: searchPath,
       response: json({}, { status: 503 }),
     },
   ];
@@ -632,9 +639,9 @@ test("catalogue and basket reads pass caller signals through initialization, fal
   const fallbackRequests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
+      match: searchPath,
       inspect: (_url, init) => assert.equal(init?.signal?.aborted, false),
-      response: json({ Products: [] }),
+      response: searchResult(),
     },
     {
       match: "/quick\\?",
@@ -984,8 +991,8 @@ test("search retries session initialization after cancellation during delivery c
     ...started,
     ...sessionRequests(),
     {
-      match: SEARCH_GATEWAY_URL + "/search",
-      response: json({ Products: [{ Id: 1, Name: "Test" }] }),
+      match: searchPath,
+      response: searchResult({ id: 1, title: "Test" }),
     },
   ];
   const client = new NemligClient(mockFetch(requests));
@@ -997,21 +1004,43 @@ test("search retries session initialization after cancellation during delivery c
   assert.equal(requests.length, 0);
 });
 
-test("search accepts nested products and sends the current session values", async () => {
+test("v2 search maps product cards, skips banners, and uses current delivery context", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
+      match: searchPath,
       inspect: (url, init) => {
         const parsed = new URL(url);
         assert.equal(parsed.searchParams.get("take"), "2");
-        assert.equal(parsed.searchParams.get("timestamp"), "product-stamp");
-        assert.equal(parsed.searchParams.get("TimeSlotId"), "7");
-        assert.equal(parsed.searchParams.get("deliveryZoneId"), "9");
+        assert.deepEqual([...parsed.searchParams.keys()].sort(), [
+          "query",
+          "skip",
+          "take",
+          "timeslotId",
+        ]);
+        assert.equal(parsed.searchParams.get("timeslotId"), "7");
         assert.equal(new Headers(init?.headers).has("content-type"), false);
       },
       response: json({
-        Products: { Products: [{ Id: 1, Name: "Mælk", Price: 10 }] },
+        searchResult: {
+          items: [
+            { type: "banner" },
+            {
+              type: "product",
+              product: {
+                id: "1",
+                title: "Mælk",
+                price: 1295,
+                currency: "DKK",
+                description: "1 l",
+                unitOfMeasure: "Ltr.",
+                pricePerUnit: { value: 1295, unitType: "Volume" },
+                availability: { type: "Available" },
+                quantity: 0,
+              },
+            },
+          ],
+        },
       }),
     },
   ];
@@ -1020,21 +1049,25 @@ test("search accepts nested products and sends the current session values", asyn
     2,
   );
   assert.equal(products[0]?.name, "Mælk");
+  assert.equal(products[0]?.price, 12.95);
+  assert.equal(products[0]?.unitPrice, 12.95);
+  assert.equal(products[0]?.unit, "kr./Ltr.");
+  assert.equal(products[0]?.available, true);
   assert.equal(requests.length, 0);
 });
 
 test("search without an explicit count requests Nemlig's default 20-item page", async () => {
   const products = Array.from({ length: 12 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Product ${index + 1}`,
+    id: index + 1,
+    title: `Product ${index + 1}`,
   }));
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: `${SEARCH_GATEWAY_URL}/search`,
+      match: searchPath,
       inspect: (url) =>
         assert.equal(new URL(url).searchParams.get("take"), "20"),
-      response: json({ Products: products }),
+      response: searchResult(...products),
     },
   ];
   const results = await new NemligClient(mockFetch(requests)).searchProducts(
@@ -1045,20 +1078,15 @@ test("search without an explicit count requests Nemlig's default 20-item page", 
   assert.equal(requests.length, 0);
 });
 
-test("search accepts the upstream flat product response", async () => {
-  const requests: ExpectedRequest[] = [
+test("search rejects a malformed successful response", async () => {
+  const requests = [
     ...sessionRequests(),
-    {
-      match: `${SEARCH_GATEWAY_URL}/search`,
-      response: json({ Products: [{ Id: "2", Name: "Flat milk", Price: 11 }] }),
-    },
+    { match: searchPath, response: json({}) },
   ];
-  const products = await new NemligClient(mockFetch(requests)).searchProducts(
-    "mælk",
-    1,
+  await assert.rejects(
+    new NemligClient(mockFetch(requests)).searchProducts("mælk"),
+    /invalid search response/i,
   );
-  assert.equal(products[0]?.name, "Flat milk");
-  assert.equal(products[0]?.id, 2);
 });
 
 test("exact product lookup uses current session context and returns only the requested product", async () => {
@@ -1087,9 +1115,12 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Shallow", Price: 12.34 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Shallow",
+        price: 1234,
+        currency: "DKK",
       }),
     },
     {
@@ -1102,9 +1133,12 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
       }),
     },
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Later shallow", Price: 10 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Later shallow",
+        price: 1000,
+        currency: "DKK",
       }),
     },
   ];
@@ -1124,9 +1158,12 @@ test("fresh exact product lookup bypasses a previously observed product", async 
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     {
-      match: "/search\\?",
-      response: json({
-        Products: [{ Id: 424242, Name: "Observed", Price: 12.34 }],
+      match: searchPath,
+      response: searchResult({
+        id: 424242,
+        title: "Observed",
+        price: 1234,
+        currency: "DKK",
       }),
     },
     {
@@ -1228,7 +1265,7 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
 test("empty gateway search tries no more than three safe fallback categories", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: [] }) },
+    { match: searchPath, response: searchResult() },
     {
       match: "/quick\\?",
       response: json({
@@ -1259,7 +1296,7 @@ test("empty gateway search tries no more than three safe fallback categories", a
 test("category fallback returns the first non-empty product group", async () => {
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
-    { match: "/search\\?", response: json({ Products: { Products: [] } }) },
+    { match: searchPath, response: searchResult() },
     { match: "/quick\\?", response: json({ Categories: [{ Url: "/milk" }] }) },
     {
       match: "https://www.nemlig.com/milk\\?GetAsJson=1",
