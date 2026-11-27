@@ -217,6 +217,42 @@ const reviewTargetFields = {
     .optional()
     .describe("Opaque temporary handle for this card's exact draft review."),
 };
+const startProductReviewInputObject = z.object({
+  items: z
+    .array(
+      z.object({
+        product_id: z.number().int().positive(),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .max(MAX_DRAFT_PRODUCTS)
+    .optional()
+    .describe(
+      "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
+    ),
+  shopping_list_name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(30)
+    .optional()
+    .describe("Not used by temporary direct basket drafts."),
+  creation_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Not used by temporary direct basket drafts."),
+  shopping_list_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Exact saved Nemlig shopping-list ID to load as a read-only source.",
+    ),
+});
+
 const showProductReviewInputSchema = z
   .object({
     view: z
@@ -257,6 +293,7 @@ const showProductReviewInputSchema = z
               draft_id: reviewTargetFields.draft_id,
               review_context_id: reviewTargetFields.review_context_id,
             }),
+            { io: "input" },
           ).properties,
         },
         required: ["draft_id", "review_context_id"],
@@ -1177,42 +1214,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       title: "Review products before a basket addition",
       description:
         "Create a temporary process-local draft from exact returned product IDs and quantities. Edits affect only this draft. Submit only after separate explicit authorization; one additive request sends the exact reviewed lines. Load saved lists as read-only sources, and never retry an uncertain provider write.",
-      inputSchema: z
-        .object({
-          items: z
-            .array(
-              z.object({
-                product_id: z.number().int().positive(),
-                quantity: z.number().int().positive(),
-              }),
-            )
-            .min(1)
-            .max(MAX_DRAFT_PRODUCTS)
-            .optional()
-            .describe(
-              "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
-            ),
-          shopping_list_name: z
-            .string()
-            .trim()
-            .min(1)
-            .max(30)
-            .optional()
-            .describe("Not used by temporary direct basket drafts."),
-          creation_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe("Not used by temporary direct basket drafts."),
-          shopping_list_id: z
-            .number()
-            .int()
-            .positive()
-            .optional()
-            .describe(
-              "Exact saved Nemlig shopping-list ID to load as a read-only source.",
-            ),
-        })
+      inputSchema: startProductReviewInputObject
         .strict()
         .refine(
           ({ items, shopping_list_id }) => !(items?.length && shopping_list_id),
@@ -1226,6 +1228,13 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         .meta({
           anyOf: [
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  items: true,
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               required: ["items"],
               not: {
                 anyOf: [
@@ -1235,12 +1244,25 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
               },
             },
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  shopping_list_id: true,
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               required: ["shopping_list_id"],
               not: {
                 anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
               },
             },
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               not: {
                 anyOf: [
                   { required: ["items"] },

@@ -722,3 +722,38 @@ Independent read-only challenge found no material objection: duplicate parent
 constraints are redundant under JSON Schema conjunction, and the inspected
 renderer enumerates branch properties/required fields. The optional no-handle
 branch remains intentional; visibility does not guarantee model forwarding.
+
+## Creation-input union visibility follow-up (2026-11-27)
+
+The same connected-host metadata inspection exposed start_product_review as
+unstructured object/unknown alternatives. Its three conditional anyOf branches
+had required/not constraints but no properties, while all product/list fields
+were defined only at the root. This matches the previously inspected renderer
+limitation, without establishing the connected host's implementation/version.
+
+Reused the existing Zod input object and native pick/toJSONSchema to populate
+branch properties for exact products, exact saved-list ID, and no-source
+selection respectively. Each retains the already-accepted optional legacy name
+field; creation_id remains prohibited. The root strict object, refinements,
+required/not conditions and handler are unchanged. No agent factory, adapter,
+new dependency or runtime dispatch behavior was introduced.
+
+The published-catalog regression first failed on missing branch properties.
+An initial implementation then failed its parent/branch equality assertion:
+Zod's default output-mode conversion added additionalProperties:false inside
+product rows, unlike the published input schema. Using explicit io:input fixed
+that mismatch rather than accepting a narrowed advertised contract. Display
+field conversion now also explicitly declares input mode. The test uses one
+asserted properties object instead of repeated optional access, removing the
+new test-only conditional paths reported in the previous hook warning.
+
+After correction, all 45 protocol/interface tests and lint passed. Catalogue
+bytes are 142333; model-eligible catalogue bytes 89680; output schemas unchanged
+at 115434 bytes. These are serialized metadata sizes, not model token costs.
+No fresh model or connected-host call was run. Actual declaration readback and
+behavioral benefit remain separate acceptance work. The change continues the
+same bounded input-contract visibility fix in draft #369.
+
+Independent read-only review found no material objection: root-equivalent
+constraints preserve acceptance, input mode avoids nested-object narrowing,
+and the current inline fields have no lost definition references.

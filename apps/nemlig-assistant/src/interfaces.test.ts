@@ -575,8 +575,14 @@ test("direct draft catalog exposes its input contract and loading status", async
       );
       assert.ok(tool);
       assert.ok(display);
+      const startProperties = tool.inputSchema.properties;
+      assert.ok(startProperties);
       assert.deepEqual(tool.inputSchema.anyOf, [
         {
+          properties: {
+            items: startProperties.items,
+            shopping_list_name: startProperties.shopping_list_name,
+          },
           required: ["items"],
           not: {
             anyOf: [
@@ -586,12 +592,19 @@ test("direct draft catalog exposes its input contract and loading status", async
           },
         },
         {
+          properties: {
+            shopping_list_id: startProperties.shopping_list_id,
+            shopping_list_name: startProperties.shopping_list_name,
+          },
           required: ["shopping_list_id"],
           not: {
             anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
           },
         },
         {
+          properties: {
+            shopping_list_name: startProperties.shopping_list_name,
+          },
           not: {
             anyOf: [
               { required: ["items"] },
@@ -618,13 +631,15 @@ test("direct draft catalog exposes its input contract and loading status", async
         "Draft prepared; display it to review",
       );
       // Union renderers must not have to merge parent properties into branches.
-      assert.ok(display.inputSchema.properties?.draft_id);
-      assert.ok(display.inputSchema.properties?.review_context_id);
+      const displayProperties = display.inputSchema.properties;
+      assert.ok(displayProperties);
+      assert.ok(displayProperties.draft_id);
+      assert.ok(displayProperties.review_context_id);
       assert.deepEqual(display.inputSchema.anyOf, [
         {
           properties: {
             view: { const: "draft" },
-            draft_id: display.inputSchema.properties?.draft_id,
+            draft_id: displayProperties.draft_id,
             review_context_id:
               display.inputSchema.properties?.review_context_id,
           },
