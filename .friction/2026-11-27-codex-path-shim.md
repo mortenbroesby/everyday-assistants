@@ -44,3 +44,25 @@ reuse or failed-operation reduction was observed. Both provided factual final
 limitations. The full prompts, metrics and confounders are in
 docs/agent-routing-evaluation.md. The direct bundled 0.169.0-alpha.11.1
 workaround remains separately verified; no global environment fix was made.
+
+## Root-cause investigation
+A later read-only shell comparison found a second standalone installation:
+noninteractive task shell `codex --version` returned 0.162.1 through
+`~/.local/bin/codex`, linked to the native standalone package. An interactive
+Zsh shell instead resolved the asdf shim. `~/.zshrc` explicitly prepends asdf
+shims; its later `~/.local/bin/env` helper adds the local directory only if it
+is absent, so it does not restore precedence when that directory is inherited.
+`asdf shimversions codex` lists only Node 22.23.1, whereas the repository selects
+24.13.0. This is an environment-ordering defect, not a missing repository CLI
+implementation. The standalone 0.162.1, bundled 0.169.0-alpha.11.1 and npm
+0.145.0 executables are distinct installations.
+
+A controlled shell probe reproduced the inspected PATH initialization without
+sourcing private shell configuration. Prepending the existing user bin directory
+after asdf selected standalone Codex 0.162.1 while Node still resolved through
+asdf to v24.13.0. Only `codex` currently overlaps between the two directories.
+A two-line shell configuration patch was prepared locally and user approval
+requested because it affects all repositories. It has not been applied; no
+package install, global configuration or project runtime change is claimed.
+The next check after approval is a fresh interactive shell followed by the same
+read-only version task; retain the pre-fix failures rather than rebaseline them.
