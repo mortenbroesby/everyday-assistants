@@ -149,17 +149,23 @@ try {
   const help = await execute(bin("nemlig"), ["--help"], {
     env: { PATH: process.env.PATH ?? "" },
   });
-  assert.match(help.stdout, /login/);
-  assert.match(help.stdout, /search/);
-  assert.match(help.stdout, /favorites/);
-  assert.match(help.stdout, /departments/);
-  assert.match(help.stdout, /browse/);
-  assert.doesNotMatch(help.stdout, /plan_my_shopping|\bplan\b/u);
-  assert.doesNotMatch(help.stdout, /feature-request/);
-  assert.match(help.stdout, /cart/);
-  assert.match(help.stdout, /add/);
-  assert.doesNotMatch(help.stdout, /^\s{2}remove(?:\s|$)/mu);
-  assert.doesNotMatch(help.stdout, /parse|checkout|--password/i);
+  for (const command of [
+    "login",
+    "search",
+    "favorites",
+    "departments",
+    "browse",
+    "cart",
+    "add",
+    "remove",
+    "clear-basket",
+  ]) {
+    assert.match(help.stdout, new RegExp(`^\\s{2}${command}(?:\\s|$)`, "mu"));
+  }
+  assert.doesNotMatch(
+    help.stdout,
+    /plan_my_shopping|\bplan\b|feature-request|parse|checkout|--password/iu,
+  );
 
   const transport = new StdioClientTransport({
     command: bin("nemlig-mcp"),
@@ -188,8 +194,10 @@ try {
       .sort();
     assert.deepEqual(tools, [
       "check_nemlig_connection",
+      "confirm_basket_deletion",
       "find_groceries",
       "get_profile",
+      "review_basket_deletion",
       "show_my_basket",
       "show_product_review",
       "start_product_review",

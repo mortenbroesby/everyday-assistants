@@ -649,7 +649,7 @@ test("catalogue and basket reads pass caller signals through initialization, fal
       response: json({ Categories: [{ Url: "/one" }, { Url: "/two" }] }),
     },
     {
-      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      match: "https://www.nemlig.com/one$",
       inspect: (_url, init) => {
         assert.equal(init?.signal?.aborted, false);
         fallbackAbort.abort(fallbackReason);
@@ -1292,11 +1292,11 @@ test("empty gateway search tries no more than three safe fallback categories", a
       }),
     },
     {
-      match: "https://www.nemlig.com/one\\?GetAsJson=1",
+      match: "https://www.nemlig.com/one$",
       response: json({ content: [] }),
     },
     {
-      match: "https://www.nemlig.com/three\\?GetAsJson=1",
+      match: "https://www.nemlig.com/three$",
       response: json({ content: [] }),
     },
   ];
@@ -1307,27 +1307,75 @@ test("empty gateway search tries no more than three safe fallback categories", a
   assert.equal(requests.length, 0);
 });
 
-test("category fallback returns the first non-empty product group", async () => {
+test("category fallback resolves a credential-free redirect and validates the complete category breadcrumb", async () => {
+  const category = "mejeri-og-aeg/maelk/minimaelk";
+  const result = (crumb: string, id: number) =>
+    json({
+      requestedCategory: {
+        categoryPath: "minimaelk",
+        breadcrumbs: [{ url: "kategori/" + crumb }],
+        items: [{ type: "product", product: { id, title: "Fallback milk" } }],
+      },
+    });
   const requests: ExpectedRequest[] = [
     ...sessionRequests(),
     { match: searchPath, response: searchResult() },
-    { match: "/quick\\?", response: json({ Categories: [{ Url: "/milk" }] }) },
     {
-      match: "https://www.nemlig.com/milk\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "group-1" }] }),
+      match: "/quick",
+      response: json({
+        Categories: [
+          { Url: "/dagligvarer/old" },
+          { Url: "/kategori/other/minimaelk" },
+          { Url: "/dagligvarer/milk" },
+        ],
+      }),
     },
     {
-      match: "/Products/GetByProductGroupId\\?",
-      response: json({
-        Products: [{ Id: 9, Name: "Fallback milk", Category: "Køl" }],
+      match: "/dagligvarer/old$",
+      response: Response.redirect(
+        "https://elsewhere.example/kategori/other/minimaelk",
+        301,
+      ),
+    },
+    {
+      match: "/v3/web/categories/products",
+      response: result(category, 11),
+    },
+    {
+      match: "/dagligvarer/milk$",
+      inspect: (_url, init) => {
+        assert.equal(init?.method, "HEAD");
+        assert.equal(init.redirect, "manual");
+        assert.equal(init.credentials, "omit");
+        assert.equal(new Headers(init.headers).has("authorization"), false);
+        assert.equal(new Headers(init.headers).has("cookie"), false);
+      },
+      response: new Response(null, {
+        status: 301,
+        headers: { location: "/kategori/" + category },
       }),
+    },
+    {
+      match: "/v3/web/categories/products",
+      inspect: (url) => {
+        const params = new URL(url).searchParams;
+        assert.equal(params.get("categoryPath"), category);
+        assert.equal(params.get("timeslotId"), "7");
+        assert.equal(params.get("skip"), "0");
+        assert.equal(params.get("take"), "3");
+      },
+      response: result(category, 9),
     },
   ];
   const products = await new NemligClient(mockFetch(requests)).searchProducts(
     "milk",
     3,
   );
-  assert.equal(products[0]?.id, 9);
+  assert.deepEqual(
+    products.map((product) => product.id),
+    [9],
+  );
+  assert.equal(requests.length, 0);
 });
 
 test("favorites follows authenticated show-all groups, deduplicates, and never mutates", async () => {
@@ -2452,4 +2500,181 @@ test("department browsing honors caller counts above 50 without truncation", asy
   );
   assert.equal(result.products.length, 55);
   assert.equal(result.hasNext, false);
+});
+
+const editBasket = (
+  lines: { Id: number; Quantity: number; Name: string }[],
+  extra = {},
+) => ({
+  BasketGuid: "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+  IsBackedByOrder: false,
+  BackedByOrderNumber: "",
+  Lines: lines,
+  MealBoxes: [],
+  Recipes: [],
+  Coupons: [],
+  NumberOfProducts: lines.reduce((sum, line) => sum + line.Quantity, 0),
+  ...extra,
+});
+const apples = { Id: 10, Quantity: 3, Name: "Apples" };
+const pears = { Id: 11, Quantity: 2, Name: "Pears" };
+const editClient = async (steps: ExpectedRequest[]) => {
+  const requests = [
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ RedirectUrl: "/" }) },
+    ...sessionRequests(),
+    ...steps,
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("fixture@example.test", "fixture");
+  return { client, requests };
+};
+const editRead = (basket: unknown): ExpectedRequest => ({
+  match: "/basket/GetBasket$",
+  response: json(basket),
+});
+
+test("reviewed edits send the storefront request once and verify every remaining line", async () => {
+  const before = editBasket([apples, pears]);
+  for (const edit of [
+    { kind: "remove", productId: 10 },
+    { kind: "clear" },
+  ] as const) {
+    const clear = edit.kind === "clear";
+    const { client, requests } = await editClient([
+      editRead(before),
+      editRead(before),
+      {
+        match: clear ? "/basket/ClearBasket$" : "/basket/AddToBasket$",
+        response: json({}),
+        inspect: (_url, init) => {
+          assert.equal(init?.method, "POST");
+          assert.equal(init?.redirect, "error");
+          if (clear) {
+            assert.equal(init?.body, "");
+          } else {
+            assert.deepEqual(JSON.parse(String(init?.body)), {
+              ProductId: 10,
+              quantity: 0,
+              AffectPartialQuantity: true,
+              disableQuantityValidation: false,
+            });
+          }
+        },
+      },
+      editRead(editBasket(clear ? [] : [pears])),
+    ]);
+    const review = await client.reviewBasketEdit(edit);
+    assert.equal(review.basket.items.length, 2);
+    const after = await client.applyReviewedBasketEdit(
+      edit,
+      review.fingerprint,
+    );
+    assert.equal(after.items.length, clear ? 0 : 1);
+    assert.equal(requests.length, 0);
+  }
+});
+test("destructive preflight refuses changed scope, basket identity, and partially observable state", async () => {
+  const edit = { kind: "clear" } as const;
+  const before = editBasket([apples, pears]);
+  for (const changed of [
+    { ...before, Lines: null },
+    { ...before, Lines: [null] },
+    { ...before, Lines: [{ ...apples, ProductId: pears.Id }, pears] },
+    {
+      ...before,
+      Lines: [{ ...apples, Id: "invalid", ProductId: apples.Id }, pears],
+    },
+    { ...before, Lines: [{ ...apples, Quantity: 0.5 }, pears] },
+    { ...before, Lines: [{ ...apples, Quantity: "3" }, pears] },
+    { ...before, Lines: {}, NumberOfProducts: 0 },
+    { ...before, BasketGuid: "00000000-0000-0000-0000-000000000000" },
+
+    { ...before, NumberOfProducts: 1 },
+    { ...before, IsBackedByOrder: true },
+    { ...before, BackedByOrderNumber: "1234" },
+    { ...before, MealBoxes: [{}] },
+    { ...before, Recipes: [{}] },
+    { ...before, Coupons: [{}] },
+    { ...before, BasketGuid: "11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee" },
+    editBasket([apples, apples]),
+  ]) {
+    const { client, requests } = await editClient([
+      editRead(before),
+      editRead(changed),
+    ]);
+    const review = await client.reviewBasketEdit(edit);
+    await assert.rejects(
+      client.applyReviewedBasketEdit(edit, review.fingerprint),
+    );
+    assert.equal(requests.length, 0);
+  }
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+  ]);
+  const review = await client.reviewBasketEdit({
+    kind: "remove",
+    productId: 10,
+  });
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, review.fingerprint),
+  );
+  assert.equal(requests.length, 0);
+});
+test("reviewed removal rejects unrelated readback changes and never resends the write", async () => {
+  const edit = { kind: "remove", productId: 10 } as const;
+  const before = editBasket([apples, pears]);
+  let writes = 0;
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+    {
+      match: "/basket/AddToBasket$",
+      response: json({}),
+      inspect: () => {
+        writes++;
+      },
+    },
+    editRead(editBasket([])),
+  ]);
+  const trust = await client.reviewBasketEdit(edit);
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, trust.fingerprint),
+    /unconfirmed/i,
+  );
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
+});
+
+test("an in-flight basket edit excludes additions and dispatch failures are not replayed", async () => {
+  const before = editBasket([apples, pears]);
+  const edit = { kind: "clear" } as const;
+  let overlap: Promise<void> | undefined;
+  let writes = 0;
+  const { client, requests } = await editClient([
+    editRead(before),
+    editRead(before),
+    {
+      match: "/basket/ClearBasket$",
+      inspect: () => {
+        writes++;
+        overlap = assert.rejects(
+          client.addToCart(12),
+          /another basket change/i,
+        );
+      },
+      response: () => {
+        throw new Error("Connection lost after send.");
+      },
+    },
+  ]);
+  const review = await client.reviewBasketEdit(edit);
+  await assert.rejects(
+    client.applyReviewedBasketEdit(edit, review.fingerprint),
+    /unconfirmed/i,
+  );
+  await overlap;
+  assert.equal(writes, 1);
+  assert.equal(requests.length, 0);
 });

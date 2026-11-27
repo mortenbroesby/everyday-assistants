@@ -31,6 +31,7 @@ import {
   withAuthenticatedReadRetry,
 } from "./runtime.js";
 import { getCredentials, type Credentials } from "./config.js";
+import { reviewDeletion, confirmDeletion } from "./basket-deletion.js";
 import { basketPayload } from "./basket-result.js";
 import {
   IMAGE_ORIGINS,
@@ -563,7 +564,7 @@ export function createMcpServer(
 ): McpServer {
   const basketReviewGuidance = `Search Nemlig products with find_groceries and read the actual basket with show_my_basket. Submit to the real basket only when the user clearly directs addition of the exact reviewed products and quantities, or explicitly approves them. Search, display, selection, draft edits, and a remembered ChatGPT tool approval are not authorization for a new addition. When users ask to show, display, open, browse, review, or compare their current temporary draft (for example “show my draft”, “open the list”, “let me compare them”, “vis mig listen”, or “åbn kladden”), use show_product_review. It is read-only and may use an exact draft_id/review_context_id pair or a trustworthy current conversation. For saved-list discovery, use show_product_review with view=saved_lists; it does not load a list into a draft. Do not use it for the actual Nemlig basket, a text-only explanation, unrelated displays, or an ambiguous target. When users choose exact products and quantities for editing, use start_product_review to create a temporary process-local draft, then use show_product_review when a visual review is wanted. Edits affect only the draft; carry its exact draft_id and review_context_id through card actions. Unprotected drafts expire after two hours of inactivity; drafts with unresolved work remain until resolved. All process-local drafts disappear after a server restart.
 
-Only explicit Submit may add products to the actual basket. It sends every exact reviewed line in one additive request, preserves existing basket items, independently validates readback, and never retries an uncertain request. The actual Nemlig basket is add-only. Never remove, decrease, replace, swap, clear, check out, pay, order, or select delivery slots.
+Only explicit Submit may add products to the actual basket. It sends every exact reviewed line in one additive request, preserves existing basket items, independently validates readback, and never retries an uncertain request. To delete a whole product line or clear the real basket, call review_basket_deletion, show its full prompt, and wait for separate explicit confirmation before calling confirm_basket_deletion. Never partially decrease, replace, swap, check out, pay, order, or select delivery slots.
 
 Saved Nemlig shopping lists are read-only sources. A user may load an exact saved list into a new temporary draft; subsequent edits and Submit affect only the draft and actual basket, never the source list. After a verified basket addition, offer the separate optional action to save the entire current basket as a shopping list. This includes existing basket rows, preserves the basket, and never clears it. This integration does not establish or return a verified saved-list ID for this action; let the user find the list in the picker. Never retry an uncertain save.
 
@@ -1197,6 +1198,107 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
           { ...basket, views, ...(recovery ? { recovery } : {}) },
           `${basketText(basket)}\n${productViewsToText(views)}${recovery ? `\nSubmission evidence: ${JSON.stringify(recovery)}\nCompare before, requested, expected and current quantities. Only a completed receipt confirms this operation; matching basket quantities alone cannot attribute an uncertain addition. Do not retry.` : ""}`,
         );
+      }),
+  );
+
+  const deletionOwner = (ctx: ServerContext) => {
+    if (requestContext && ctx.mcpReq._meta?.["openai/session"] === undefined) {
+      throw new NemligError(
+        "A conversation identity is required for hosted basket deletion.",
+      );
+    }
+    return JSON.stringify([reviewOwner(ctx), requestContext?.policyRevision]);
+  };
+
+  registerTool(
+    "review_basket_deletion",
+    {
+      title: "Review a basket deletion",
+      description:
+        "Read the real basket and present the complete returned prompt. Wait for separate explicit user confirmation before applying this action.",
+      inputSchema: z
+        .object({
+          action: z
+            .enum(["remove", "clear"])
+            .describe(
+              "Remove one entire line or clear the entire reviewed basket.",
+            ),
+          product_id: z
+            .number()
+            .int()
+            .positive()
+            .optional()
+            .describe("Exact product ID for remove. Omit for clear."),
+        })
+        .strict(),
+      outputSchema: z.object({
+        review_id: z.string().uuid(),
+        prompt: z.string(),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        openWorldHint: true,
+      },
+    },
+    ({ action, product_id }, ctx) =>
+      runAuthenticatedRead("review_basket_deletion", async () => {
+        if ((action === "clear") === (product_id !== undefined)) {
+          throw new NemligError(
+            "Supply one exact product ID for removal and omit it for clearing.",
+          );
+        }
+        const edit =
+          product_id === undefined
+            ? { kind: "clear" as const }
+            : { kind: "remove" as const, productId: product_id };
+        const review = await reviewDeletion(
+          client,
+          deletionOwner(ctx),
+          edit,
+          ctx.mcpReq.signal,
+        );
+        return success(review, review.prompt);
+      }),
+  );
+  registerTool(
+    "confirm_basket_deletion",
+    {
+      title: "Confirm a basket deletion",
+      description:
+        "Apply the exact reviewed removal or clear once, only after the user explicitly confirms the displayed products and quantities. Inspect the basket after uncertainty and never retry an uncertain write.",
+      inputSchema: z
+        .object({
+          review_id: z
+            .string()
+            .uuid()
+            .describe("Exact ID returned by the basket deletion review."),
+          confirmed: z
+            .literal(true)
+            .describe(
+              "Supply true only after separate explicit user confirmation.",
+            ),
+        })
+        .strict(),
+      outputSchema: basketSchema,
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true,
+        openWorldHint: true,
+      },
+    },
+    ({ review_id }, ctx) =>
+      runMcpOperation("confirm_basket_deletion", async () => {
+        await ensureLoggedIn(client, loadCredentials);
+        const basket = basketPayload(
+          await confirmDeletion(
+            client,
+            deletionOwner(ctx),
+            review_id,
+            ctx.mcpReq.signal,
+          ),
+        );
+        return success(basket, basketText(basket));
       }),
   );
 

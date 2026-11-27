@@ -439,7 +439,7 @@
         },
         "responses": {
           "200": {
-            "description": "requestedCategory with categoryPath and ordered mixed items."
+            "description": "requestedCategory with its leaf categoryPath, full breadcrumb URLs and ordered mixed items."
           },
           "default": {
             "$ref": "#/components/responses/ProviderError"
@@ -534,16 +534,35 @@
       }
     },
     "/{cataloguePath}": {
+      "head": {
+        "operationId": "resolveCategoryLink",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Resolve a legacy quick-search link to its canonical storefront category",
+        "security": [],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": ["NemligClient.productsByCategory", "Same-origin milk, coffee and cheese redirects observed 2026-11-27"]
+        },
+        "parameters": [
+          { "name": "cataloguePath", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "301": { "description": "Canonical category or other storefront destination in Location." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      },
       "get": {
         "operationId": "getCategoryPageModel",
         "tags": ["Catalogue", "Website"],
         "summary": "Get a category page as JSON",
         "security": [],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.productsByCategory"]
+          "evidence": ["Legacy category page model"]
         },
         "parameters": [
           { "name": "cataloguePath", "in": "path", "required": true, "description": "A same-origin path returned by the department or quick-search page model.", "schema": { "type": "string" } },
@@ -588,12 +607,12 @@
         "operationId": "setBasketProductQuantity",
         "tags": ["Basket"],
         "summary": "Set one product's basket quantity",
-        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Nemlig Assistant sends only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
+        "description": "Nemlig accepts an absolute line quantity and its provider API can interpret zero as removal; it is not an atomic increment or compare-and-set. Additions send only strictly greater positive quantities, binding each sequential write to the reviewed or last verified basket snapshot. It verifies readback before proceeding; detected drift before the first write prevents the POST, and drift between writes stops the remaining batch without retry or rollback. A simultaneous external Nemlig.com edit can still race the read/set boundary. Whole-line removal sends quantity zero and AffectPartialQuantity=true only after a separate confirmation bound to a fresh full-basket review. A successful HTTP response is indeterminate until GetBasket confirms the resulting state.",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used",
           "confidence": "high",
-          "safety": "assistant-add-only-positive-quantity-after-fresh-read-and-readback",
+          "safety": "reviewed-addition-or-confirmed-whole-line-removal-with-readback",
           "evidence": ["NemligClient.writeBasket", "owner decision 2026-09-29"]
         },
         "requestBody": {
@@ -604,6 +623,25 @@
         },
         "responses": {
           "200": { "description": "Mutation accepted; exact basket state is not established by this response." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
+    "/webapi/basket/ClearBasket": {
+      "post": {
+        "operationId": "clearReviewedBasket",
+        "tags": ["Basket"],
+        "summary": "Clear the reviewed current basket after separate explicit confirmation",
+        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "medium",
+          "safety": "destructive-confirmed-exact-basket-with-fresh-preflight-and-readback",
+          "evidence": ["Storefront basket service JavaScript inspected 2026-11-27; fixture-tested request and readback"]
+        },
+        "requestBody": { "content": { "text/plain": { "schema": { "type": "string", "const": "" } } } },
+        "responses": {
+          "200": { "description": "Independently read the basket to verify its identity and empty contents." },
           "default": { "$ref": "#/components/responses/ProviderError" }
         }
       }
@@ -1088,10 +1126,14 @@
         "type": "object",
         "additionalProperties": false,
         "required": ["ProductId", "quantity", "AffectPartialQuantity", "disableQuantityValidation"],
+        "oneOf": [
+          { "properties": { "quantity": { "minimum": 1 }, "AffectPartialQuantity": { "const": false } } },
+          { "properties": { "quantity": { "const": 0 }, "AffectPartialQuantity": { "const": true } } }
+        ],
         "properties": {
           "ProductId": { "type": "integer", "minimum": 1 },
           "quantity": { "type": "integer", "minimum": 0 },
-          "AffectPartialQuantity": { "type": "boolean", "const": false },
+          "AffectPartialQuantity": { "type": "boolean" },
           "disableQuantityValidation": { "type": "boolean", "const": false }
         }
       },

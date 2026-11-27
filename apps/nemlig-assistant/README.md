@@ -65,6 +65,9 @@ this includes existing basket rows and does not clear the basket.
 - Translate or normalize ordinary product wording into one short Danish
   catalogue phrase before searching; preserve distinctive brands and include
   the Danish category (`Prince cookies` becomes `prince kiks`).
+- When search returns no products, try up to three suggested categories. Resolve
+  legacy category links and verify the returned storefront category before
+  showing its products.
 - Enrich every provider- or caller-selected search result with exact current
   product details in provider order; no application result cap is invented.
 - Mark an individual detail failure as unavailable instead of presenting a
@@ -200,7 +203,7 @@ Search or load a saved list → edit temporary draft → explicit one-request ba
   atomicity, or provider limits. Nemlig changes can race the independent
   baseline and readback checks.
 
-- The assistant never removes basket items, checks out, places an order, or pays.
+- Use `pnpm nemlig remove <product-id>` to review a whole-line removal, or `pnpm nemlig clear-basket` to review every line before clearing. Type `DELETE` at the interactive prompt to confirm.
 
 Repository work, choosing products, or review preparation never authorizes a
 basket mutation. Operators must read [`AGENTS.md`](AGENTS.md) and the
@@ -235,9 +238,9 @@ Basket CLI commands exist for deliberate local use:
 pnpm nemlig add 701015 --quantity 1
 ```
 
-The CLI has no provider-basket remove or clear command. `add` means add this
-many units to the existing Nemlig line; it does not set the line to that
-quantity.
+`add` increases the existing quantity by the requested number of units.
+`remove <product-id>` and `clear-basket` show the affected contents and prompt
+for confirmation in the terminal before changing the basket.
 
 For a reviewed set of products, `add-many` sends all positive quantity deltas
 in one additive basket request and then independently reads the basket back:
@@ -293,10 +296,8 @@ The MCP surface is organized around household actions:
   existing rows, and preserves the basket. The endpoint response has no
   verified saved-list ID; use the picker to find it. Uncertain saves are never
   retried.
-- The actual Nemlig basket is add-only. The assistant cannot remove, decrease,
-  replace, swap, clear, check out, pay, order, or select delivery slots. The
-  provider offers no established atomicity guarantee; concurrent Nemlig changes
-  may race the independent baseline and readback checks.
+- For whole-line removal or clearing, `review_basket_deletion` shows the affected products and quantities. After separate explicit confirmation, `confirm_basket_deletion` checks the reviewed basket and verifies the result. Partial decreases, replacements, swaps, checkout, payment, orders and delivery-slot changes remain unavailable. The
+  provider offers no established atomicity guarantee. Avoid editing the basket on another device during deletion. Ordinary product baskets are supported. Order-backed baskets and baskets containing recipes, meal boxes or coupons are declined. Hosted deletion requires a conversation identity.
 - Search remains text-only. In hosted MCP, only `show_product_review`
   advertises the review UI resource; a successful tool result does not by
   itself prove that a host rendered it. `start_product_review` returns draft

@@ -63,7 +63,7 @@ shopping. It can:
 - show product results in a React viewer
 - find and filter your favorites
 - compare products by price, unit price, discount, package, and availability
-- inspect the basket and prepare exact, add-only changes for approval
+- inspect the basket, add approved products, and separately confirm a reviewed whole-line removal or basket clear
 - expose household-language tools in ChatGPT instead of protocol-oriented names
 - support invited users connecting their own Nemlig account through a separately authenticated browser page when the operator enables it
 - work locally from a terminal or conversationally through an MCP client such as ChatGPT
