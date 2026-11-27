@@ -332,3 +332,32 @@ with a matched skill/context condition before changing tool descriptions or
 instructions. Never weaken the exact-target ownership guard to make omitted
 identities appear successful. The existing display matrix supplies this case;
 no competing evaluation framework is needed.
+
+### Reversed-order replication
+
+Repeated the same fixture, model, prompt construction and fresh-thread procedure
+at `2b5e1ff` (runtime unchanged), Danish then English. Both completed one
+successful skill read and one show_product_review call with only
+`view: "draft"`; both omitted the supplied identities, returned unavailable
+and did not retry. Danish read the current repository skill; English read the
+installed 0.1.5 skill. Thus stale skill selection alone does not explain the
+failure, and English can fail too.
+
+| Prompt | Outcome | Elapsed | Input / cached / output tokens |
+| --- | --- | ---: | --- |
+| Vis mig listen | FAIL: omitted supplied identities | 13.96 s | 139952 / 113024 / 235 |
+| Show my draft | FAIL: omitted supplied identities | 21.40 s | 139281 / 112640 / 232 |
+
+Across these four exploratory trials, display selection was 4/4 and exact-target
+completion 1/4. This is a small local baseline, not a population estimate or
+ChatGPT acceptance. The repeated fixture recorded two seed detail reads and
+zero searches/forbidden operations. Both native processes stopped; no installed
+skill or host configuration was changed.
+
+Inspection found the display tool's main description explains intent/exclusions
+but does not tell the model to carry available identities. The edit description
+does. Next bounded candidate: add that exact-target guidance to the display
+description and repeat the same four cases/order, retaining schema optionality
+for genuinely trusted conversation fallback. Do not infer improvement from a
+description-string test. The installed skill mismatch is separately recorded
+in draft #371's friction ledger; it is not established as this failure's cause.
