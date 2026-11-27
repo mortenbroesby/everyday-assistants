@@ -6,7 +6,7 @@
 - Paths: .tool-versions, docs/agent-routing-evaluation.md
 - Category: environment
 - Severity: medium
-- Status: open
+- Status: resolved
 
 ## Observation and evidence
 During hook capability discovery, `which -a codex` returned an asdf shim before
@@ -29,7 +29,7 @@ Investigate a durable local installation fix separately; do not change project
 Node requirements to accommodate the shim. Compare the same version/help checks
 under the repository's required Node runtime after any fix.
 
-## Resolution
+## Initial workaround
 Workaround verified for this audit; underlying PATH issue remains open. No
 credentials, global installation or machine configuration was changed.
 
@@ -66,3 +66,16 @@ requested because it affects all repositories. It has not been applied; no
 package install, global configuration or project runtime change is claimed.
 The next check after approval is a fresh interactive shell followed by the same
 read-only version task; retain the pre-fix failures rather than rebaseline them.
+
+## Verified resolution on the owner's laptop
+
+After owner approval, the interactive Zsh configuration now gives the existing
+standalone Codex installation precedence over the asdf shim. Fresh interactive
+and login shells launched in this repository both ran `codex --version` and
+`codex --help` successfully. A terminal-backed login shell resolved
+`~/.local/bin/codex` and reported Codex 0.162.1, Node v24.13.0 and pnpm 9.15.9.
+These checks cover the two original command failures. Longitudinal task time,
+token savings and recurrence on other machines remain unmeasured.
+
+The [programme backlog](https://github.com/mortenbroesby/everyday-assistants/issues/365)
+tracks follow-up on the next comparable developer task.
