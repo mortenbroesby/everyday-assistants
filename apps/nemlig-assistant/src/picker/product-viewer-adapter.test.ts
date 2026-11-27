@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   LONG_OPERATION_TIMEOUT_MS,
   basketInspectionMessage,
+  directDraftFailureMessage,
   isBasketId,
   isKnownNoWriteFailure,
   progressMessage,
@@ -401,4 +402,27 @@ test("review target validation accepts native list IDs and legacy basket UUIDs",
   assert.equal(isBasketId("00000000-0000-4000-8000-000000000001"), true);
   assert.equal(isBasketId("0"), false);
   assert.equal(isBasketId("not-a-list"), false);
+});
+
+test("draft recovery explains that exact refresh cannot restore an expired draft", () => {
+  for (const detail of [
+    "Unsaved draft expired.",
+    "Draft unavailable",
+    "Draft changed",
+    "Network timeout",
+  ]) {
+    const message = directDraftFailureMessage(
+      new Error(detail + " token=private"),
+    );
+    assert.match(
+      message,
+      /Refresh only checks this exact draft; it cannot restore an expired draft/u,
+    );
+    assert.match(message, /last confirmed products remain visible/u);
+    assert.match(message, /No automatic retry was made/u);
+    assert.doesNotMatch(
+      message,
+      /private|Refresh this exact draft before continuing/u,
+    );
+  }
 });

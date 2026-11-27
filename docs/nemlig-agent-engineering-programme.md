@@ -598,3 +598,27 @@ do not respond automatically with another instruction. This is two observations,
 not a general language comparison. Fixture shutdown: one initial seed detail
 read, zero searches/forbidden operations. Native client/server exited. No live
 provider, real basket, ChatGPT rendering or uncertain-submission state was tested.
+
+## Recovery capability audit (2026-11-27)
+
+At 864d5ed, ProductReviewService.expireDraft deletes the stored review;
+reviewContextOwner prunes expired entries before resolving handles. An exact
+refresh cannot reconstruct expired products or approval. The existing service
+regressions for passive refresh/expiry and stale-card isolation both passed.
+The product-review and ChatGPT integration specifications explicitly forbid
+silent reconstruction after expiry or restart.
+
+The viewer directDraftFailureMessage nevertheless advised refreshing before
+continuing for expired, unavailable, changed and transport failures alike.
+Its refreshCurrentDraftList performs an exact update_product_review/show read;
+it does not create a replacement. Recovery copy now distinguishes that read
+from restoration while preserving the existing control and safety state.
+A focused regression failed against the old copy and covers expiry,
+unavailability, changed identity, transport failure and private-text exclusion.
+This is a UI explanation correction, not evidence that the UI caused the
+Danish model advice or that model recovery reliability improved. No new native
+model or provider trial was performed for this copy correction.
+
+Validation: both existing service lifetime regressions and all 15 viewer adapter
+tests passed; lint passed with zero warnings/errors. Full CI and rendered-host
+acceptance for this new copy remain separate from these local checks.
