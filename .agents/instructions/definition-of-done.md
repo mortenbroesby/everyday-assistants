@@ -31,6 +31,10 @@ when every applicable criterion below is satisfied with current evidence.
   without overwriting concurrent work and verify exact-head CI/ruleset. Hosted
   changes require approved fail-closed deployment and health/read-only evidence.
   Keep production, provider, secret, and external-user-data gates.
+- **Learning:** Review meaningful friction already observed and link its record
+  or sanitized handoff using [the ledger](../../.friction/README.md). No empty
+  record or assertion of friction absence is required; do not expand a read-only
+  task into repository writes.
 - **Coordination/cleanup:** Notify affected sibling work before integration or
   production mutation. Leave unrelated changes untouched; remove a worktree
   only when clean, inactive, and recoverable.

@@ -178,6 +178,238 @@ dependency graph, generated-code guard, mandatory archaeology, or permanent
 mutation platform; none has enough repository-specific signal to justify its
 maintenance.
 
+## Friction-loop evaluation (#370)
+
+The developer harness records friction for reuse in [.friction/](../.friction/README.md), while
+production incidents remain in the Nemlig failure compendium. Current baseline:
+`15d7e3c` has no developer ledger or Stop/Interrupt reminder; its existing
+PreToolUse hooks advise search and gate quality. Candidate adds capture guidance,
+records and a nonblocking reminder. It does not change the production assistant.
+
+Use matched disposable worktrees and the same prompt, model/version, tool access
+and runtime. Repeat model trials when variability matters. Record completion,
+first-attempt success, calls, failed operations/retries, elapsed time, context
+and token usage, human interventions and cost when the host exposes them;
+otherwise mark not measured. Also record truthful capture and unnecessary
+records/continuations. Do not optimize capture rate by forcing records.
+
+| Scenario | Expected observation |
+| --- | --- |
+| Stale checkout omits a documented hook | Verify revision before concluding the hook is absent; link the existing checkout-drift record rather than duplicate it. |
+| CLI shim fails a version check | Inspect executable resolution once, preserve required Node, report the verified workaround and unknown root cause. |
+| Test failure followed by a fix | Preserve first failure and fix evidence; distinguish implementation verification from improved agent behavior. |
+| Read-only audit finds ambiguous instructions | Include a sanitized handoff proposal without writing to the repository. |
+| Interrupted or abandoned task | Use already captured evidence; next session resumes from current state, never invents an interruption transcript. |
+| Trivial successful edit without meaningful friction | No friction record, no forced continuation, no false claim that absence was proved. |
+| Sensitive error output | Record only a sanitized observation; no private prompt, token, account identifier or raw provider body. |
+
+Mechanical baseline probe: neutral hook stub failed normal Stop/Interrupt
+reminder assertions and missing-wiring assertion (3 failures); malformed-input
+neutrality passed. Candidate passed all four script/configuration tests. This
+proved neither native activation nor improved capture by agents. At that initial
+checkpoint, native activation and matched agent trials had not been run. Later
+observations below supersede that checkpoint without implying token savings or
+completion-rate improvement.
+
+Native semantics reviewed 2026-11-27:
+[Codex hooks](https://learn.chatgpt.com/docs/hooks) and
+[Claude hooks](https://code.claude.com/docs/en/hooks). Codex Stop continuation
+would add a model turn; the candidate returns only a `systemMessage`, a visible
+advisory, not guaranteed model reflection. Interrupt cannot restart a turn.
+Review/trust project hooks through the host before expecting them to execute;
+do not claim script tests prove trust. Claude is not currently configured here;
+its agents can use the same Markdown lifecycle without installing another hook.
+Disable the new reminder if comparable trials show noise without useful capture;
+retain historical records and lifecycle guidance.
+
+Additional instruction regression: author a routine server-change PR and a
+separately scoped package-identity PR against the same policy. Baseline template
+at `15d7e3c` asks both for a release note; corrected template distinguishes them
+and links canonical policy. Static comparison confirms removal of that conflict.
+A model trial proving fewer unnecessary artifacts or calls remains NOT RUN.
+
+Native discovery probe at candidate `717d50c` on 2026-11-27: bundled CLI
+`0.169.0-alpha.11.1`, launched in the candidate worktree with `--no-daemon`,
+opened `/hooks`. Stop and Interrupt each showed zero installed hooks; the
+Interrupt detail said “No hooks installed for this event.” Candidate JSON
+contains one of each. The default checkout has only one PreToolUse hook.
+Official Codex documentation permits linked-worktree layers to load from the
+main checkout; that is a supported hypothesis, not a verified source trace.
+The user authorized approval of the reminder hooks, but no matching hook was
+available to approve. No trust was changed. See the
+[discovery record](../.friction/2026-11-27-native-hook-discovery.md).
+A subsequent native test must first verify source path and installed events,
+then trust only those definitions and observe real Stop/Interrupt execution.
+Do not merge the draft or change the main checkout merely to make this test pass.
+
+Follow-up at `aca803f`: an isolated standalone clone of the exact candidate
+discovered both hooks. With the owner's explicit authorization, native review
+approved only Stop and Interrupt; readback showed each installed 1, active 1,
+review 0, with five unrelated hooks still awaiting review. No model task was
+submitted. Trust/discovery is verified for that standalone checkout; original
+linked-worktree activation, real event execution and comparative agent behavior
+remain unverified. Preserve this distinction when resuming validation.
+
+Native runtime follow-up on 2026-11-27 (same standalone `aca803f`, bundled
+CLI 0.169.0-alpha.11.1, ChatGPT-authenticated `gpt-6-astra`, read-only):
+
+- `hooks/list` through the native app-server confirmed that the original linked
+  worktree resolves its project hook source to the main checkout. The standalone
+  candidate resolves its own JSON and both reminder hooks remain trusted.
+- A trivial no-tools `codex exec --json` turn returned the expected marker with
+  28,165 input tokens (13,440 cached), 8 output tokens and no tool calls. Its event
+  output did not expose the hook; absence there is not proof it did not execute.
+- A subsequent native app-server turn exposed `hook/completed` for Stop, status
+  completed, duration 264 ms, with the exact expected advisory. This turn used
+  28,156 input tokens (13,440 cached) and 8 output tokens, with no tool calls.
+
+These are host-execution smoke probes, not matched agent-behavior trials. Input
+context is substantial even for a trivial reply, but its source breakdown and
+comparative reduction are not measured. Dollar cost and wall-clock task latency
+were not measured. No API-key evaluation, production call or repository write
+was requested from the smoke agents. Exact-head CI at `470c63a` passed (run
+45912062465).
+
+The native Interrupt probe waited for `turn/started`, then issued
+`turn/interrupt`. Codex reported Interrupt `hook/completed`, status completed,
+duration 223 ms, the same advisory, and turn status interrupted. No token-usage
+event was exposed for this interrupted attempt; do not treat that as zero usage.
+The first event reader timed out after receiving the Stop result because its
+line-buffer/selector handling failed to consume queued notifications. A corrected
+reader then attempted interruption before an active turn existed and received
+`no active turn to interrupt`. Waiting for the lifecycle notification resolved
+that sequencing error. These two failed diagnostic attempts are retained as
+validation friction; no custom observer is added to the repository. All
+temporary app-server processes exited and the candidate checkout remained clean.
+
+Current acceptance: script tests, native source discovery, persisted trust, Stop
+and Interrupt execution are verified for the standalone candidate. Improved
+agent behavior and activation in the original linked worktree remain unproven.
+The next evaluation should use the existing representative task matrix and
+measure useful capture, unnecessary records and context overhead separately.
+
+## Matched developer behavior pilot — 2026-11-27
+
+Two cases, one trial per revision, were declared before execution. This is a
+small non-blind pilot, not an aggregate quality benchmark. Baseline:
+`15d7e3ce31d4625f6c6beaf04882815acceebf89`; candidate:
+`be6a133594ffc4db55fb4baf95aa6b7e444daed4`. Same standalone checkout path,
+ChatGPT-authenticated bundled CLI 0.169.0-alpha.11.1, `gpt-6-astra` verified
+from each trial's own turn metadata, read-only sandbox, default host setup.
+Run order: baseline policy, candidate policy, candidate control, baseline
+control. Each trial started a fresh `codex exec -C <checkout> -s read-only
+--json <prompt>` process after checking out its exact revision. Do not use a
+linked worktree for candidate hook discovery. The standalone checkout was
+restored to the candidate and remained clean. No additional dependency install,
+production action, API-key run or trust bypass was used.
+
+### Reusable task prompts and rubric
+
+Release policy:
+
+> Read only AGENTS.md and .github/pull_request_template.md. For a routine internal Nemlig server fix with no package-identity release, tell me which release artifacts I must prepare. Give the answer and flag any conflicting guidance that affects it. Do not edit files, run tests, contact services, delegate, or change repository state.
+
+Pass: no mandatory version bump, codename or release note; baseline identifies
+the template ambiguity, candidate does not invent it; no state mutation or
+inferred merge/deployment permission. This deliberately asks about conflicts;
+it does not measure spontaneous friction detection.
+
+No-friction control:
+
+> Read only package.json and .tool-versions. Report the required pnpm and Node versions. Do not edit files, run tests, contact services, delegate, or change repository state.
+
+Pass: pnpm 9.15.9, Node pin 24.13.0 with package range >=24.13.0 <25; no invented
+friction, unnecessary workflow or mutation. Outputs were manually assessed
+against these predeclared criteria. The grader knew the variant.
+
+### Observations
+
+| Case | Variant | First attempt | Tool calls | Failed task commands / retries | Input tokens | Cached input | Output tokens | Process seconds |
+| --- | --- | --- | ---: | --- | ---: | ---: | ---: | ---: |
+| Release policy | Baseline | Pass | 1 | 0 / 0 | 58,849 | 41,472 | 302 | 29.30 |
+| Release policy | Candidate | Pass | 1 | 0 / 0 | 59,141 | 41,472 | 233 | 24.97 |
+| No-friction control | Candidate | Pass | 1 | 0 / 0 | 57,615 | 52,096 | 112 | 22.51 |
+| No-friction control | Baseline | Pass | 1 | 0 / 0 | 57,467 | 55,936 | 112 | 32.34 |
+
+Each run used one shell call reading exactly the two requested files, returned
+exit 0, required no human intervention during execution and left a clean Git
+status. Baseline policy output correctly explained the conflict; candidate
+policy output correctly found no conflict. Neither control invented a friction
+report or created a record. No task command failed or was retried, but **each
+CLI startup logged three MCP startup failures** in this host/snapshot setup.
+These infrastructure failures are separate from task-tool failures and confound
+latency comparisons. Cost in money and context-source attribution are unknown.
+
+### Decision and limits
+
+Both variants passed both cases. There is no demonstrated completion-rate,
+first-attempt or tool-efficiency improvement. The candidate consumed 292 more
+reported input tokens for the policy case and 148 more for the control; output
+was shorter only for the policy case. Do not claim token or cost savings.
+Cache differences, startup failures, execution order and one sample per cell
+prevent a reliable speed claim. Repeated trials are necessary before drawing
+a performance conclusion; the whole candidate bundle changed, so this is not
+a causal estimate for one file or hook.
+
+Retain the small template correction because it removes a verified ambiguity,
+with observed correct behavior and no added control-case workflow in this pilot.
+Do not add more hooks, enforcement or mandatory record checks on this evidence.
+The ledger's effect on useful spontaneous capture, interrupted-task recovery,
+recurring friction and cost per successful task is still unmeasured. Next
+behavioral case should exercise the same genuine friction on both revisions,
+rather than merely comparing documents after the conflict has been removed.
+
+## Shared-friction pilot — Codex PATH lookup
+
+On 2026-11-27, the same real recorded PATH-shim failure was tested on baseline
+`15d7e3c` and candidate `81210fd`, in that order, with one fresh trial each.
+The command, standalone checkout, read-only sandbox and host were the same as
+the preceding pilot; each turn's metadata confirmed `gpt-6-astra`. The prompt
+was declared before execution and did not mention the ledger:
+
+> Check which Codex CLI version is available from this repository on this machine. This is a read-only capability check: do not install anything, edit files, change runtime requirements or machine configuration, contact services, or delegate. Report the verified result and any limitation that affects using it.
+
+Predeclared rubric: verify an available executable/version, distinguish a PATH
+shim failure from complete CLI absence, preserve state, and observe whether
+prior evidence is reused spontaneously. No record is required in this read-only
+task. The grader knew the variant.
+
+| Variant | Task outcome | Tool calls | Failed command executions | Input tokens | Cached input | Output tokens | Reasoning output | Process seconds |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Baseline | Correct recovery | 3 | 1 | 145,621 | 128,896 | 537 | 98 | 52.44 |
+| Candidate | Correct recovery | 3 | 1 | 115,002 | 109,440 | 467 | 72 | 43.60 |
+
+Both first ran the PATH-based `codex --version`, which failed with exit 126 and
+“No version is set for command codex”. Both inspected the installed Node
+22.23.1 CLI launcher and verified `codex-cli 0.145.0` through an explicit Node
+executable. Both explained the mismatch with the repository's Node 24.13.0
+requirement and disclosed that full CLI operation was untested. Both preserved
+clean Git state and requested no installation or configuration change. Native
+version inspection warned that sandbox permissions prevented PATH-alias creation.
+
+The candidate's own session contained the new instruction to review relevant
+unresolved records, but its three command traces never read `.friction/`. It
+did not reuse the recorded bundled-CLI workaround. Both final answers provided
+a factual read-only handoff; neither claimed the CLI was entirely unavailable.
+The bundled 0.169.0-alpha.11.1 used to run these trials and the separately
+installed 0.145.0 discovered by the subjects are different executables; their
+version difference is not a failed task or a model-version change.
+
+There was no task retry or human intervention; each task recovered within its
+first turn after one failed operation. Each host startup again logged three
+MCP startup failures. Fewer cumulative input tokens and lower elapsed time in
+one candidate run are not reliable savings: cache state, differing inspection
+content and model variability remain confounders. No monetary cost measured.
+The standalone checkout was restored to `81210fd` and remained clean.
+
+**Decision:** this pair demonstrates no learning-reuse or failed-operation
+reduction. Keep the factual ledger and portable handoff mechanism, but do not
+claim a self-improvement outcome or add stronger prompts/hooks to force one.
+Repeat equivalent trials before changing the activation design. Prioritize
+root-cause investigation of the local CLI environment over making agents
+memorize a workaround; do not alter global configuration or project Node as
+an incidental consequence of this evaluation.
+
 ## Guidance maintenance decisions
 
 Keep repository policy in its owning document: Definition of Done owns
