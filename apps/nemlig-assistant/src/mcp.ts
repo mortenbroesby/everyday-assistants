@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { compactOutputSchema } from "./mcp-output-schema.js";
 import {
   basketAdditionFailureSchema,
   basketRecoverySchema,
@@ -787,26 +786,24 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       },
     };
   };
-  const durableReviewResultSchema = compactOutputSchema(
-    z.object({
-      review: reviewSnapshotSchema.optional(),
-      result: applyResultSchema.optional(),
-      shoppingLists: z
-        .array(
-          z.object({
-            id: z.number().int().positive(),
-            name: z.string(),
-            productCount: z.number().int().nonnegative().optional(),
-            totalAmount: z.number().finite().optional(),
-          }),
-        )
-        .optional(),
-      selectedShoppingListId: z.number().int().positive().nullable().optional(),
-      selectionRequired: z.boolean().optional(),
-      unavailable: z.literal(true).optional(),
-      ended: z.literal(true).optional(),
-    }),
-  );
+  const durableReviewResultSchema = z.object({
+    review: reviewSnapshotSchema.optional(),
+    result: applyResultSchema.optional(),
+    shoppingLists: z
+      .array(
+        z.object({
+          id: z.number().int().positive(),
+          name: z.string(),
+          productCount: z.number().int().nonnegative().optional(),
+          totalAmount: z.number().finite().optional(),
+        }),
+      )
+      .optional(),
+    selectedShoppingListId: z.number().int().positive().nullable().optional(),
+    selectionRequired: z.boolean().optional(),
+    unavailable: z.literal(true).optional(),
+    ended: z.literal(true).optional(),
+  });
   const listNativeShoppingLists = async (signal: AbortSignal) =>
     success({
       shoppingLists: await reviews.getShoppingLists(signal),

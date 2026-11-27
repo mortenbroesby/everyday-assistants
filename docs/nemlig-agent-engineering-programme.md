@@ -131,9 +131,10 @@ For this discovery-only run, NEM-CHATGPT-001 through NEM-CHATGPT-008 are NOT RUN
 no native rendering, submission, recovery UI or language journey was exercised.
 Their existing evidence and outstanding acceptance remain in the compendium.
 
-## Iteration 2: compact review output schemas (#366)
+## Iteration 2: withdrawn compact-schema experiment (#366)
 
-Starting from merged baseline `fbd78d8`, the six review tools now advertise
+Historical candidate `a9169eb`, starting from merged baseline `fbd78d8`,
+advertised
 Zod-native local `$defs`/`$ref` reuse. Their Standard Schema validation function
 is unchanged by identity, including parsed outputs and unknown-key stripping.
 Only output serialization is adapted; input schemas, tool annotations, result
@@ -152,10 +153,10 @@ See [Zod JSON Schema](https://zod.dev/json-schema) and the
 | Serialized JSON measurement | Baseline | Candidate |
 | --- | ---: | ---: |
 | Full tools/list | 140,453 | 93,461 |
-| Model-visible tool array | 87,800 | 56,472 |
+| Model-eligible catalogue entries (including metadata/output schemas) | 87,800 | 56,472 |
 | All output schemas | 115,434 | 68,442 |
 
-Tool counts remain 11 total / 8 model-visible. All five discovery response
+Tool counts remain 11 total / 8 model-eligible. All five discovery response
 sizes and call counts above are unchanged. This is a 33.5% catalogue byte
 reduction; it does not establish model token savings or routing improvement.
 Native ChatGPT compatibility and actual model-context inclusion remain pending.
@@ -240,3 +241,49 @@ one-off observer as another repository runtime or weaken app validation.
 | NEM-CHATGPT-006 | NOT RUN | No rendered row controls. |
 | NEM-CHATGPT-007 | NOT RUN | No rendered replacement affordance. |
 | NEM-CHATGPT-008 | NOT RUN | No rendered language journey. |
+
+## Decision: withdraw runtime compaction — 2026-11-27
+
+The final branch restores the baseline MCP registration and removes the
+serialization adapter and its implementation-specific tests. The five protocol
+scenarios remain, with the diagnostic renamed from `modelToolsBytes` to
+`modelEligibleCatalogToolsBytes`: these are serialized catalogue entries,
+including metadata and output schemas, not measured model input.
+
+The catalogue reduction above is real, but its intended model-context benefit
+has not been demonstrated. Exact installed-version Codex source provides two
+reasons not to ship on that measurement alone:
+
+- [Responses API tool serialization](https://github.com/openai/codex/blob/rust-v0.169.0-alpha.11.1/codex-rs/tools/src/responses_api.rs)
+  marks `output_schema` with `serde(skip)`; ordinary function declarations
+  omit it. Catalogue output-schema savings do not establish savings on that path.
+- [MCP result wrapping](https://github.com/openai/codex/blob/rust-v0.169.0-alpha.11.1/codex-rs/tools/src/mcp_tool.rs)
+  nests the schema below `properties.structuredContent` without rebasing refs.
+  The [type renderer](https://github.com/openai/codex/blob/rust-v0.169.0-alpha.11.1/codex-rs/code-mode-protocol/src/json_schema_types.rs)
+  resolves fragment pointers from its root and falls back to unknown on misses.
+  All six captured candidate schemas have five local refs and no `$id`.
+  Five of five pointers resolve within each original schema; zero resolve from
+  the wrapped root. This exposes a code-mode compatibility risk.
+
+This is source-level and pointer-resolution evidence, not a demonstrated native
+rendering regression. No installed generated declaration was captured. The
+renderer has expansion budgets and a 16,000-byte final limit, so the baseline
+might already lose detail; exact-version code-mode exposure also remains to be
+verified. The independent read-only review confirmed these limitations and
+recommended holding the draft or withdrawing an unproven optimization.
+
+Decision: withdraw rather than maintain a runtime adapter or introduce a
+speculative host workaround. Preserve both the successful bounded native probe
+and this contrary evidence. No new dependency, runtime, schema contract or
+provider behavior is introduced. This does not close #366: actual ChatGPT
+context attribution and representative outcome trials remain outstanding.
+Reconsider compaction only with before/after generated declarations and
+equivalent agent outcomes demonstrating a useful benefit. No merge/deploy.
+
+Withdrawal validation: all five real-SDK synthetic protocol cases passed;
+catalogue bytes returned to 140,453 and model-eligible catalogue bytes to
+87,800, with response sizes/call counts unchanged and zero forbidden calls.
+`pnpm verify` passed (lint only); `git diff --check` passed. Relative to merged
+`fbd78d8`, the final source diff contains only diagnostic naming/comment
+changes in the evaluation test; `mcp.ts` is byte-identical to that baseline.
+Full exact-head CI remains a separate delivery check.
