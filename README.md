@@ -41,6 +41,9 @@ example prompts, setup, commands, hosting, and the complete safety contract:
 
 - [Nemlig Assistant](apps/nemlig-assistant/README.md)
 
+For a replacement laptop or agent setup, start with the
+[portable agent harness and recovery guide](docs/agent-harness-recovery.md).
+
 For local development, use Node.js 24.13.0 and pnpm 9.15.9:
 
 ```sh

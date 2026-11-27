@@ -1,8 +1,12 @@
 # Everyday Assistants repository instructions
 
-This repository contains independent assistants under `apps/`. Laptop-global
-instructions supply generic engineering behavior; this file supplies only
-repository routing, invariants, and delivery policy.
+This repository contains independent assistants under `apps/`. The portable
+harness lives in this repository; a fresh checkout must not require laptop-global
+instructions or chat memory. Read
+[operating guidance](.agents/instructions/operating.md)
+for repository work and [harness recovery](docs/agent-harness-recovery.md) when
+setting up or recovering a machine. Host instructions still apply; local
+overrides should contain only machine-specific details.
 
 ## Required gates
 
@@ -39,6 +43,7 @@ Load only the specialized guidance that matches the task.
 
 | Task intent | Load |
 | --- | --- |
+| Browser automation, native app rendering, or sign-in diagnosis | [Browser recovery](.agents/instructions/browser-recovery.md) |
 | Cleanup/refactoring, non-obvious complexity rationale, or an explicit read-only deletion audit | [Code Simplifier](.agents/skills/code-simplifier/SKILL.md) |
 | Set up or upgrade Fallow, hooks, MCP, or CI gates | [Fallow Setup](.agents/skills/fallow-setup/SKILL.md); preserve [repository integration](docs/fallow.md) adaptations |
 | Targeted evidence on unused code, dependencies, duplication, complexity, or PR changed-code risk | [Fallow](.agents/skills/fallow/SKILL.md); verify findings against actual consumers and contracts |
