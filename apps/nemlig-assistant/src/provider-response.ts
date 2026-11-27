@@ -421,7 +421,7 @@ export function normalizeStorefrontDetail(
 
 export function normalizeStorefrontSearch(
   value: unknown,
-  limit: number,
+  limit?: number,
 ): Product[] {
   const { items } = asRecord(asRecord(value).searchResult);
   if (!Array.isArray(items)) {
@@ -430,7 +430,7 @@ export function normalizeStorefrontSearch(
   return normalizeStorefrontItems(items, limit);
 }
 
-function normalizeStorefrontItems(items: unknown[], limit: number): Product[] {
+function normalizeStorefrontItems(items: unknown[], limit?: number): Product[] {
   const products = items.flatMap((item) => {
     const row = asRecord(item);
     if (!asString(row.type)) {
