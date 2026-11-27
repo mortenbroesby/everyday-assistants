@@ -763,3 +763,20 @@ which already has the identical product ID, positive quantity and 1–500 bounds
 This removes the moved duplicate product-row definition without a new helper.
 All 45 focused checks and lint passed again; test-function complexity remains
 a non-blocking review warning rather than grounds to weaken assertions.
+
+## First approved live retrieval baseline (2026-11-27)
+
+After explicit owner approval, four fixed read-only searches completed once each
+with five requested/returned distinct results. See
+[nemlig-retrieval-baseline.md](nemlig-retrieval-baseline.md) for the predeclared
+rubric, per-rank judgments, latency, source trace and uncertainty. No draft,
+basket or configuration operation ran. Nine of twenty candidates were confirmed
+matches, seven irrelevant, one borderline and three unknown. Do not turn unknown
+dietary evidence into a positive or negative fact. Search execution passed 4/4;
+end-to-end agent selection and native UI acceptance were not tested.
+
+This changes the next priority: evaluate native-agent compound-constraint
+selection on sanitized candidate replays before changing provider-order output.
+The live sample does not justify a new ranking layer or prove the default
+alternatives issue resolved. The four-search authorization is fulfilled; it does
+not authorize additional provider or mutation operations.
