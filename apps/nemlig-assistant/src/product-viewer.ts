@@ -70,6 +70,7 @@ const html = `<!doctype html>
         const currentAttempt = String(++attempt);
         window.__nemligViewerAttempt = currentAttempt;
         let link;
+        let preload;
         let script;
         try {
           const manifestUrl = assetOrigin + "/ui/nemlig/manifest.json";
@@ -101,6 +102,15 @@ const html = `<!doctype html>
             (byte) => byte.toString(16).padStart(2, "0"),
           ).join("");
           if (buildDigest !== manifest.build) throw Error("UI manifest invalid");
+          // Fetch the module alongside CSS; execute it only after styles load.
+          const moduleUrl = assetOrigin + js.url + "?attempt=" + currentAttempt;
+          preload = document.createElement("link");
+          preload.rel = "modulepreload";
+          preload.href = moduleUrl;
+          preload.integrity = js.integrity;
+          preload.crossOrigin = "anonymous";
+          document.head.append(preload);
+
           link = document.createElement("link");
           link.rel = "stylesheet";
           link.href = assetOrigin + css.url;
@@ -110,7 +120,7 @@ const html = `<!doctype html>
 
           script = document.createElement("script");
           script.type = "module";
-          script.src = assetOrigin + js.url + "?attempt=" + currentAttempt;
+          script.src = moduleUrl;
           script.integrity = js.integrity;
           script.crossOrigin = "anonymous";
           await load(script);
@@ -125,6 +135,7 @@ const html = `<!doctype html>
           loading.hidden = true;
           error.hidden = false;
         } finally {
+          preload?.remove();
           loadingAttempt = false;
         }
       };
