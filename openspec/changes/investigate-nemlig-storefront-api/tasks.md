@@ -6,7 +6,7 @@
 
 ## 2. Compare catalog behavior
 
-- [ ] 2.1 Pair search and detail reads under identical delivery context. Compare identity, ranking, quantity, unit price, discounts and availability.
+- [x] 2.1 Pair search and detail reads under identical delivery context. Compare identity, ranking, quantity, unit price, discounts and availability.
 - [ ] 2.2 Check Danish queries, pagination, empty results and unavailable products. Compare request counts and bootstrap dependencies.
 - [ ] 2.3 Trace fresh-product validation into review and pre-add callers. Identify fields whose absence must fail closed and test candidate mappings against sanitized fixtures.
 
