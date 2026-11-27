@@ -3,6 +3,7 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createServer } from "node:http";
 import process from "node:process";
+import { readFileSync } from "node:fs";
 import { createMcpServer } from "../src/mcp.js";
 import { ProductReviewService } from "../src/product-review.js";
 import type {
@@ -39,21 +40,47 @@ const product: Product = {
   isVegan: true,
   isOnDiscount: false,
 };
+const args = process.argv.slice(2);
+const expiredMode = args.length === 1 && args[0] === "--expired-draft";
+const selectionMode = args.length === 2 && args[0] === "--selection-case";
+if (args.length && !expiredMode && !selectionMode) {
+  throw new Error("Use --expired-draft or --selection-case <known-id>.");
+}
+const selectionCases = JSON.parse(
+  readFileSync(
+    new URL("../src/fixtures/agent-selection.json", import.meta.url),
+    "utf8",
+  ),
+) as Array<{ id: string; products: Array<Partial<Product> & { id: number }> }>;
+const selection = selectionMode
+  ? selectionCases.find((entry) => entry.id === args[1])
+  : undefined;
+if (selectionMode && !selection) {
+  throw new Error("Unknown selection case.");
+}
+const products = selection
+  ? selection.products.map((entry) => ({
+      ...product,
+      isVegan: false,
+      ...entry,
+    }))
+  : [product];
 const provider: ShoppingClient & Pick<ShoppingListClient, "providerIdentity"> =
   {
     isLoggedIn: () => true,
     providerIdentity: () => "synthetic-routing-fixture",
     login: forbidden,
-    searchProducts: async () => {
+    searchProducts: async (_query, limit) => {
       counts.searches++;
-      return [product];
+      return limit === undefined ? products : products.slice(0, limit);
     },
     getProduct: async (id) => {
-      if (id !== productId) {
+      const found = products.find((candidate) => candidate.id === id);
+      if (!found) {
         throw new Error("Unknown fixture");
       }
       counts.details++;
-      return product;
+      return found;
     },
     getFreshProduct: forbidden,
     listFavorites: forbidden,
@@ -62,14 +89,11 @@ const provider: ShoppingClient & Pick<ShoppingListClient, "providerIdentity"> =
     getCart: forbidden,
     addToCart: forbidden,
   };
-if (process.argv.slice(2).some((arg: string) => arg !== "--expired-draft")) {
-  throw new Error("Only --expired-draft is supported.");
-}
 let clockOffset = 0;
 const reviews = new ProductReviewService(provider, {
   now: () => Date.now() + clockOffset,
 });
-const expiredSeed = process.argv.includes("--expired-draft")
+const expiredSeed = expiredMode
   ? await reviews.startDirectBasket("synthetic-routing-fixture\0seed", [
       { product_id: productId, quantity: 1 },
     ])
@@ -96,6 +120,7 @@ http.listen(0, "127.0.0.1", () => {
     console.log(
       JSON.stringify({
         url: `http://127.0.0.1:${address.port}/mcp`,
+        selectionCase: selection?.id,
         expiredDraft: expiredSeed && {
           draftId: expiredSeed.draftId,
           reviewContextId: expiredSeed.reviewContextId,

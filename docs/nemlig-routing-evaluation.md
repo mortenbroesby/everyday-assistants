@@ -62,12 +62,33 @@ switch to an API-key backend or an unbounded paid run.
 1. Record commit/dirty diff, model and host versions, prompt dataset version,
    non-secret native configuration choices, exposed tool names, and
    discoverable skill versions. Never copy credentials or an entire host config.
-   Disable other MCP servers/plugin tools only in this process. Plugin-tool
+   Disable other configured MCP servers and set native process overrides
+   `-c features.apps=false -c features.plugins=false -c 'web_search="disabled"'`. Disabling configured
+   servers/plugins alone leaves connected `codex_apps` tools available in the
+   observed CLI. Never change global settings for this isolation. Plugin-tool
    disabling does not prove installed skills disappeared: record actual reads.
 2. Initialize the native API, acknowledge initialized, and start a fresh
    read-only thread with approvalPolicy=never and a fixed model. Use the same
    repository cwd for both conditions. Register the fixture URL only in that
-   process and verify the server reports connected. Do not bypass trust.
+   process and verify the server reports connected. Before any model turn,
+   call `mcpServerStatus/list` for the thread without a server-name filter and
+   with `detail=toolsAndAuthOnly`. Fail closed unless the fixture exposes tools,
+   every other server exposes zero tools, and `nextCursor` is null (or all pages
+   have been inspected under the same rule). Disabled server rows may remain.
+   A filtered fixture-only status query cannot establish isolation. This checks
+   MCP exposure, not shell/network isolation; inspect host commands too.
+   Read back effective `web_search=disabled` through `config/read` and require
+   the `thread/start` response to report `sandbox={type:readOnly,
+   networkAccess:false}` and `approvalPolicy=never`. Do not assume the requested
+   settings became effective. Before relying on a new host/version, validate
+   that policy through native `command/exec` using only a local canary: an
+   unsandboxed connection to a task-owned loopback listener must succeed, while
+   the same connection and a canary-file write under the exact read-only policy
+   must return permission errors. A canary read must succeed and its contents
+   remain unchanged. This probes native command enforcement without a model
+   turn or external request; it does not test every native capability or network
+   transport. Require separate explicit controls for any additional tool source.
+   Do not bypass trust.
 3. For expired-draft cases, use the pair from the fixture readiness record and
    skip fresh seeding. Otherwise, before the measured model turn, call
    start_product_review through the native
@@ -91,7 +112,8 @@ switch to an API-key backend or an unbounded paid run.
 5. Start one native model turn. Record completed tool/command items, exact
    arguments, results, final text, native final cumulative usage and elapsed
    time. Measure elapsed from turn submission through completion, excluding
-   startup/seeding. Bound observation at 150 seconds; on expiry interrupt and
+   startup/seeding. Persist partial events in a finally path on interruption.
+   Bound observation at 150 seconds; on expiry interrupt and
    record incomplete, never silently restart a live turn.
 6. Finish each case in a fresh thread. Choose and record a bounded batch before
    execution; do not silently extend it after failures. The original
@@ -108,7 +130,9 @@ switch to an API-key backend or an unbounded paid run.
 
 Grade each dimension independently:
 
-- Selection: the selected MCP tool matches expectedTool. When expectedTool is null,
+- Selection: require the synthetic server identity as well as the tool name;
+  any connected/live call invalidates the trial and stops the batch.
+  The selected MCP tool matches expectedTool. When expectedTool is null,
   no MCP call is expected; grade the text against expectedOutcome separately.
 - Arguments: valid-draft calls must use the independently saved seed pair.
   Expired-draft calls must preserve the once-valid readiness pair.
@@ -163,3 +187,9 @@ credentials, unrelated user content and private tool results out of committed
 evidence. Publish only case/revision/version identifiers, dimension grades,
 aggregate counters and usage, sanitized error categories, and remaining
 uncertainty. Do not publish generated draft/context handles or full transcripts.
+
+## Product selection scenarios
+
+For compound brand/category and dietary selection from noisy candidates, see
+[the selection evaluation](nemlig-selection-evaluation.md). It reuses this
+fixture with `--selection-case <id>` and deliberately does not seed a draft.
