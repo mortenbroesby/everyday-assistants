@@ -134,3 +134,25 @@ this evidence. The current native assistant handled the tested noisy candidates.
 Next evaluate comparable repetitions/held-out cases only for a specific candidate
 or a documented failure; prioritize verified native host acceptance and evaluation
 isolation over speculative production changes. Keep #372 open for that evidence.
+
+
+### Native containment follow-up — no model or provider call
+
+On the same installed CLI, a metadata/direct-command probe established:
+
+- Effective `web_search` read back as `disabled` under a process-only override.
+- `thread/start` reported readOnly, networkAccess=false, approvalPolicy=never.
+- A task-owned loopback TCP listener was reachable by an unsandboxed positive
+  control. Native `command/exec` under that explicit read-only/no-network policy
+  rejected the same connection with PermissionError/errno 1.
+- The command read a synthetic canary file successfully, rejected a write with
+  PermissionError/errno 1, and independent readback confirmed unchanged contents.
+- No model turn, external address, provider call, persistent setting change or
+  credential read was involved. The listener and native process exited.
+
+This directly verifies the native command sandbox for these operations; it is
+not a universal network-containment proof and does not sandbox MCP itself.
+Future runs must read back the policy, disable native web/apps/plugins and check
+all MCP sources separately. Other native capabilities require explicit controls
+before use. The earlier four-case baseline is not retroactively claimed to have
+used this expanded preflight. Initial full CI passed at 0d4b110 (45948552027).

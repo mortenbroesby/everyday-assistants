@@ -63,7 +63,7 @@ switch to an API-key backend or an unbounded paid run.
    non-secret native configuration choices, exposed tool names, and
    discoverable skill versions. Never copy credentials or an entire host config.
    Disable other configured MCP servers and set native process overrides
-   `-c features.apps=false -c features.plugins=false`. Disabling configured
+   `-c features.apps=false -c features.plugins=false -c 'web_search="disabled"'`. Disabling configured
    servers/plugins alone leaves connected `codex_apps` tools available in the
    observed CLI. Never change global settings for this isolation. Plugin-tool
    disabling does not prove installed skills disappeared: record actual reads.
@@ -77,6 +77,17 @@ switch to an API-key backend or an unbounded paid run.
    have been inspected under the same rule). Disabled server rows may remain.
    A filtered fixture-only status query cannot establish isolation. This checks
    MCP exposure, not shell/network isolation; inspect host commands too.
+   Read back effective `web_search=disabled` through `config/read` and require
+   the `thread/start` response to report `sandbox={type:readOnly,
+   networkAccess:false}` and `approvalPolicy=never`. Do not assume the requested
+   settings became effective. Before relying on a new host/version, validate
+   that policy through native `command/exec` using only a local canary: an
+   unsandboxed connection to a task-owned loopback listener must succeed, while
+   the same connection and a canary-file write under the exact read-only policy
+   must return permission errors. A canary read must succeed and its contents
+   remain unchanged. This probes native command enforcement without a model
+   turn or external request; it does not test every native capability or network
+   transport. Require separate explicit controls for any additional tool source.
    Do not bypass trust.
 3. For expired-draft cases, use the pair from the fixture readiness record and
    skip fresh seeding. Otherwise, before the measured model turn, call
