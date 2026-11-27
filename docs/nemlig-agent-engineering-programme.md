@@ -622,3 +622,35 @@ model or provider trial was performed for this copy correction.
 Validation: both existing service lifetime regressions and all 15 viewer adapter
 tests passed; lint passed with zero warnings/errors. Full CI and rendered-host
 acceptance for this new copy remain separate from these local checks.
+
+## Expired-draft reverse-order replication (2026-11-27)
+
+At clean b6656da, repeated the two genuine TTL-expiry cases in Danish/English
+order, using fresh native read-only threads, gpt-6-astra, the same installed
+Codex app-server and current MCP dependencies. The service fixture seeded one
+valid draft then advanced its injected clock three hours. Model-visible tool
+behavior was unchanged from the prior expiry batch; the intervening UI copy
+change is not an explanation for a model outcome difference.
+
+| Case | Exact calls / shell reads | Seconds | Input / cached / output tokens | Final explanation |
+| --- | --- | --- | --- | --- |
+| Danish | 1 / 2 | 17.08 | 140209 / 113024 / 349 | Unavailable; no changes; no unsupported recovery advice |
+| English | 1 / 1 | 19.01 | 137083 / 125952 / 293 | Handles do not resolve; reason unknown; no unsupported recovery advice |
+
+Both calls carried the once-valid exact identity pair and failed as expected.
+Neither selected another target, retried, recreated or submitted. Danish read
+both installed 0.1.5 and repository basket skills; English read the repository
+skill. These different context paths and caching remain confounders. Counts
+are reported native cumulative usage, not unique context size or inferred cost.
+The fixture exited cleanly with zero searches, one seed detail read and zero
+forbidden provider operations; the native observer also exited. Raw synthetic
+traces remain private local files, outside version control.
+
+Across the two expiry batches, rejection/targeting was safe in 4/4 observations;
+unsupported reopening advice occurred in 1/4 (one of two Danish observations).
+This tiny sequential sample neither establishes a stable failure rate nor
+proves a fix. Retain the historical failure and avoid adding more instructions
+solely to chase this observation. The next useful experiment would isolate
+skill/context differences or use broader native acceptance, not claim the UI
+copy fixed model advice. Native ChatGPT NEM-CHATGPT-001 through 008 remain
+NOT RUN in this iteration; no rendered host or real-provider action occurred.
