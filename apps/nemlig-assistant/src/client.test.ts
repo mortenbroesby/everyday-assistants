@@ -67,10 +67,10 @@ const sessionRequests = (): ExpectedRequest[] => [
   },
   { match: "/user/GetCurrentUser$", response: json({ DebitorId: 42 }) },
   {
-    match: "/Order/DeliverySpot$",
+    match: "/basket/GetBasket$",
     response: json({
       TimeslotUtc: "2026083115-60-240",
-      TimeslotId: 7,
+      DeliveryTimeSlot: { Id: "7" },
       DeliveryZoneId: 9,
     }),
   },
@@ -957,6 +957,44 @@ test("product normalization bounds parser depth and child nodes without warnings
     console.warn = originalWarn;
   }
   assert.deepEqual(warnings, []);
+});
+
+test("search stops before dispatch when delivery context has no usable slot", async () => {
+  const requests = sessionRequests();
+  requests[requests.length - 1] = {
+    match: "/basket/GetBasket$",
+    response: json({ DeliveryTimeSlot: null }),
+  };
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.searchProducts("test"), /current delivery slot/u);
+  assert.equal(requests.length, 0);
+});
+
+test("search retries session initialization after cancellation during delivery context lookup", async () => {
+  const controller = new AbortController();
+  const started = sessionRequests();
+  started[started.length - 1] = {
+    match: "/basket/GetBasket$",
+    response: () => {
+      controller.abort(new Error("cancel delivery read"));
+      throw controller.signal.reason;
+    },
+  };
+  const requests = [
+    ...started,
+    ...sessionRequests(),
+    {
+      match: SEARCH_GATEWAY_URL + "/search",
+      response: json({ Products: [{ Id: 1, Name: "Test" }] }),
+    },
+  ];
+  const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(
+    client.searchProducts("test", 1, controller.signal),
+    /cancel delivery read/u,
+  );
+  assert.equal((await client.searchProducts("test", 1))[0]?.id, 1);
+  assert.equal(requests.length, 0);
 });
 
 test("search accepts nested products and sends the current session values", async () => {

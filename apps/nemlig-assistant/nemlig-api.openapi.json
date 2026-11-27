@@ -29,7 +29,7 @@
   ],
   "x-nemlig": {
     "status": "reverse-engineered-private-contract",
-    "lastObserved": "2026-09-30",
+    "lastObserved": "2026-11-27",
     "maintainer": "Nemlig Assistant contributors",
     "clientSource": "apps/nemlig-assistant/src/client.ts",
     "confidenceScale": {
@@ -166,10 +166,10 @@
         "summary": "Get current delivery and timeslot context",
         "security": [{}, { "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.refreshSession", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["first-party main.js bundle 2026-11-27; guest GET returned 404"]
         },
         "responses": {
           "200": {
@@ -405,13 +405,13 @@
       "get": {
         "operationId": "getBasket",
         "tags": ["Basket"],
-        "summary": "Get the current authenticated basket",
-        "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
+        "summary": "Read the current basket and catalogue delivery context",
+        "security": [{}, { "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.getCart", "blocked anonymous Playwright request 2026-09-13"]
+          "evidence": ["NemligClient.getCart and refreshSession", "guest and authenticated read comparisons 2026-11-27"]
         },
         "responses": {
           "200": {
@@ -899,6 +899,9 @@
       "Basket": {
         "type": "object",
         "properties": {
+          "DeliveryTimeSlot": { "type": ["object", "null"], "properties": { "Id": { "oneOf": [{ "type": "integer" }, { "type": "string" }] } }, "additionalProperties": true },
+          "TimeslotUtc": { "type": "string" },
+          "DeliveryZoneId": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
           "Lines": {
             "type": "array",
             "items": {

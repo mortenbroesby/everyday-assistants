@@ -520,7 +520,7 @@ version nor codename.
 This README is the user-facing inventory of shipped feature sets:
 
 - account access
-- product and department discovery
+- product search using the current delivery slot, and department discovery
 - native Nemlig shopping-list discovery
 - temporary drafts and read-only saved-list loading
 - local draft edits that leave saved shopping lists unchanged

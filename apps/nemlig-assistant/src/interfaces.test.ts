@@ -1915,10 +1915,10 @@ test("MCP distinguishes a successful empty salmiak search from an upstream HTTP 
       if (url.pathname.endsWith("/user/GetCurrentUser")) {
         return json({ DebitorId: 42 });
       }
-      if (url.pathname.endsWith("/Order/DeliverySpot")) {
+      if (url.pathname.endsWith("/basket/GetBasket")) {
         return json({
           TimeslotUtc: "2026092915-60-240",
-          TimeslotId: 7,
+          DeliveryTimeSlot: { Id: "7" },
           DeliveryZoneId: 9,
         });
       }

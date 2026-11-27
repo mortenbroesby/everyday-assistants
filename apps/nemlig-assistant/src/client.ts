@@ -7,7 +7,6 @@ import {
 } from "./nemlig-error.js";
 import {
   asId,
-  asNumber,
   asRecord,
   asRecords,
   asString,
@@ -320,7 +319,7 @@ export class NemligClient {
       }
       const timeslot = asString(data.TimeslotUtc);
       await this.refreshSession();
-      if (timeslot) {
+      if (timeslot && !this.timeslotId) {
         this.timeslot = timeslot;
       }
       this.loggedIn = true;
@@ -397,8 +396,11 @@ export class NemligClient {
       throw new NemligError("Search limit must be positive.");
     }
     throwIfAborted(signal);
-    if (!this.productTimestamp) {
+    if (!this.productTimestamp || !this.timeslotId) {
       await this.refreshSession(signal);
+    }
+    if (!this.timeslotId) {
+      throw new NemligError("Search requires a current delivery slot.");
     }
 
     const primary = this.rememberProducts(
@@ -1226,9 +1228,6 @@ export class NemligClient {
         signal,
       ),
     );
-    this.productTimestamp =
-      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
-      DEFAULT_PRODUCT_TIMESTAMP;
     this.correlationId =
       asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
     const user = asRecord(
@@ -1245,15 +1244,18 @@ export class NemligClient {
     }
     const delivery = asRecord(
       await this.optionalJson(
-        `${API_BASE_URL}/Order/DeliverySpot`,
-        "Get delivery spot",
+        `${API_BASE_URL}/basket/GetBasket`,
+        "Get catalogue delivery context",
         false,
         signal,
       ),
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
-    this.timeslotId = asNumber(delivery.TimeslotId) ?? this.timeslotId;
+    this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
     this.deliveryZoneId = asId(delivery.DeliveryZoneId) ?? this.deliveryZoneId;
+    this.productTimestamp =
+      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
+      DEFAULT_PRODUCT_TIMESTAMP;
   }
 
   private async searchGateway(

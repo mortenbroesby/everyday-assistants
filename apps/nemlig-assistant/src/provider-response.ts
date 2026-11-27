@@ -93,7 +93,7 @@ export const asRecords = (value: unknown): Array<Record<string, unknown>> => {
 };
 export const asString = (value: unknown): string | undefined =>
   typeof value === "string" ? value : undefined;
-export const asNumber = (value: unknown): number | undefined =>
+const asNumber = (value: unknown): number | undefined =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 export const asId = (value: unknown): number | undefined => {
   const id =
