@@ -63,24 +63,27 @@ const searchResult = (...products: Record<string, unknown>[]) =>
     },
   });
 
-const sessionRequests = (): ExpectedRequest[] => [
-  { match: "/Token$", response: json({ access_token: "token-value" }) },
-  {
-    match: "/v2/AppSettings/Website$",
-    response: json({
-      CombinedProductsAndSitecoreTimestamp: "product-stamp",
-      SitecorePublishedStamp: "site-stamp",
-    }),
-  },
+const tokenRequest = (): ExpectedRequest => ({
+  match: "/Token$",
+  response: json({ access_token: "token-value" }),
+});
+const deliveryRequest = (): ExpectedRequest => ({
+  match: "/basket/GetBasket$",
+  response: json({
+    TimeslotUtc: "2026083115-60-240",
+    DeliveryTimeSlot: { Id: "7" },
+    DeliveryZoneId: 9,
+  }),
+});
+const settingsRequest = (): ExpectedRequest => ({
+  match: "/v2/AppSettings/Website$",
+  response: json({ CombinedProductsAndSitecoreTimestamp: "product-stamp" }),
+});
+const catalogueRequests = () => [tokenRequest(), deliveryRequest()];
+const sessionRequests = () => [
+  tokenRequest(),
   { match: "/user/GetCurrentUser$", response: json({ DebitorId: 42 }) },
-  {
-    match: "/basket/GetBasket$",
-    response: json({
-      TimeslotUtc: "2026083115-60-240",
-      DeliveryTimeSlot: { Id: "7" },
-      DeliveryZoneId: 9,
-    }),
-  },
+  deliveryRequest(),
 ];
 
 test("basket failure metadata bounds HTTP status and excludes unrelated private fields", () => {
@@ -535,7 +538,7 @@ test("network reads retry, while basket mutations do not", async () => {
 
 test("primary catalogue failures are not converted into empty results", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: searchPath,
       response: json({}, { status: 503 }),
@@ -637,7 +640,7 @@ test("catalogue and basket reads pass caller signals through initialization, fal
   const fallbackAbort = new AbortController();
   const fallbackReason = new Error("cancel fallback");
   const fallbackRequests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: searchPath,
       inspect: (_url, init) => assert.equal(init?.signal?.aborted, false),
@@ -967,7 +970,7 @@ test("product normalization bounds parser depth and child nodes without warnings
 });
 
 test("search stops before dispatch when delivery context has no usable slot", async () => {
-  const requests = sessionRequests();
+  const requests = catalogueRequests();
   requests[requests.length - 1] = {
     match: "/basket/GetBasket$",
     response: json({ DeliveryTimeSlot: null }),
@@ -979,7 +982,7 @@ test("search stops before dispatch when delivery context has no usable slot", as
 
 test("search retries session initialization after cancellation during delivery context lookup", async () => {
   const controller = new AbortController();
-  const started = sessionRequests();
+  const started = catalogueRequests();
   started[started.length - 1] = {
     match: "/basket/GetBasket$",
     response: () => {
@@ -989,7 +992,7 @@ test("search retries session initialization after cancellation during delivery c
   };
   const requests = [
     ...started,
-    ...sessionRequests(),
+    deliveryRequest(),
     {
       match: searchPath,
       response: searchResult({ id: 1, title: "Test" }),
@@ -1006,7 +1009,7 @@ test("search retries session initialization after cancellation during delivery c
 
 test("v2 search maps product cards, skips banners, and uses current delivery context", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: searchPath,
       inspect: (url, init) => {
@@ -1063,7 +1066,7 @@ test("search preserves the returned products unless the caller sets a count", as
   }));
   for (const limit of [undefined, 3]) {
     const requests: ExpectedRequest[] = [
-      ...sessionRequests(),
+      ...catalogueRequests(),
       {
         match: searchPath,
         inspect: (url) =>
@@ -1088,7 +1091,7 @@ test("search preserves the returned products unless the caller sets a count", as
 
 test("search rejects a malformed successful response", async () => {
   const requests = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     { match: searchPath, response: json({}) },
   ];
   await assert.rejects(
@@ -1099,7 +1102,7 @@ test("search rejects a malformed successful response", async () => {
 
 test("exact product lookup uses current session context and returns only the requested product", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: "/productbff/api/web/productDetails/424242\\?timeslot=7",
       inspect: (_url, init) => {
@@ -1127,7 +1130,7 @@ test("exact product lookup uses current session context and returns only the req
 
 test("exact product lookup upgrades a shallow card, reuses detail, and cannot be downgraded", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: searchPath,
       response: searchResult({
@@ -1173,7 +1176,7 @@ test("exact product lookup upgrades a shallow card, reuses detail, and cannot be
 
 test("fresh exact product lookup bypasses a previously observed product", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     {
       match: searchPath,
       response: searchResult({
@@ -1246,7 +1249,7 @@ test("exact product reads retry network failure, preserve cancellation, and keep
 test("exact product lookup rejects invalid and unresolved IDs", async () => {
   const client = new NemligClient(
     mockFetch([
-      ...sessionRequests(),
+      ...catalogueRequests(),
       {
         match: "/web/productDetails/7\\?timeslot=7",
         response: json({}, { status: 404 }),
@@ -1267,7 +1270,7 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
   );
   const mismatched = new NemligClient(
     mockFetch([
-      ...sessionRequests(),
+      ...catalogueRequests(),
       {
         match: "/web/productDetails/7\\?timeslot=7",
         response: json({ product: { id: 8, title: "Other product" } }),
@@ -1286,7 +1289,7 @@ test("exact product lookup rejects invalid and unresolved IDs", async () => {
 
 test("empty gateway search tries no more than three safe fallback categories", async () => {
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     { match: searchPath, response: searchResult() },
     {
       match: "/quick\\?",
@@ -1326,10 +1329,12 @@ test("category fallback resolves a credential-free redirect and validates the co
       },
     });
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    ...catalogueRequests(),
     { match: searchPath, response: searchResult() },
     {
       match: "/quick",
+      inspect: (url) =>
+        assert.deepEqual([...new URL(url).searchParams.keys()], ["query"]),
       response: json({
         Categories: [
           { Url: "/dagligvarer/old" },
@@ -1411,10 +1416,15 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
         ],
       }),
     },
+    settingsRequest(),
     {
       match: "/Products/GetByProductGroupId\\?",
       inspect: (url, init) => {
         const parsed = new URL(url);
+        assert.match(
+          parsed.pathname,
+          /product-stamp\/2026083115-60-240\/1\/42\//u,
+        );
         assert.equal(parsed.searchParams.get("productGroupId"), "sale");
         assert.equal(parsed.searchParams.get("pagesize"), "3");
         assert.equal(init?.method, undefined);
@@ -1489,6 +1499,7 @@ test("favorites paging applies one global offset across groups", async () => {
         ],
       }),
     },
+    settingsRequest(),
     {
       match: "/Products/GetByProductGroupId\\?",
       inspect: (url) =>
@@ -1532,6 +1543,7 @@ test("favorites continue after a full page duplicated from a preceding group", a
         ],
       }),
     },
+    settingsRequest(),
     {
       match: "/Products/GetByProductGroupId\\?",
       inspect: (url) => {
@@ -1599,6 +1611,7 @@ test("favorites stop before starting another provider page after cancellation", 
         ],
       }),
     },
+    settingsRequest(),
     {
       match: "/Products/GetByProductGroupId\\?",
       inspect: (_url, init) => {
@@ -2430,13 +2443,14 @@ test("departments normalize opaque same-origin paths and browsing revalidates pa
     [{ id: "/frugt-og-groent", name: "Frugt & grønt" }],
   );
   const requests: ExpectedRequest[] = [
-    ...sessionRequests(),
+    tokenRequest(),
     {
       match: "/web/menu$",
       response: json({
         categories: [{ url: "frugt-og-groent", title: "Frugt & grønt" }],
       }),
     },
+    deliveryRequest(),
     {
       match: "/v3/web/categories/products",
       inspect: (url) => {
@@ -2473,7 +2487,7 @@ test("departments normalize opaque same-origin paths and browsing revalidates pa
 
 test("unknown departments and invalid pages fail before product browsing", async () => {
   const requests = [
-    ...sessionRequests(),
+    tokenRequest(),
     { match: "/web/menu$", response: json({ categories: [] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
@@ -2491,11 +2505,12 @@ test("department browsing honors caller counts above 50 without truncation", asy
     product: { id: String(i + 1), title: "Product " + i },
   }));
   const requests = [
-    ...sessionRequests(),
+    tokenRequest(),
     {
       match: "/web/menu$",
       response: json({ categories: [{ url: "produce", title: "Produce" }] }),
     },
+    deliveryRequest(),
     {
       match: "/web/categories/products",
       response: json({ requestedCategory: { categoryPath: "produce", items } }),

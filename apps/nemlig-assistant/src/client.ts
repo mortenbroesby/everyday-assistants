@@ -63,7 +63,6 @@ const isStorefrontPage = (url: URL): boolean =>
   url.origin === "https://www.nemlig.com" && !url.username && !url.password;
 
 const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
-const DEFAULT_CORRELATION_ID = "YFA_17hS";
 
 /** A failure known to occur before the provider's basket-write request was dispatched. */
 export class BasketPreflightError extends NemligError {
@@ -264,7 +263,6 @@ export class NemligClient {
   private accessToken?: string;
   private userId?: string;
   private productTimestamp?: string;
-  private correlationId?: string;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
   private timeslot: string;
@@ -333,7 +331,9 @@ export class NemligClient {
         throw new NemligError("Login failed: invalid credentials");
       }
       const timeslot = asString(data.TimeslotUtc);
-      await this.refreshSession();
+      await this.ensureAccessToken();
+      await this.loadCurrentUser();
+      await this.loadDeliveryContext();
       if (timeslot && !this.timeslotId) {
         this.timeslot = timeslot;
       }
@@ -421,10 +421,7 @@ export class NemligClient {
     }
 
     const quick = await this.optionalJson(
-      `${SEARCH_GATEWAY_URL}/quick?${new URLSearchParams({
-        query,
-        correlationId: this.correlationId ?? "",
-      })}`,
+      `${SEARCH_GATEWAY_URL}/quick?${new URLSearchParams({ query })}`,
       "Quick search",
       true,
       signal,
@@ -478,8 +475,9 @@ export class NemligClient {
   }
 
   private async ensureCatalogueSlot(signal?: AbortSignal): Promise<void> {
-    if (!this.productTimestamp || !this.timeslotId) {
-      await this.refreshSession(signal);
+    await this.ensureAccessToken(signal);
+    if (!this.timeslotId) {
+      await this.loadDeliveryContext(signal);
     }
     if (!this.timeslotId) {
       throw new NemligError(
@@ -530,10 +528,6 @@ export class NemligClient {
       throw new NemligError("Favorites page must be positive.");
     }
     const offset = limit === undefined ? 0 : (page - 1) * limit;
-    if (!this.productTimestamp) {
-      await this.refreshSession(signal);
-    }
-
     const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
     pageUrl.searchParams.set("GetAsJson", "1");
     pageUrl.searchParams.set("t", this.timeslot);
@@ -593,9 +587,7 @@ export class NemligClient {
   }
 
   async listDepartments(): Promise<Department[]> {
-    if (!this.productTimestamp) {
-      await this.refreshSession();
-    }
+    await this.ensureAccessToken();
     return storefrontDepartments(
       await this.json(
         `${PRODUCT_BFF_URL}/web/menu`,
@@ -1302,7 +1294,6 @@ export class NemligClient {
     this.accessToken = undefined;
     this.userId = undefined;
     this.productTimestamp = undefined;
-    this.correlationId = undefined;
     this.timeslot = this.defaultTimeslot;
     this.timeslotId = 0;
     this.knownProducts.clear();
@@ -1344,8 +1335,11 @@ export class NemligClient {
     }
   }
 
-  private async refreshSession(signal?: AbortSignal): Promise<void> {
+  private async ensureAccessToken(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
+    if (this.accessToken) {
+      return;
+    }
     const token = asRecord(
       await this.json(`${API_BASE_URL}/Token`, { signal }, "Get token", true),
     );
@@ -1353,28 +1347,23 @@ export class NemligClient {
     if (!this.accessToken) {
       throw new NemligError("Get token failed: invalid response data.");
     }
-    const settings = asRecord(
-      await this.optionalJson(
-        `${API_BASE_URL}/v2/AppSettings/Website`,
-        "Get app settings",
-        false,
-        signal,
-      ),
-    );
-    this.correlationId =
-      asString(settings.SitecorePublishedStamp) ?? DEFAULT_CORRELATION_ID;
+  }
+
+  private async loadCurrentUser(): Promise<void> {
     const user = asRecord(
       await this.optionalJson(
         `${API_BASE_URL}/user/GetCurrentUser`,
         "Get current user",
         false,
-        signal,
       ),
     );
     const userId = user.DebitorId ?? user.Id;
     if (typeof userId === "number" || typeof userId === "string") {
       this.userId = String(userId);
     }
+  }
+
+  private async loadDeliveryContext(signal?: AbortSignal): Promise<void> {
     const delivery = asRecord(
       await this.optionalJson(
         `${API_BASE_URL}/basket/GetBasket`,
@@ -1385,9 +1374,6 @@ export class NemligClient {
     );
     this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
     this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
-    this.productTimestamp =
-      asString(settings.CombinedProductsAndSitecoreTimestamp) ??
-      DEFAULT_PRODUCT_TIMESTAMP;
   }
 
   private async searchStorefront(
@@ -1523,7 +1509,21 @@ export class NemligClient {
     page = 1,
     signal?: AbortSignal,
   ): Promise<Product[]> {
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp ?? DEFAULT_PRODUCT_TIMESTAMP}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
+    if (!this.productTimestamp) {
+      const settings = asRecord(
+        await this.optionalJson(
+          `${API_BASE_URL}/v2/AppSettings/Website`,
+          "Get app settings",
+          false,
+          signal,
+        ),
+      );
+      this.productTimestamp =
+        asString(settings.CombinedProductsAndSitecoreTimestamp) ??
+        DEFAULT_PRODUCT_TIMESTAMP;
+    }
+
+    const endpoint = `${API_BASE_URL}/${this.productTimestamp}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
     const params = new URLSearchParams({
       productGroupId: String(group),
       pageIndex: String(page - 1),
