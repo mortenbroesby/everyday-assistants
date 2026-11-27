@@ -11,9 +11,11 @@ import {
   StreamableHTTPClientTransport,
 } from "@modelcontextprotocol/client";
 
-for (const expired of [false, true]) {
+for (const mode of ["active", "expired", "selection"]) {
+  const expired = mode === "expired";
+  const selection = mode === "selection";
   test(
-    `routing fixture protects ${expired ? "expired" : "active"} drafts and blocks provider access`,
+    `routing fixture protects ${mode} state and blocks provider access`,
     {
       timeout: 30000,
     },
@@ -25,6 +27,7 @@ for (const expired of [false, true]) {
           "tsx",
           "scripts/agent-routing-fixture.ts",
           ...(expired ? ["--expired-draft"] : []),
+          ...(selection ? ["--selection-case", "milk-qualifier"] : []),
         ],
         { stdio: ["ignore", "pipe", "pipe"] },
       );
@@ -59,7 +62,27 @@ for (const expired of [false, true]) {
         const { url, expiredDraft } = await readiness;
         assert.equal(new URL(url).hostname, "127.0.0.1");
         await client.connect(new StreamableHTTPClientTransport(new URL(url)));
-        if (expired) {
+        if (selection) {
+          const found = await client.callTool({
+            name: "find_groceries",
+            arguments: { search_term: "laktosefri mælk", result_count: 5 },
+          });
+          assert.notEqual(found.isError, true);
+          const rows = found.structuredContent.result;
+          assert.deepEqual(
+            rows.map((row) => row.id),
+            [901001, 901002, 901003, 901004, 901005],
+          );
+          assert.equal(rows[0].labels.includes("Laktosefri"), false);
+          assert.equal(rows[3].subcategory, "Slik");
+          assert.equal(rows[3].labels.includes("Laktosefri"), true);
+          assert.equal(rows[4].labels.includes("Laktosefri"), true);
+          const draft = await client.callTool({
+            name: "show_product_review",
+            arguments: {},
+          });
+          assert.equal(draft.structuredContent.unavailable, true);
+        } else if (expired) {
           assert.ok(expiredDraft?.draftId);
           assert.ok(expiredDraft?.reviewContextId);
           const shown = await client.callTool({
@@ -157,8 +180,8 @@ for (const expired of [false, true]) {
       }
       const stopped = records.find((record) => record.event === "stopped");
       assert.deepEqual(stopped.counts, {
-        searches: 0,
-        details: 1,
+        searches: selection ? 1 : 0,
+        details: selection ? 5 : 1,
         forbidden: 1,
       });
     },

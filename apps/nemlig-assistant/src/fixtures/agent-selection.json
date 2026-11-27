@@ -1,0 +1,362 @@
+[
+  {
+    "id": "milk-qualifier",
+    "split": "baseline",
+    "prompt": "Find laktosefri mælk til mig. Hvilke af varerne matcher?",
+    "query": "laktosefri mælk",
+    "expectedProductIds": [901005],
+    "unknownProductIds": [901001, 901002, 901003],
+    "borderlineProductIds": [],
+    "products": [
+      {
+        "id": 901001,
+        "name": "Nordgård minimælk",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Minimælk",
+        "description": "Minimælk af komælk. Ingen yderligere diætoplysninger.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 901002,
+        "name": "Morgengård letmælk",
+        "brand": "Fixture",
+        "category": "Drikke",
+        "subcategory": "Plantedrik mm",
+        "description": "Langtidsholdbar letmælk af komælk.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 901003,
+        "name": "Fjordmælk sødmælk",
+        "brand": "Fixture",
+        "category": "Drikke",
+        "subcategory": "Plantedrik mm",
+        "description": "Langtidsholdbar sødmælk af komælk.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 901004,
+        "name": "Frugtfigurer",
+        "brand": "Fixture",
+        "category": "Kiosk",
+        "subcategory": "Slik",
+        "description": "Frugtvingummi.",
+        "labels": ["Laktosefri"],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg",
+        "isLactoseFree": true
+      },
+      {
+        "id": 901005,
+        "name": "Nordgård letmælk",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Letmælk",
+        "description": "Laktosefri letmælk af komælk, tilsat laktase.",
+        "labels": ["Laktosefri"],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l",
+        "isLactoseFree": true
+      }
+    ]
+  },
+  {
+    "id": "brand-category",
+    "split": "baseline",
+    "prompt": "Find Nordkiks kiks til mig. Hvilke af varerne matcher?",
+    "query": "nordkiks kiks",
+    "expectedProductIds": [902001],
+    "unknownProductIds": [],
+    "borderlineProductIds": [],
+    "products": [
+      {
+        "id": 902001,
+        "name": "Kakaokiks",
+        "brand": "Nordkiks",
+        "category": "Kolonial",
+        "subcategory": "Chokoladekiks",
+        "description": "Sprøde kiks med kakaofyld.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 902002,
+        "name": "Minikiks",
+        "brand": "Sydkiks",
+        "category": "Kolonial",
+        "subcategory": "Chokoladekiks",
+        "description": "Små chokoladekiks.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 902003,
+        "name": "Chokoladekiks",
+        "brand": "Vesterkiks",
+        "category": "Kolonial",
+        "subcategory": "Chokoladekiks",
+        "description": "Vesterkiks med mælkechokolade.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 902004,
+        "name": "Fuldkornskiks",
+        "brand": "Østkiks",
+        "category": "Kolonial",
+        "subcategory": "Kiks",
+        "description": "Fuldkornskiks.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 902005,
+        "name": "Saltkiks",
+        "brand": "Sydkiks",
+        "category": "Kolonial",
+        "subcategory": "Kiks",
+        "description": "Små saltkiks.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      }
+    ]
+  },
+  {
+    "id": "butter-category",
+    "split": "baseline",
+    "prompt": "Find smør til mig. Hvilke af varerne matcher?",
+    "query": "smør",
+    "expectedProductIds": [903003, 903004],
+    "unknownProductIds": [],
+    "borderlineProductIds": [903001],
+    "products": [
+      {
+        "id": 903001,
+        "name": "Smørbar blanding",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Smørbart",
+        "description": "Blandingsprodukt af smør og rapsolie.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 903002,
+        "name": "Friskost naturel",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Smøreost",
+        "description": "Friskost til brød.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 903003,
+        "name": "Saltet smør",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Smør",
+        "description": "Smør af fløde, 82 procent fedt.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 903004,
+        "name": "Økologisk smør",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Smør",
+        "description": "Smør af økologisk fløde.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg",
+        "isOrganic": true
+      },
+      {
+        "id": 903005,
+        "name": "Flødeost",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Smøreost",
+        "description": "Flødeost naturel.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      }
+    ]
+  },
+  {
+    "id": "oat-control",
+    "split": "baseline",
+    "prompt": "Find havredrik til mig. Hvilke af varerne matcher?",
+    "query": "havredrik",
+    "expectedProductIds": [904001, 904002, 904003],
+    "unknownProductIds": [],
+    "borderlineProductIds": [],
+    "products": [
+      {
+        "id": 904001,
+        "name": "Havredrik barista",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Øvrig mælk",
+        "description": "Plantebaseret havredrik til kaffe.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 904002,
+        "name": "Havredrik original",
+        "brand": "Fixture",
+        "category": "Drikke",
+        "subcategory": "Plantedrik mm",
+        "description": "Drik fremstillet af havre.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 904003,
+        "name": "Havredrik økologisk",
+        "brand": "Fixture",
+        "category": "Drikke",
+        "subcategory": "Plantedrik mm",
+        "description": "Økologisk havredrik.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l",
+        "isOrganic": true
+      }
+    ]
+  },
+  {
+    "id": "brand-category-heldout",
+    "split": "heldout",
+    "prompt": "Find Fjordkiks kiks til mig. Hvilke af varerne matcher?",
+    "query": "fjordkiks kiks",
+    "expectedProductIds": [905003],
+    "unknownProductIds": [],
+    "borderlineProductIds": [],
+    "products": [
+      {
+        "id": 905001,
+        "name": "Fjordkiks kakaodrik",
+        "brand": "Fjordkiks",
+        "category": "Drikke",
+        "subcategory": "Kakaodrik",
+        "description": "Kakaodrik.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 905002,
+        "name": "Kiks med vanilje",
+        "brand": "Nordkiks",
+        "category": "Kolonial",
+        "subcategory": "Kiks",
+        "description": "Vaniljekiks.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      },
+      {
+        "id": 905003,
+        "name": "Chokoladekiks",
+        "brand": "Fjordkiks",
+        "category": "Kolonial",
+        "subcategory": "Kiks",
+        "description": "Fjordkiks chokoladekiks.",
+        "labels": [],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg"
+      }
+    ]
+  },
+  {
+    "id": "milk-unknown-heldout",
+    "split": "heldout",
+    "prompt": "Find laktosefri mælk til mig. Hvilke af varerne matcher?",
+    "query": "laktosefri mælk",
+    "expectedProductIds": [],
+    "unknownProductIds": [906001],
+    "borderlineProductIds": [],
+    "products": [
+      {
+        "id": 906001,
+        "name": "Morgenmælk",
+        "brand": "Fixture",
+        "category": "Køl",
+        "subcategory": "Mælk",
+        "description": "Komælk; ingen yderligere diætoplysninger.",
+        "labels": [],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l"
+      },
+      {
+        "id": 906002,
+        "name": "Frugtslik",
+        "brand": "Fixture",
+        "category": "Kiosk",
+        "subcategory": "Slik",
+        "description": "Laktosefri vingummi.",
+        "labels": ["Laktosefri"],
+        "unitSize": "200 g",
+        "unitPrice": 50,
+        "unit": "kr/kg",
+        "isLactoseFree": true
+      },
+      {
+        "id": 906003,
+        "name": "Havredrik",
+        "brand": "Fixture",
+        "category": "Drikke",
+        "subcategory": "Plantedrik mm",
+        "description": "Plantebaseret havredrik uden mælk.",
+        "labels": ["Laktosefri"],
+        "unitSize": "1 l",
+        "unitPrice": 10,
+        "unit": "kr/l",
+        "isLactoseFree": true
+      }
+    ]
+  }
+]
