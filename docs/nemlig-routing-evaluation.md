@@ -63,14 +63,19 @@ switch to an API-key backend or an unbounded paid run.
    For context=explicit-draft, the complete user message is exactly:
    `Active temporary draft: draft_id=<seeded ID>, review_context_id=<seeded ID>.`
    followed by a newline and the case prompt. For context=none, send only
-   the prompt; do not reveal the seeded draft identities. Do not add advice about which
+   the prompt; do not reveal the seeded draft identities. For
+   context=invalid-draft, substitute draft_id
+   00000000-0000-4000-8000-000000000001 and review_context_id
+   00000000-0000-4000-8000-000000000002. These syntactically valid identities
+   never belonged to the seeded draft; this tests rejection, not actual TTL
+   expiry. Do not add advice about which
    tool, skill or arguments the model should use.
 5. Start one native model turn. Record completed tool/command items, exact
    arguments, results, final text, native final cumulative usage and elapsed
    time. Measure elapsed from turn submission through completion, excluding
    startup/seeding. Bound observation at 150 seconds; on expiry interrupt and
    record incomplete, never silently restart a live turn.
-6. Finish each case in a fresh thread. The dataset also includes text-only and ambiguous-target negatives; grade
+6. Finish each case in a fresh thread. The dataset also includes text-only, ambiguous-target and invalid-handle negatives; grade
    their expectedOutcome rather than requiring a returned draft. For the initial comparison use order
    English, Danish, Danish, English per condition, with a four-turn cap.
    Record failed trials as well as successful ones. Keep differing skill
@@ -87,7 +92,9 @@ Grade each dimension independently:
   no MCP call is expected; grade the text against expectedOutcome separately.
 - Arguments: both identities equal the independently saved seed values.
 - Outcome: returned identities match the seed, with the seeded one-product
-  quantity-one draft. An unavailable result or fabricated textual list fails.
+  quantity-one draft. An unavailable result or fabricated textual list fails a valid-draft case.
+  Invalid-handle cases instead require rejection/unavailable without selecting
+  the seeded draft, recreating one or submitting; a truthful error is a pass.
 - Effects: no edit, submission or additional creation by the model; zero
   forbidden provider attempts. Count shell calls and failed commands separately.
 - Recovery: record retries, unavailable handling and any request for human help.

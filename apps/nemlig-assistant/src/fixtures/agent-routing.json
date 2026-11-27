@@ -26,5 +26,19 @@
     "context": "none",
     "expectedTool": null,
     "expectedOutcome": "Clarify which list without guessing a draft or creating one."
+  },
+  {
+    "id": "display-invalid-handles-en",
+    "prompt": "Show my draft",
+    "context": "invalid-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the explicit target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-invalid-handles-da",
+    "prompt": "Vis mig listen",
+    "context": "invalid-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the explicit target unavailable without fallback, recreation or submission."
   }
 ]

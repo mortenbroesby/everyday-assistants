@@ -680,7 +680,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         (target.shoppingListId === undefined && target.draftId === undefined))
     ) {
       throw new NemligError(
-        "This shopping-list review expired. Refresh the exact list before editing it.",
+        "This exact draft review context is unavailable. The supplied handles do not resolve to an available review. Do not infer expiry, guess another target, retry unchanged, or recreate a draft without a new explicit user instruction.",
       );
     }
     if (requestContext) {
@@ -815,7 +815,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     if (!review || review.basketMode !== "direct-basket") {
       return success(
         { unavailable: true as const },
-        "This temporary draft is unavailable. Start a new draft from exact products, or display saved lists to choose a source.",
+        draftId
+          ? "This exact temporary draft is unavailable. Do not retry unchanged, select another draft, or recreate it without a new explicit user instruction."
+          : "No temporary draft was resolved for this call. If this call omitted known draft_id and review_context_id, make one corrected read-only display call with that exact pair unchanged. Otherwise ask which draft or list the user means. Do not infer expiry or create a new draft from missing context alone.",
       );
     }
     return success({ review, selectedShoppingListId: null });

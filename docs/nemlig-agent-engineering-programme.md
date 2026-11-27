@@ -515,3 +515,54 @@ mentioning known handles; missing context is not proof that the draft expired.
 Consider a narrowly scoped recovery-message evaluation under #347, preserving
 exact-target ownership and no implicit reconstruction. No recovery behavior
 changed in this iteration.
+
+## Unavailable-context guidance: deterministic and native evidence
+
+Earlier omitted-handle trials received a message recommending new-draft
+creation even though the seeded draft still existed. The existing OpenSpec
+safe-target requirement already requires actionable no-target guidance. The
+change preserves target lookup, ownership, rejection and structured
+unavailable=true, but explains one corrected read-only call when this call
+omitted known handles. Otherwise it asks for clarification. An unavailable
+explicit target does not invite unchanged retry or reconstruction.
+
+The fixture regression first failed on the old text, then passed after the
+change; it verifies the same seeded draft/rows are still available through the
+correct pair. A second failing-then-passing check covers syntactically valid
+but nonexistent handles: the shared review-owner error previously asserted
+expiry and suggested refreshing a shopping list. It now truthfully reports
+that the exact draft review context is unavailable. It retains the existing
+UI's draft-unavailable wording recognition; no UI classifier changed.
+
+Two native baseline trials used never-issued UUIDs (not a simulated clock
+expiry) with a separate hidden seeded draft. Both sent the supplied pair and
+made no fallback or mutation. However, both final answers asserted expiry; the
+English answer suggested reopening the temporary draft on Nemlig, which is
+not a supported recovery path. The correction was then evaluated with the same
+two cases and model/host/dependencies:
+
+| Condition / prompt | Initial targeting / recovery / final explanation | MCP / shell calls | Elapsed | Input / cached / output |
+| --- | --- | --- | ---: | --- |
+| Before / English | Exact target rejected; false expiry and reopen suggestion | 1 / 1 | 17.07 s | 136166 / 125440 / 283 |
+| Before / Danish | Exact target rejected; false expiry explanation | 1 / 1 | 23.16 s | 139991 / 127360 / 236 |
+| After / English | Omitted handles, then one corrected exact call; truthful unavailable | 2 / 1 | 20.64 s | 172219 / 161536 / 315 |
+| After / Danish | Exact target rejected; truthful unavailable | 1 / 1 | 17.89 s | 138358 / 126592 / 275 |
+
+This distinguishes first-attempt targeting (before 2/2; after 1/2), safe
+rejection/no recreation (both 2/2), and factual final explanation (before 0/2;
+after 2/2). The English corrected call is an observed recovery, not an unchanged
+retry or provider write. Do not flatten these into a single success score or
+claim efficiency gains: one trial incurred an extra tool call and more tokens.
+Two trials per condition are insufficient to establish general improvement.
+
+Each fixture recorded two seed detail reads, zero searches and forbidden
+operations. Native clients and servers stopped. No card rendering, genuine
+TTL expiry, uncertain submission or real provider action was tested.
+NEM-CHATGPT-001 through -008 remain NOT RUN. Updated cases/runbook preserve
+the setup and limitations.
+
+Validation: 41 fixture/interface tests passed after the functional text change;
+the final fixture check passed again after preserving the UI-recognized
+draft-unavailable wording. Lint and diff checks passed. Earlier dependency-
+aligned head a249960 passed full CI 45918835537; this new head requires its
+own exact-head result. No new durable schema, dependency or agent runtime.

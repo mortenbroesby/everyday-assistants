@@ -75,6 +75,41 @@ test(
         arguments: { view: "draft" },
       });
       assert.equal(missing.structuredContent.unavailable, true);
+      const guidance = missing.content
+        .filter((item) => item.type === "text")
+        .map((item) => item.text)
+        .join("\n");
+      assert.match(guidance, /draft_id.*review_context_id/u);
+      assert.match(guidance, /do not infer expiry/iu);
+      const recovered = await client.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: expected.draftId,
+          review_context_id: expected.reviewContextId,
+        },
+      });
+      assert.deepEqual(
+        recovered.structuredContent.review.items,
+        expected.items,
+      );
+      assert.equal(
+        recovered.structuredContent.review.draftId,
+        expected.draftId,
+      );
+      const invalid = await client.callTool({
+        name: "show_product_review",
+        arguments: {
+          draft_id: "00000000-0000-4000-8000-000000000001",
+          review_context_id: "00000000-0000-4000-8000-000000000002",
+        },
+      });
+      assert.equal(invalid.isError, true);
+      const invalidGuidance = invalid.content
+        .filter((item) => item.type === "text")
+        .map((item) => item.text)
+        .join("\n");
+      assert.match(invalidGuidance, /unavailable/iu);
+      assert.doesNotMatch(invalidGuidance, /expired|refresh the exact list/iu);
       const forbidden = await client.callTool({
         name: "show_my_basket",
         arguments: {},
