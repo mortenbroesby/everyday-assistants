@@ -21,6 +21,7 @@ interface ToolResult {
 
 export const productionToolInventory = {
   readOnly: [
+    "review_basket_deletion",
     "find_groceries",
     "check_nemlig_connection",
     "get_profile",
@@ -28,6 +29,7 @@ export const productionToolInventory = {
     "show_product_review",
   ],
   externalState: [
+    "confirm_basket_deletion",
     "start_product_review",
     "update_product_review_conversation",
     "submit_product_review_conversation",

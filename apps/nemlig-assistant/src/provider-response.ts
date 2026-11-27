@@ -447,9 +447,15 @@ export function storefrontCategoryPage(
   response: unknown,
   slug: string,
   limit: number,
+  requireBreadcrumb = false,
 ) {
   const category = asRecord(asRecord(response).requestedCategory);
-  if (category.categoryPath !== slug || !Array.isArray(category.items)) {
+  if (
+    category.categoryPath !== slug.split("/").at(-1) ||
+    (requireBreadcrumb &&
+      asRecords(category.breadcrumbs).at(-1)?.url !== `kategori/${slug}`) ||
+    !Array.isArray(category.items)
+  ) {
     throw new NemligError(
       "Invalid department response: requested category is missing.",
     );

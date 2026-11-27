@@ -19,6 +19,7 @@ import {
   type ShoppingClient,
   type ShoppingListClient,
 } from "./client.js";
+import { confirmDeletion, reviewDeletion } from "./basket-deletion.js";
 import { createProgram } from "./cli.js";
 import {
   createMcpServer,
@@ -174,7 +175,8 @@ test("CLI exposes only supported commands and never accepts a password option", 
   ]) {
     assert.match(help, new RegExp(command));
   }
-  assert.doesNotMatch(help, /\bremove\b/u);
+  assert.match(help, /\bremove\b/u);
+  assert.match(help, /clear-basket/u);
   assert.doesNotMatch(help, /plan_my_shopping|\bplan\b/u);
   for (const forbidden of [
     "feature-request",
@@ -423,6 +425,13 @@ const toolText = (result: unknown): string =>
 const friendlyCatalog = [
   ["check_nemlig_connection", "Check my Nemlig connection", true, false, []],
   [
+    "confirm_basket_deletion",
+    "Confirm a basket deletion",
+    false,
+    true,
+    ["review_id", "confirmed"],
+  ],
+  [
     "find_groceries",
     "Search Nemlig products",
     true,
@@ -430,6 +439,13 @@ const friendlyCatalog = [
     ["search_term", "result_count"],
   ],
   ["get_profile", "Get my Nemlig profile", true, false, []],
+  [
+    "review_basket_deletion",
+    "Review a basket deletion",
+    true,
+    false,
+    ["action", "product_id"],
+  ],
   ["show_my_basket", "Show my Nemlig basket", true, false, ["draft_id"]],
   [
     "show_product_review",
@@ -2051,7 +2067,7 @@ test("every MCP tool has complete schemas, accurate annotations, and safe server
       );
       assert.match(
         mcp.getInstructions() ?? "",
-        /The actual Nemlig basket is add-only/u,
+        /wait for separate explicit confirmation/u,
       );
       assert.match(mcp.getInstructions() ?? "", /Edits affect only the draft/u);
       assert.match(
@@ -2134,10 +2150,10 @@ test("MCP distinguishes the Local basket from the actual Nemlig basket", async (
         /Saved Nemlig shopping lists are read-only sources/u,
       );
       assert.match(instructions, /temporary process-local draft/u);
-      assert.match(instructions, /The actual Nemlig basket is add-only/u);
+      assert.match(instructions, /wait for separate explicit confirmation/u);
       assert.match(
         instructions,
-        /Never remove, decrease, replace, swap, clear, check out, pay, order/u,
+        /Never partially decrease, replace, swap, check out, pay, order/u,
       );
       assert.match(
         instructions,
@@ -3149,4 +3165,155 @@ test("product search is read-only and selection starts a temporary draft", async
   );
   assert.equal(creates, 0);
   assert.equal(basketWrites, 0);
+});
+
+test("basket deletion requires a review and consumes confirmation before dispatch", async () => {
+  let writes = 0;
+  const provider = fakeClient({
+    reviewBasketEdit: async () => ({ basket, fingerprint: "reviewed" }),
+    applyReviewedBasketEdit: async (edit, fingerprint) => {
+      writes++;
+      assert.deepEqual(edit, { kind: "clear" });
+      assert.equal(fingerprint, "reviewed");
+      throw new NemligError("Uncertain write");
+    },
+  });
+  await withMcpClient(
+    createMcpServer(provider, testCredentials),
+    async (mcp) => {
+      const prepare = await mcp.callTool({
+        name: "review_basket_deletion",
+        arguments: { action: "clear" },
+      });
+      assert.equal(prepare.isError, undefined, toolText(prepare));
+      assert.equal(writes, 0);
+      const review_id = (prepare.structuredContent as { review_id: string })
+        .review_id;
+      const args = { review_id, confirmed: true };
+      const declined = await mcp.callTool({
+        name: "confirm_basket_deletion",
+        arguments: { ...args, confirmed: false },
+      });
+      assert.equal(declined.isError, true);
+      assert.equal(writes, 0);
+      const result = await mcp.callTool({
+        name: "confirm_basket_deletion",
+        arguments: args,
+      });
+      assert.equal(result.isError, true);
+      assert.equal(writes, 1);
+      const replay = await mcp.callTool({
+        name: "confirm_basket_deletion",
+        arguments: args,
+      });
+      assert.equal(replay.isError, true);
+      assert.equal(writes, 1);
+    },
+  );
+});
+
+test("CLI displays the affected line and honors rejection before a removal", async () => {
+  const calls: string[] = [];
+  const fixture = {
+    ...basket,
+    items: [{ id: 7, name: "Milk", quantity: 2, total: 25 }],
+  };
+  const provider = fakeClient({
+    reviewBasketEdit: async (edit) => {
+      assert.deepEqual(edit, { kind: "remove", productId: 7 });
+      return { basket: fixture, fingerprint: "exact" };
+    },
+    applyReviewedBasketEdit: async () => {
+      calls.push("apply");
+      return { ...fixture, items: [] };
+    },
+  });
+  for (const approved of [false, true]) {
+    const output: string[] = [];
+    const program = createProgram({
+      client: provider,
+      out: (message) => output.push(message),
+      confirm: async () => {
+        assert.match(output.join("\n"), /2 × Milk \(#7\)/u);
+        return approved;
+      },
+    });
+    await program.parseAsync(["remove", "7"], { from: "user" });
+    assert.equal(calls.length, approved ? 1 : 0);
+    assert.match(output.at(-1) ?? "", approved ? /empty/u : /Cancelled/u);
+  }
+});
+
+test("hosted basket deletion requires the reviewing conversation", async () => {
+  let writes = 0;
+  const provider = fakeClient({
+    reviewBasketEdit: async () => ({ basket, fingerprint: "exact" }),
+    applyReviewedBasketEdit: async () => {
+      writes++;
+      return basket;
+    },
+  });
+  await withMcpClient(
+    createMcpServer(
+      provider,
+      testCredentials,
+      {},
+      { principalKey: "owner", policyRevision: "current" },
+    ),
+    async (mcp) => {
+      const prepare = {
+        name: "review_basket_deletion",
+        arguments: { action: "clear" },
+      };
+      const missing = await mcp.callTool(prepare);
+      assert.equal(missing.isError, true);
+      const reviewed = await mcp.callTool({
+        ...prepare,
+        _meta: { "openai/session": "one" },
+      });
+      const review_id = (reviewed.structuredContent as { review_id: string })
+        .review_id;
+      const confirm = {
+        name: "confirm_basket_deletion",
+        arguments: { confirmed: true, review_id },
+      };
+      const wrong = await mcp.callTool({
+        ...confirm,
+        _meta: { "openai/session": "two" },
+      });
+      assert.equal(wrong.isError, true);
+      assert.equal(writes, 0);
+      const exact = await mcp.callTool({
+        ...confirm,
+        _meta: { "openai/session": "one" },
+      });
+      assert.equal(exact.isError, undefined, toolText(exact));
+      assert.equal(writes, 1);
+    },
+  );
+});
+
+test("basket deletion reviews expire before a provider write", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: 10000 });
+  let writes = 0;
+  const provider = fakeClient({
+    reviewBasketEdit: async () => ({ basket, fingerprint: "exact" }),
+    applyReviewedBasketEdit: async () => {
+      writes++;
+      return basket;
+    },
+  });
+  const { review_id } = await reviewDeletion(provider, "owner", {
+    kind: "clear",
+  });
+  await assert.rejects(
+    confirmDeletion(provider, "owner", randomUUID()),
+    /unavailable/u,
+  );
+  t.mock.timers.tick(300001);
+  await assert.rejects(
+    confirmDeletion(provider, "owner", review_id),
+    /unavailable/u,
+  );
+  assert.equal(writes, 0);
 });

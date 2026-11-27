@@ -23,7 +23,7 @@
     "developerName": "Morten & Josephine Broesby-Olsen",
     "displayName": "Nemlig Assistant",
     "logo": "./assets/icon.png",
-    "longDescription": "Find current Nemlig products and compare sizes and prices. Review chosen products in a temporary draft; edits do not change saved shopping lists or the real basket. Add exact reviewed products to the basket only after authorization. After verified addition, the app can optionally save the whole basket as a shopping list. No checkout or payment.",
+    "longDescription": "Find current Nemlig products and compare sizes and prices. Review chosen products in a temporary draft; edits do not change saved shopping lists or the real basket. Add exact reviewed products to the basket only after authorization. After verified addition, the app can optionally save the whole basket as a shopping list. Whole-line removal and clearing require a separate review and explicit confirmation. No checkout or payment.",
     "shortDescription": "Groceries and basket drafts"
   },
   "skills": "./skills",
