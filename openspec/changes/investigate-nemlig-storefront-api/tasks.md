@@ -2,7 +2,7 @@
 
 - [x] 1.1 Pin the assistant revision and storefront asset and record the initial route comparison in design.md.
 - [x] 1.2 Trace client methods to active tools, CLI commands and hosted consumers. Locate prior capture procedures and reusable fixtures.
-- [ ] 1.3 Record ordinary browser request methods, sanitized route templates and outcomes for search, detail and category browsing. Distinguish server-rendered data from browser requests.
+- [x] 1.3 Record ordinary browser request methods, sanitized route templates and outcomes for search, detail and category browsing. Distinguish server-rendered data from browser requests.
 
 ## 2. Compare catalog behavior
 
@@ -18,9 +18,9 @@
 
 ## 4. Decide and hand off
 
-- [ ] 4.1 Publish a disposition for every journey with evidence quality, benefit, compatibility risks and unresolved questions.
-- [ ] 4.2 For each adoption candidate, identify affected callers, contract tests, rollout and rollback, request volume and cost implications.
-- [ ] 4.3 Link implementation follow-ups only for accepted changes and close the epic after reviewing coverage and outstanding deferrals.
+- [x] 4.1 Publish a disposition for every journey with evidence quality, benefit, compatibility risks and unresolved questions.
+- [x] 4.2 For each adoption candidate, identify affected callers, contract tests, rollout and rollback, request volume and cost implications.
+- [x] 4.3 Link implementation follow-ups only for accepted changes and close the epic after reviewing coverage and outstanding deferrals.
 
 ## 5. Migrate approved catalog reads
 
@@ -29,4 +29,4 @@
 - [x] 5.2b Switch exact lookup to the storefront detail endpoint with fixture-backed mappings for price, pack, availability, promotions, unknown fields and exact identity.
 - [x] 5.3 Switch department listing and browsing to menu and v3 categories after verifying category ID compatibility and pagination. Preserve existing quick suggestions.
 - [x] 5.4 Verify favorite membership and pagination under the authorized account, then migrate if the replacement preserves them.
-- [ ] 5.5 Update the provider manifest, run CLI and hosted read acceptance, and document rollback per changed adapter. Obtain explicit approval before any live basket or other external data change.
+- [x] 5.5 Update the provider manifest, run CLI and hosted read acceptance, and document rollback per changed adapter. Obtain explicit approval before any live basket or other external data change.

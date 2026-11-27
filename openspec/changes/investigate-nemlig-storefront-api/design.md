@@ -99,3 +99,21 @@ On the same laptop, the legacy listDepartments returned zero entries and the sto
 A cold category browse uses the existing bounded session bootstrap and one request each for menu and category. Warm browsing revalidates the menu and requests one category window. No dual reads run in production. Revert the department migration commit to restore the old adapter and ID handling.
 
 All 109 legacy-only favorite products were explicitly marked Favorite=true by the provider. The one section navigation link supplied a product list of 44 cards and a text section. Section links provide no proof of a complete replacement inventory. Keep the authenticated legacy favorites path. Revisit when the storefront supplies verifiable complete membership and repeatable pagination. This is a verified deferral under task 5.4.
+
+## Disposition and acceptance
+
+| Journey | Decision | Evidence and operational effect |
+|---|---|---|
+| Product search | Adopt v2 | Same-slot guest and account reads, price fixtures, client tests and MCP acceptance. Ranking changes are expected. Roll back the search adapter commit to restore legacy ranking. |
+| Exact detail | Adopt storefront detail | Ordinary and fresh authenticated reads, exact-ID checks, sold-out and unknown-state fixtures. One read per uncached detail or mandatory refresh. Revert the exact-detail commit independently. |
+| Delivery context | Adopt the basket's slot | The basket read replaces the DeliverySpot read in session bootstrap, preserving the number of startup requests. A missing ID fails before catalog dispatch. Restore the old bootstrap only together with compatible legacy routes. |
+| Department discovery and browsing | Adopt menu and v3 categories | Guest CLI returned 21 departments. Mixed rows and lookahead are covered by paging tests and live reads. One extra row is requested per window. Revert the department commit to restore legacy behavior. |
+| Suggestions and empty-search recovery | Retain quick suggestions and bounded fallback | Both websites reference quick. The category-name/URL response remains compatible. Legacy page/group reads still serve fallback and favorites. |
+| Favorites | Retain legacy inventory | An authenticated full-set comparison and provider flags disproved equivalence for the flattened page. Reassess only with evidence of a complete replacement. |
+| Recipes | Defer new feature | Guest ingredient mapping, suggested packs and pantry alternatives worked. Adding a recipe journey requires its own product decision. |
+| Account, basket and saved lists | Retain existing operations | Current site still calls legacy session and basket routes. No equivalent replacements were established for protected flows. This change introduces no provider mutation. |
+| Checkout, payments, orders and delivery changes | Out of scope | The assistant has no supported migration journey for these operations. |
+
+A guest browser's actual network responses included successful GETs for v2 product search, web/productDetails/{productId} and v3 category products. Initial document transfer caches independently contained menu, page and exact-detail payloads. A client-side detail read can occur while opening a product card without an immediate document URL change.
+
+Final read acceptance used the real branch CLI for departments and two category pages, then the hosted HTTP handler bound to loopback for find_groceries. With locally simulated caller admission and a live signed-in provider client, one v2 search and two fresh HTTP detail responses yielded two complete views. A dispatch guard permitted only GET after the no-merge login. This exercises the hosted code path; production deployment, production OAuth and a real basket addition were outside acceptance. No price or cost improvement is claimed from these samples. The branch has no persistent dual-read path, new paid service, storage or background polling.
