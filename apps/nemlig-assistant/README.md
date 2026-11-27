@@ -103,7 +103,8 @@ this includes existing basket rows and does not clear the basket.
   the basket.
 - Failed draft edits or alternatives requests keep visible products and
   quantities. Recovery names the temporary draft, describes recognized failures
-  without exposing raw host errors, and offers **Refresh this draft**. Editing
+  without exposing raw host errors, and offers **Refresh this draft**. Refresh
+  checks the exact draft; it cannot restore an expired draft. Editing
   stays disabled until a response confirms the same draft and context; a
   malformed response or another draft cannot replace the cached selection.
   Dismissing an error does not replay the failed edit or a provider write.

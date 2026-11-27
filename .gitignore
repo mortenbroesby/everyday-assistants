@@ -12,6 +12,7 @@
 **/.codex/local-auth/
 **/.codex/ui-mockups/
 **/.codex/storybook-static/
+**/.codex/routing-evaluations/
 **/*.pem
 **/*.key
 /.env

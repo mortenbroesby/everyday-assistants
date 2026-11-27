@@ -217,6 +217,34 @@ const reviewTargetFields = {
     .optional()
     .describe("Opaque temporary handle for this card's exact draft review."),
 };
+const startProductReviewInputObject = z.object({
+  items: addReviewActionSchema.shape.items
+    .optional()
+    .describe(
+      "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
+    ),
+  shopping_list_name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(30)
+    .optional()
+    .describe("Not used by temporary direct basket drafts."),
+  creation_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe("Not used by temporary direct basket drafts."),
+  shopping_list_id: z
+    .number()
+    .int()
+    .positive()
+    .optional()
+    .describe(
+      "Exact saved Nemlig shopping-list ID to load as a read-only source.",
+    ),
+});
+
 const showProductReviewInputSchema = z
   .object({
     view: z
@@ -249,7 +277,17 @@ const showProductReviewInputSchema = z
   .meta({
     anyOf: [
       {
-        properties: { view: { const: "draft" } },
+        properties: {
+          view: { const: "draft" },
+          // Some host type renderers render union branches without parent fields.
+          ...z.toJSONSchema(
+            z.object({
+              draft_id: reviewTargetFields.draft_id,
+              review_context_id: reviewTargetFields.review_context_id,
+            }),
+            { io: "input" },
+          ).properties,
+        },
         required: ["draft_id", "review_context_id"],
       },
       {
@@ -680,7 +718,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         (target.shoppingListId === undefined && target.draftId === undefined))
     ) {
       throw new NemligError(
-        "This shopping-list review expired. Refresh the exact list before editing it.",
+        "This exact draft review context is unavailable. The supplied handles do not resolve to an available review. Do not infer expiry, guess another target, retry unchanged, or recreate a draft without a new explicit user instruction.",
       );
     }
     if (requestContext) {
@@ -815,7 +853,9 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     if (!review || review.basketMode !== "direct-basket") {
       return success(
         { unavailable: true as const },
-        "This temporary draft is unavailable. Start a new draft from exact products, or display saved lists to choose a source.",
+        draftId
+          ? "This exact temporary draft is unavailable. Do not retry unchanged, select another draft, or recreate it without a new explicit user instruction."
+          : "No temporary draft was resolved for this call. If this call omitted known draft_id and review_context_id, make one corrected read-only display call with that exact pair unchanged. Otherwise ask which draft or list the user means. Do not infer expiry or create a new draft from missing context alone.",
       );
     }
     return success({ review, selectedShoppingListId: null });
@@ -1166,42 +1206,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
       title: "Review products before a basket addition",
       description:
         "Create a temporary process-local draft from exact returned product IDs and quantities. Edits affect only this draft. Submit only after separate explicit authorization; one additive request sends the exact reviewed lines. Load saved lists as read-only sources, and never retry an uncertain provider write.",
-      inputSchema: z
-        .object({
-          items: z
-            .array(
-              z.object({
-                product_id: z.number().int().positive(),
-                quantity: z.number().int().positive(),
-              }),
-            )
-            .min(1)
-            .max(MAX_DRAFT_PRODUCTS)
-            .optional()
-            .describe(
-              "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
-            ),
-          shopping_list_name: z
-            .string()
-            .trim()
-            .min(1)
-            .max(30)
-            .optional()
-            .describe("Not used by temporary direct basket drafts."),
-          creation_id: z
-            .string()
-            .uuid()
-            .optional()
-            .describe("Not used by temporary direct basket drafts."),
-          shopping_list_id: z
-            .number()
-            .int()
-            .positive()
-            .optional()
-            .describe(
-              "Exact saved Nemlig shopping-list ID to load as a read-only source.",
-            ),
-        })
+      inputSchema: startProductReviewInputObject
         .strict()
         .refine(
           ({ items, shopping_list_id }) => !(items?.length && shopping_list_id),
@@ -1215,6 +1220,13 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
         .meta({
           anyOf: [
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  items: true,
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               required: ["items"],
               not: {
                 anyOf: [
@@ -1224,12 +1236,25 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
               },
             },
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  shopping_list_id: true,
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               required: ["shopping_list_id"],
               not: {
                 anyOf: [{ required: ["items"] }, { required: ["creation_id"] }],
               },
             },
             {
+              properties: z.toJSONSchema(
+                startProductReviewInputObject.pick({
+                  shopping_list_name: true,
+                }),
+                { io: "input" },
+              ).properties,
               not: {
                 anyOf: [
                   { required: ["items"] },
@@ -1302,7 +1327,7 @@ Only explicit Submit may add to the actual basket. Verify additive basket readba
     {
       title: "Show my temporary draft",
       description:
-        "Use this when the user wants to show, display, open, browse, review, or compare an existing current draft, including Danish requests such as “vis mig listen” or “åbn kladden”. It displays the draft without changing it. Use view=saved_lists only to display the read-only saved-list picker. Do not use for the actual Nemlig basket, text-only explanations, unrelated displays, or to create, edit, load, submit, or authorize a draft.",
+        "Use this when the user wants to show, display, open, browse, review, or compare an existing current draft, including Danish requests such as “vis mig listen” or “åbn kladden”. It displays the draft without changing it. When draft_id and review_context_id are available in the conversation or a previous result, pass both unchanged; do not omit known identities. Omit them only when the host supplies a trustworthy active-draft conversation context. Use view=saved_lists only to display the read-only saved-list picker. Do not use for the actual Nemlig basket, text-only explanations, unrelated displays, or to create, edit, load, submit, or authorize a draft.",
       inputSchema: showProductReviewInputSchema,
       outputSchema: durableReviewResultSchema,
       annotations: {

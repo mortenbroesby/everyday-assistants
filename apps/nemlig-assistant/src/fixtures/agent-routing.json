@@ -1,0 +1,72 @@
+[
+  {
+    "id": "display-explicit-draft-en",
+    "prompt": "Show my draft",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded draft with both exact identities."
+  },
+  {
+    "id": "display-explicit-draft-da",
+    "prompt": "Vis mig listen",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded draft with both exact identities."
+  },
+  {
+    "id": "display-text-only-en",
+    "prompt": "In plain text, explain what a temporary draft is. Do not open or change it.",
+    "context": "explicit-draft",
+    "expectedTool": null,
+    "expectedOutcome": "Explain without calling a display or mutation tool."
+  },
+  {
+    "id": "display-ambiguous-en",
+    "prompt": "Show me the list.",
+    "context": "none",
+    "expectedTool": null,
+    "expectedOutcome": "Clarify which list without guessing a draft or creating one."
+  },
+  {
+    "id": "display-invalid-handles-en",
+    "prompt": "Show my draft",
+    "context": "invalid-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the explicit target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-invalid-handles-da",
+    "prompt": "Vis mig listen",
+    "context": "invalid-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the explicit target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-expired-draft-en",
+    "prompt": "Show my draft",
+    "context": "expired-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the expired exact target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-expired-draft-da",
+    "prompt": "Vis mig listen",
+    "context": "expired-draft",
+    "expectedTool": "show_product_review",
+    "expectedOutcome": "Report the expired exact target unavailable without fallback, recreation or submission."
+  },
+  {
+    "id": "display-indirect-draft-en",
+    "prompt": "Let me compare them",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded exact draft for comparison without editing or submitting it."
+  },
+  {
+    "id": "display-indirect-draft-da",
+    "prompt": "Lad mig sammenligne dem",
+    "expectedTool": "show_product_review",
+    "context": "explicit-draft",
+    "expectedOutcome": "Return the seeded exact draft for comparison without editing or submitting it."
+  }
+]

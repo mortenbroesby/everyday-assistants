@@ -138,7 +138,7 @@ export function isKnownNoWriteFailure(detail: string): boolean {
   );
 }
 
-function directDraftFailureMessage(cause: unknown): string {
+export function directDraftFailureMessage(cause: unknown): string {
   const detail = cause instanceof Error ? cause.message : "";
   // Describe recognized failures without displaying arbitrary host/provider text.
   let reason = "The service could not confirm this temporary draft request.";
@@ -165,7 +165,7 @@ function directDraftFailureMessage(cause: unknown): string {
   } else if (/cancelled|canceled/iu.test(detail)) {
     reason = "The temporary draft request was cancelled.";
   }
-  return `${reason} Your last confirmed products remain visible. Refresh this exact draft before continuing. No automatic retry was made.`;
+  return `${reason} Your last confirmed products remain visible, but may no longer be available to edit. Refresh only checks this exact draft; it cannot restore an expired draft. No automatic retry was made.`;
 }
 
 function isReview(value: unknown): value is Review {
