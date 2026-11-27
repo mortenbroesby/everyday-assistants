@@ -307,6 +307,51 @@ if (!address || typeof address === "string") {
 const browser = await chromium.launch({ headless: true, channel: "chrome" });
 console.log("Synthetic viewer smoke: browser launched");
 try {
+  // Hold CSS until Chrome requests the module. A sequential loader cannot
+  // satisfy this ordering, regardless of machine speed.
+  const preloadContext = await browser.newContext();
+  let releaseStylesheet!: () => void;
+  const stylesheet = new Promise<void>((resolve) => {
+    releaseStylesheet = resolve;
+  });
+  try {
+    await installViewerAssetFixture(preloadContext, viewerGeneration);
+    const page = await preloadContext.newPage();
+    await page.route(
+      (url) => url.pathname === viewerGeneration.manifest.css.url,
+      async (route) => {
+        await stylesheet;
+        await route.fallback();
+      },
+    );
+    let moduleRequests = 0;
+    page.on("request", (request) => {
+      if (
+        new URL(request.url()).pathname === viewerGeneration.manifest.js.url
+      ) {
+        moduleRequests += 1;
+      }
+    });
+    await Promise.all([
+      page.waitForRequest(
+        (request) =>
+          new URL(request.url()).pathname === viewerGeneration.manifest.js.url,
+        { timeout: 10_000 },
+      ),
+      page.goto(`http://127.0.0.1:${address.port}/host`, {
+        waitUntil: "commit",
+      }),
+    ]);
+    releaseStylesheet();
+    await page
+      .frameLocator('iframe[title="viewer"]')
+      .locator("#title")
+      .waitFor({ timeout: 10_000 });
+    assert.equal(moduleRequests, 1, "the module should download once");
+  } finally {
+    releaseStylesheet();
+    await preloadContext.close();
+  }
   const verifyLoaderRecovery = async (
     path: string,
     override: { body?: string | Uint8Array; delayMs?: number },
