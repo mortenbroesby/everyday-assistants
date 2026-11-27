@@ -250,6 +250,10 @@ test("CLI search and favorites preserve product list output and empty messages",
   assert.deepEqual(await run("favorites", [product, secondProduct]), [
     expectedList,
   ]);
+  const [unknown] = await run("search", [
+    { ...product, price: undefined, available: undefined },
+  ]);
+  assert.match(unknown!, /—.*Availability unknown/u);
   assert.deepEqual(await run("search", []), ["No products found."]);
   assert.deepEqual(await run("favorites", []), ["No favorites found."]);
 });

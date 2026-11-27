@@ -11,7 +11,8 @@ import {
   asRecords,
   asString,
   normalizeBasket,
-  normalizeDepartments,
+  storefrontDepartments,
+  storefrontCategoryPage,
   normalizeProducts,
   normalizeStorefrontSearch,
   normalizeStorefrontDetail,
@@ -580,11 +581,18 @@ export class NemligClient {
   }
 
   async listDepartments(): Promise<Department[]> {
-    const page = await this.optionalJson(
-      "https://www.nemlig.com/?GetAsJson=1",
-      "Get departments",
+    if (!this.productTimestamp) {
+      await this.refreshSession();
+    }
+    return storefrontDepartments(
+      await this.json(
+        `${PRODUCT_BFF_URL}/web/menu`,
+        {},
+        "Get departments",
+        true,
+        true,
+      ),
     );
-    return normalizeDepartments(page);
   }
 
   async browseDepartment(
@@ -604,9 +612,23 @@ export class NemligClient {
     if (!department) {
       throw new NemligError("Unknown department ID; list departments again.");
     }
-    const products = this.rememberProducts(
-      await this.productsByCategory(department.id, limit, page),
+    await this.ensureCatalogueSlot();
+    const slug = department.id.slice(1);
+    const params = new URLSearchParams({
+      categoryPath: slug,
+      timeslotId: String(this.timeslotId),
+      skip: String((page - 1) * limit),
+      take: String(limit + 1),
+    });
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/v3/web/categories/products?${params}`,
+      {},
+      "Browse department",
+      true,
+      true,
     );
+    const result = storefrontCategoryPage(response, slug, limit);
+    const products = this.rememberProducts(result.products);
     const seen = new Set<number>();
     const unique = products.filter((product) => {
       if (product.id === undefined) {
@@ -618,7 +640,7 @@ export class NemligClient {
       seen.add(product.id);
       return true;
     });
-    return { products: unique, page, hasNext: products.length === limit };
+    return { products: unique, page, hasNext: result.hasNext };
   }
 
   async getCart(signal?: AbortSignal): Promise<Basket> {

@@ -91,3 +91,11 @@ The storefront bundle explicitly classifies SoldOut and Discontinued as unavaila
 In the same authenticated session, a read of the storefront page for /favoritter returned product-list sections. All cards checked carried isFavorite=true. Comparing unique product IDs against the legacy client's complete list found 109 IDs only in the legacy result and 36 only in the storefront page. Only one of five IDs overlapped at each of the first two matching page positions. Counts are aggregate; account records and individual IDs are omitted.
 
 Decision: retain the current favorites client pending verification of the section-level navigation links under /favoritter. Directly flattening the page would change membership as well as ordering. Neither result independently proves the user's complete set of favorites.
+
+## Department migration and favorites decision
+
+On the same laptop, the legacy listDepartments returned zero entries and the storefront menu returned 21. The CLI keeps department IDs in the existing /slug form. It validates the ID against the current menu before sending categoryPath to the v3 route. For a page size of five the first two produce windows yielded five and four products with zero shared IDs. The second window contained an ad. The provider's requestedCategory.totalCount was five and four for those windows despite additional pages. Requesting one extra position detects continuation without an additional call. A full page of ads can still point to a later page.
+
+A cold category browse uses the existing bounded session bootstrap and one request each for menu and category. Warm browsing revalidates the menu and requests one category window. No dual reads run in production. Revert the department migration commit to restore the old adapter and ID handling.
+
+All 109 legacy-only favorite products were explicitly marked Favorite=true by the provider. The one section navigation link supplied a product list of 44 cards and a text section. Section links provide no proof of a complete replacement inventory. Keep the authenticated legacy favorites path. Revisit when the storefront supplies verifiable complete membership and repeatable pagination. This is a verified deferral under task 5.4.

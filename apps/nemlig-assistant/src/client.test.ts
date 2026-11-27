@@ -2374,66 +2374,75 @@ test("departments normalize opaque same-origin paths and browsing revalidates pa
     [{ id: "/frugt-og-groent", name: "Frugt & grønt" }],
   );
   const requests: ExpectedRequest[] = [
+    ...sessionRequests(),
     {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
+      match: "/web/menu$",
       response: json({
-        content: [{ Url: "/frugt-og-groent", Name: "Frugt & grønt" }],
+        categories: [{ url: "frugt-og-groent", title: "Frugt & grønt" }],
       }),
     },
     {
-      match: "https://www.nemlig.com/frugt-og-groent\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "produce" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
+      match: "/v3/web/categories/products",
       inspect: (url) => {
-        const parsed = new URL(url);
-        assert.equal(parsed.searchParams.get("pageIndex"), "1");
-        assert.equal(parsed.searchParams.get("pagesize"), "2");
+        const params = new URL(url).searchParams;
+        assert.equal(params.get("categoryPath"), "frugt-og-groent");
+        assert.equal(params.get("timeslotId"), "7");
+        assert.equal(params.get("skip"), "2");
+        assert.equal(params.get("take"), "3");
       },
-      response: json({ Products: [{ Id: 5, Name: "Æbler" }] }),
+      response: json({
+        requestedCategory: {
+          categoryPath: "frugt-og-groent",
+          items: [
+            { type: "product", product: { id: "5", title: "Æbler" } },
+            { type: "adCard" },
+            { type: "product", product: { id: "8", title: "Next page" } },
+          ],
+        },
+      }),
     },
   ];
-  const client = new NemligClient(mockFetch(requests));
-  const result = await client.browseDepartment("/frugt-og-groent", 2, 2);
-  assert.equal(result.products[0]?.name, "Æbler");
-  assert.equal(result.hasNext, false);
+  const result = await new NemligClient(mockFetch(requests)).browseDepartment(
+    "/frugt-og-groent",
+    2,
+    2,
+  );
+  assert.deepEqual(
+    result.products.map((p) => p.name),
+    ["Æbler"],
+  );
+  assert.equal(result.hasNext, true);
   assert.equal(requests.length, 0);
 });
 
 test("unknown departments and invalid pages fail before product browsing", async () => {
-  const requests: ExpectedRequest[] = [
-    {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
-      response: json({ content: [] }),
-    },
+  const requests = [
+    ...sessionRequests(),
+    { match: "/web/menu$", response: json({ categories: [] }) },
   ];
   const client = new NemligClient(mockFetch(requests));
+  await assert.rejects(client.browseDepartment("/missing", 20, 0), /positive/);
   await assert.rejects(
     client.browseDepartment("/missing", 20, 1),
     /Unknown department/,
   );
+  assert.equal(requests.length, 0);
 });
 
 test("department browsing honors caller counts above 50 without truncation", async () => {
-  const products = Array.from({ length: 55 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Product ${index + 1}`,
+  const items = Array.from({ length: 55 }, (_, i) => ({
+    type: "product",
+    product: { id: String(i + 1), title: "Product " + i },
   }));
-  const requests: ExpectedRequest[] = [
+  const requests = [
+    ...sessionRequests(),
     {
-      match: "https://www.nemlig.com/\\?GetAsJson=1",
-      response: json({ content: [{ Url: "/produce", Name: "Produce" }] }),
+      match: "/web/menu$",
+      response: json({ categories: [{ url: "produce", title: "Produce" }] }),
     },
     {
-      match: "https://www.nemlig.com/produce\\?GetAsJson=1",
-      response: json({ content: [{ ProductGroupId: "produce" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("pagesize"), "55"),
-      response: json({ Products: products }),
+      match: "/web/categories/products",
+      response: json({ requestedCategory: { categoryPath: "produce", items } }),
     },
   ];
   const result = await new NemligClient(mockFetch(requests)).browseDepartment(
@@ -2442,6 +2451,5 @@ test("department browsing honors caller counts above 50 without truncation", asy
     1,
   );
   assert.equal(result.products.length, 55);
-  assert.equal(result.hasNext, true);
-  assert.equal(requests.length, 0);
+  assert.equal(result.hasNext, false);
 });

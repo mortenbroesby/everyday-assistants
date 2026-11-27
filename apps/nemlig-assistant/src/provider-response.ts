@@ -57,6 +57,20 @@ export function normalizeDepartments(value: unknown): Department[] {
   });
 }
 
+export function storefrontDepartments(value: unknown): Department[] {
+  const { categories } = asRecord(value);
+  if (!Array.isArray(categories)) {
+    throw new NemligError("Invalid department menu: missing categories.");
+  }
+  const content = asRecords(categories).flatMap((category) => {
+    const slug = asString(category.url);
+    return slug && /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(slug)
+      ? [{ Url: `/${slug}`, Name: category.title }]
+      : [];
+  });
+  return normalizeDepartments({ content });
+}
+
 export interface Basket {
   items: Array<{
     id?: number;
@@ -413,6 +427,10 @@ export function normalizeStorefrontSearch(
   if (!Array.isArray(items)) {
     throw new NemligError("Invalid search response: missing items.");
   }
+  return normalizeStorefrontItems(items, limit);
+}
+
+function normalizeStorefrontItems(items: unknown[], limit: number): Product[] {
   const products = items.flatMap((item) => {
     const row = asRecord(item);
     if (!asString(row.type)) {
@@ -423,6 +441,24 @@ export function normalizeStorefrontSearch(
       : [];
   });
   return normalizeProducts(products, limit);
+}
+
+export function storefrontCategoryPage(
+  response: unknown,
+  slug: string,
+  limit: number,
+) {
+  const category = asRecord(asRecord(response).requestedCategory);
+  if (category.categoryPath !== slug || !Array.isArray(category.items)) {
+    throw new NemligError(
+      "Invalid department response: requested category is missing.",
+    );
+  }
+  const products = normalizeStorefrontItems(
+    category.items.slice(0, limit),
+    limit,
+  );
+  return { products, hasNext: category.items.length > limit };
 }
 
 export function normalizeProducts(value: unknown, limit?: number): Product[] {

@@ -377,6 +377,110 @@
         }
       }
     },
+    "/productbff/api/web/menu": {
+      "get": {
+        "operationId": "getStorefrontMenu",
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "List storefront departments",
+        "servers": [
+          {
+            "url": "https://webapi.prod.knl.nemlig.it"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": [
+            "First-party storefront navigation and guest read 2026-11-27"
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Menu categories with title and slug."
+          },
+          "default": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        }
+      }
+    },
+    "/productbff/api/v3/web/categories/products": {
+      "get": {
+        "operationId": "browseStorefrontCategory",
+        "tags": [
+          "Catalogue"
+        ],
+        "summary": "Read a storefront category window",
+        "servers": [
+          {
+            "url": "https://webapi.prod.knl.nemlig.it"
+          }
+        ],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "read-only",
+          "evidence": [
+            "First-party storefront navigation and guest read 2026-11-27"
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "requestedCategory with categoryPath and ordered mixed items."
+          },
+          "default": {
+            "$ref": "#/components/responses/ProviderError"
+          }
+        },
+        "parameters": [
+          {
+            "name": "categoryPath",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "timeslotId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "take",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
     "/": {
       "get": {
         "operationId": "getDepartmentPageModel",
@@ -384,10 +488,10 @@
         "summary": "Get the home-page JSON model used to discover departments",
         "security": [],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.listDepartments", "first-party main.js bundle 2026-09-13"]
+          "evidence": ["legacy homepage JSON read 2026-11-27", "first-party main.js bundle 2026-09-13"]
         },
         "parameters": [{ "$ref": "#/components/parameters/GetAsJson" }],
         "responses": {
