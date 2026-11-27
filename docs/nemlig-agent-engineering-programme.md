@@ -757,3 +757,9 @@ same bounded input-contract visibility fix in draft #369.
 Independent read-only review found no material objection: root-equivalent
 constraints preserve acceptance, input mode avoids nested-object narrowing,
 and the current inline fields have no lost definition references.
+
+Follow-up simplification reuses addReviewActionSchema.shape.items for creation,
+which already has the identical product ID, positive quantity and 1–500 bounds.
+This removes the moved duplicate product-row definition without a new helper.
+All 45 focused checks and lint passed again; test-function complexity remains
+a non-blocking review warning rather than grounds to weaken assertions.

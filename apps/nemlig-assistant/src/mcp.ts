@@ -218,15 +218,7 @@ const reviewTargetFields = {
     .describe("Opaque temporary handle for this card's exact draft review."),
 };
 const startProductReviewInputObject = z.object({
-  items: z
-    .array(
-      z.object({
-        product_id: z.number().int().positive(),
-        quantity: z.number().int().positive(),
-      }),
-    )
-    .min(1)
-    .max(MAX_DRAFT_PRODUCTS)
+  items: addReviewActionSchema.shape.items
     .optional()
     .describe(
       "Exact returned products and package quantities to add to a temporary draft. Omit to discover saved lists without creating or changing one.",
