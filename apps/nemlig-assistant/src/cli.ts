@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
 import { Command, InvalidArgumentError } from "commander";
+import { createInterface } from "node:readline/promises";
+import { reviewDeletion, confirmDeletion } from "./basket-deletion.js";
 import { realpathSync } from "node:fs";
 import { basename } from "node:path";
 import {
@@ -28,6 +30,7 @@ interface CliDependencies {
   prompt: (username?: string) => Promise<Credentials>;
   save: (credentials: Credentials) => Promise<void>;
   clear: () => Promise<void>;
+  confirm: (prompt: string) => Promise<boolean>;
   out: (message: string) => void;
 }
 
@@ -115,6 +118,22 @@ export function createProgram(
     prompt: promptCredentials,
     save: saveCredentials,
     clear: clearCredentials,
+    confirm: async (prompt) => {
+      if (!process.stdin.isTTY) {
+        throw new Error(
+          "An interactive terminal is required for basket deletion.",
+        );
+      }
+      const reader = createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+      try {
+        return (await reader.question(prompt)) === "DELETE";
+      } finally {
+        reader.close();
+      }
+    },
     out: console.log,
     ...overrides,
   };
@@ -191,6 +210,33 @@ export function createProgram(
       await ensureLoggedIn(dependencies.client, dependencies.credentials);
       dependencies.out(formatBasket(await dependencies.client.getCart()));
     });
+
+  const deleteReviewed = async (productId?: number) => {
+    await ensureLoggedIn(dependencies.client, dependencies.credentials);
+    const edit =
+      productId === undefined
+        ? { kind: "clear" as const }
+        : { kind: "remove" as const, productId };
+    const review = await reviewDeletion(dependencies.client, "cli", edit);
+    dependencies.out(review.prompt);
+    if (!(await dependencies.confirm("Type DELETE to confirm: "))) {
+      dependencies.out("Cancelled.");
+      return;
+    }
+    dependencies.out(
+      formatBasket(
+        await confirmDeletion(dependencies.client, "cli", review.review_id),
+      ),
+    );
+  };
+  program
+    .command("remove <product-id>")
+    .description("Review and remove a whole basket line.")
+    .action(async (id: string) => deleteReviewed(positiveInteger(id)));
+  program
+    .command("clear-basket")
+    .description("Review and clear the entire basket.")
+    .action(async () => deleteReviewed());
 
   program
     .command("favorites")

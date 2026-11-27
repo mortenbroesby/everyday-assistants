@@ -1,6 +1,6 @@
 ---
 name: grocery-shopping
-description: Use when shopping on Nemlig: search and compare current products, review the real basket read-only, edit a temporary basket draft, or add its exact reviewed products after authorization.
+description: Use when shopping on Nemlig: search and compare current products, review the real basket, edit a temporary draft, add approved products, or confirm whole-line removal or clearing.
 ---
 
 # Grocery shopping
@@ -43,7 +43,7 @@ Reuse the existing flow without inventing a second approval mechanism:
 3. Submit only that payload with `submit_product_review_conversation`: exact `draft_id`, `review_context_id`, a unique `submission_id` UUID for this authorized attempt, and `reviewed_list: {name, items: [{product_id, quantity}]}`. Never substitute a saved-list ID for the active draft. The server checks fresh product identity and package, allows price changes, reports any confirmed unavailable products it skips, sends the remaining approved additions in one request, and independently checks readback. If the attempt is uncertain, inspect the actual basket; never replay it or infer that no write occurred.
 4. Only after verified addition, the viewer may offer its **app-only** `save_basket_as_shopping_list` action. This optionally saves the entire current basket, including older rows, and does not clear it. Do not call or advertise it as a model-facing tool; do not claim a saved-list ID without provider evidence. An uncertain save is not retried.
 
-Never remove or reduce real basket items, clear the basket, replace existing basket items, select delivery, check out, place an order or pay. Do not bypass these restrictions through HTTP, browser automation, another tool, or another connection. Report completed additions and unresolved/failed items accurately; never claim success without verified readback.
+For an entire line removal or whole-basket clear, call `review_basket_deletion`, display every affected line and quantity, and wait for explicit confirmation of that review before calling `confirm_basket_deletion` once. If the result is uncertain, read the basket and never replay. Partial reductions, replacements, delivery selection, checkout, ordering and payment remain unavailable. Do not bypass these restrictions through HTTP, browser automation, another tool, or another connection. Report completed additions and unresolved/failed items accurately; never claim success without verified readback.
 
 ## Privacy and scope
 

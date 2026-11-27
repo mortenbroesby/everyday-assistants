@@ -15,20 +15,16 @@ app, also apply this file. Then select the matching app-local skill:
   the user to run interactive login; never put a password in arguments or logs.
 - Search, favorites, and basket viewing are read-only. Repository work,
   authentication, a spec, or tool availability never authorizes a mutation.
-- The real Nemlig basket is add-only through this assistant: its contents are
-  sacred and SHALL NEVER be removed, decreased, replaced, swapped, or cleared,
-  even when a user asks or approves. The user manages those actions directly
-  on Nemlig.com. A requested quantity means additional units: if Nemlig already
-  has two and the user authorizes adding two, the resulting quantity is four.
-  If the provider only accepts absolute quantities, read the current basket and
-  set a strictly greater positive resulting quantity; fail closed on incomplete
-  or stale state. Never send zero or any quantity at/below the observed value.
-  This rule applies to MCP, CLI, provider clients, tests, and production
-  acceptance. Product removal from the temporary draft is separate and remains
-  allowed. Actual basket additions must follow the exact
-  review/authorization/add/readback contract in `nemlig-basket`;
-  checkout, payment, ordering, and
-  delivery-slot actions are never allowed.
+- Additions are strictly additive and must follow the exact review, authorization
+  and readback contract in the basket skill. A requested quantity means units
+  to add. Two separately confirmed operations may delete real basket contents:
+  remove one entire reviewed product line or clear the reviewed basket. Show the
+  affected lines and quantities, require explicit confirmation after review,
+  recheck the full baseline, dispatch once and verify the resulting basket.
+  Decline incomplete or stale state and never replay an uncertain write. Partial
+  decreases, replacements, swaps, checkout, payment, orders and slot changes
+  remain prohibited. Temporary draft edits are local. Live mutation tests need
+  separate authorization for the specific basket change.
 - Production/provider work must follow `nemlig-production` and
   `docs/cloudflare-operations.md`. Preserve authentication-before-wake,
   one-Container, bounded-work/retry and manual kill-switch controls; ask before

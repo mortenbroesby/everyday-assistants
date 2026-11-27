@@ -41,12 +41,15 @@ pnpm nemlig --help
    image, with a text fallback. Leave ambiguous or unavailable products unresolved.
    The application-owned planner and automatic submission authority are retired.
 
-4. Treat the real Nemlig basket as sacred and add-only. Never remove, decrease,
-   replace, swap, or clear its contents, even if asked or explicitly approved;
-   explain that the user can manage those actions directly on Nemlig.com. This
-   prohibition applies to MCP, CLI, provider APIs, and production tests.
+4. Review a requested real-basket deletion separately. Use `pnpm nemlig remove
+   <product-id>` for a whole line or `pnpm nemlig clear-basket` for the entire
+   basket. Show all affected products and quantities and require explicit
+   confirmation after review. In MCP, show the prompt from
+   `review_basket_deletion` and wait for the user's confirmation before
+   `confirm_basket_deletion`. Decline expired or changed reviews. Following an
+   uncertain write, inspect the basket without retrying.
 
-   A requested quantity is an amount to add, not an absolute final quantity.
+   For additions, a requested quantity is an amount to add, not an absolute final quantity.
    If Nemlig already has two and the user authorizes adding two, the final
    quantity must be four. When the provider endpoint sets an absolute quantity,
    read the current basket, verify the exact line and freshness, and only send a
@@ -77,11 +80,7 @@ pnpm nemlig --help
    The command automatically displays the resulting basket and any known total.
    Stop on uncertain writes, failed readback, or quantity mismatch.
 
-The CLI and MCP have no actual-basket remove, replace, swap, or clear operation.
-Never add such a path. The user manages destructive changes directly on
-Nemlig.com. Never check out, pay, or place an order.
-Nemlig Assistant is add-only for the real provider basket. If the user wants to
-remove or reduce anything, direct them to manage that directly on Nemlig.com.
+Partial reductions, replacements, swaps, checkout, payment and ordering remain prohibited.
 
 ## MCP workflow
 

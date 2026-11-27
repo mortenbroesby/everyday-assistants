@@ -11,7 +11,7 @@ same icon for ChatGPT's custom MCP registration form.
 `plugin.json` is the portable plugin manifest. `.app.json` binds this package
 to the registered ChatGPT MCP app; `mcp.json` names the remote Streamable HTTP
 server for portable clients. The skill under `skills/` describes the shopping
-flow and its add-only basket boundary. Selected products create a temporary
+flow and its basket confirmation rules. Selected products create a temporary
 process-local draft; edits stay local. An exact saved Nemlig shopping list can
 be loaded as a read-only source without changing or deleting that list. Drafts
 expire after two hours of inactivity when unprotected; unresolved work remains
@@ -27,5 +27,4 @@ Installing the package does not prove that OAuth, tool discovery, or the
 interactive UI works. Verify those separately in a fresh ChatGPT Work
 conversation. Search and basket viewing are read-only. A real basket addition
 requires an exact reviewed draft, authorization, one protected additive Submit,
-and independent basket readback. Never remove or reduce actual basket items,
-check out, or pay through this plugin.
+and independent basket readback. Whole-line removal and clearing require a separate deletion review and explicit confirmation. Partial reductions, checkout and payment remain unavailable.
