@@ -46,3 +46,13 @@ server deployment does not update installed instructions.
 ## Resolution
 Open. Repository source already contains the corrected display guidance.
 No installed plugin, global configuration, provider or production change made.
+
+### Reversed-order replication
+The next Danish trial read the current repository skill and still omitted both
+supplied identities. The next English trial read installed 0.1.5 and also
+omitted them. Both selected the display tool and received unavailable, with no
+forbidden operations. Across four exploratory trials, skill version and
+language are not sufficient explanations. The version mismatch remains factual;
+do not present updating the plugin as a validated fix for handle omission.
+The next candidate targets the display tool description, with matched repeated
+model trials required to assess value.
