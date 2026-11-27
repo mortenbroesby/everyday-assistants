@@ -3,7 +3,11 @@ import { createMcpHandler } from "@modelcontextprotocol/server";
 import { toNodeHandler } from "@modelcontextprotocol/node";
 import { createServer } from "node:http";
 import { createMcpServer } from "../src/mcp.js";
-import type { ShoppingClient, Product } from "../src/client.js";
+import type {
+  ShoppingClient,
+  ShoppingListClient,
+  Product,
+} from "../src/client.js";
 const counts = { searches: 0, details: 0, forbidden: 0 };
 const forbidden = async (): Promise<never> => {
   counts.forbidden++;
@@ -32,28 +36,29 @@ const product: Product = {
   isVegan: true,
   isOnDiscount: false,
 };
-const provider: ShoppingClient = {
-  isLoggedIn: () => true,
-  providerIdentity: () => "synthetic-routing-fixture",
-  login: forbidden,
-  searchProducts: async () => {
-    counts.searches++;
-    return [product];
-  },
-  getProduct: async (id) => {
-    if (id !== product.id) {
-      throw new Error("Unknown fixture");
-    }
-    counts.details++;
-    return product;
-  },
-  getFreshProduct: forbidden,
-  listFavorites: forbidden,
-  listDepartments: forbidden,
-  browseDepartment: forbidden,
-  getCart: forbidden,
-  addToCart: forbidden,
-};
+const provider: ShoppingClient & Pick<ShoppingListClient, "providerIdentity"> =
+  {
+    isLoggedIn: () => true,
+    providerIdentity: () => "synthetic-routing-fixture",
+    login: forbidden,
+    searchProducts: async () => {
+      counts.searches++;
+      return [product];
+    },
+    getProduct: async (id) => {
+      if (id !== product.id) {
+        throw new Error("Unknown fixture");
+      }
+      counts.details++;
+      return product;
+    },
+    getFreshProduct: forbidden,
+    listFavorites: forbidden,
+    listDepartments: forbidden,
+    browseDepartment: forbidden,
+    getCart: forbidden,
+    addToCart: forbidden,
+  };
 const server = createMcpServer(
   provider,
   forbidden,

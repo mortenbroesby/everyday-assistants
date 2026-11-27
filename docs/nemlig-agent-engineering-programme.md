@@ -440,3 +440,41 @@ own CI result.
 The first commit gate rejected the fixture as unreachable because the test
 launches it by child-process path. Added the explicit package script
 `eval:routing:fixture` and updated the runbook rather than suppressing Fallow.
+
+## Committed-fixture replication and CI correction
+
+At runtime head `f66b227`, repeated the same four cases using the committed
+fixture/package command and versioned dataset, with unchanged native host,
+model and grading. All four returned the independently seeded identities and
+one-item draft:
+
+| Order | Outcome | MCP / shell calls | Elapsed | Input / cached / output |
+| --- | --- | --- | ---: | --- |
+| English 1 | PASS | 1 / 2 | 24.76 s | 139200 / 112384 / 365 |
+| Danish 2 | PASS | 1 / 1 | 21.64 s | 140473 / 127488 / 282 |
+| Danish 3 | PASS | 1 / 1 | 21.84 s | 139815 / 126976 / 301 |
+| English 4 | PASS | 1 / 1 | 22.85 s | 140626 / 127488 / 302 |
+
+The first read both installed and repository skills; the second/fourth read
+repository guidance; the third read installed 0.1.5. All commands succeeded,
+with no model retries. Candidate aggregate is now 7/8 versus earlier baseline
+1/4, without balanced sample sizes, interleaving or controlled skill selection.
+This supports retaining the small clarification for review; it does not prove
+a general success rate, causation, token savings or ChatGPT UI acceptance.
+The fixture principal string changed from the temporary probe to the committed
+synthetic name; no real identity or provider data was involved.
+
+CI run 45918033241 at `f66b227` failed type checking: providerIdentity was
+annotated as a member of ShoppingClient, but belongs to ShoppingListClient.
+Corrected the fixture annotation to the intersection with
+Pick<ShoppingListClient, "providerIdentity">. This is type-only; the running
+replication used the unchanged runtime. Local app/UI type checks and the
+fixture integration test then passed. Parallel CI tests were cancelled after
+the type failure; do not count them as independently diagnosed regressions.
+
+Fresh remote inspection found main `53a594e`, including MCP server 2.3.1 /
+Node adapter 2.1.1 in #354. This branch's model trials used server/Node adapter
+2.0.0. Do not silently attribute these measurements to current-main
+dependencies. Dependency alignment and revalidation are the next integration
+step; no main merge or production action is implied. Friction draft #371 at
+`3aa1158` passed exact-head CI 45917295848.
