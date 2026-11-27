@@ -36,7 +36,7 @@ Load only the specialized guidance that matches the task.
 | Targeted evidence on unused code, dependencies, duplication, complexity, or PR changed-code risk | [Fallow](.agents/skills/fallow/SKILL.md); verify findings against actual consumers and contracts |
 | Observed React component API, composition, or state-ownership problem | [Composition Patterns](.agents/skills/vercel-composition-patterns/SKILL.md); add Code Simplifier only when cleanup is also requested |
 | Concrete React rendering, data-flow, or performance concern | [React Best Practices](.agents/skills/vercel-react-best-practices/SKILL.md); do not invoke for routine React edits or speculative optimization |
-| Before claiming work is complete, fixed, or passing | [Verification Before Completion](.agents/skills/verification-before-completion/SKILL.md) |
+| Consequential changes with uncertain consumers or invariants | [Independent challenge review](.agents/skills/verification-before-completion/SKILL.md#independent-challenge-review); routine verification uses Definition of Done |
 | Explore or clarify before committing to a change | [OpenSpec explore](.agents/skills/openspec-explore/SKILL.md) |
 | Propose a non-trivial feature or architecture change | [OpenSpec propose](.agents/skills/openspec-propose/SKILL.md) |
 | Revise an existing OpenSpec plan | [OpenSpec update](.agents/skills/openspec-update-change/SKILL.md) |

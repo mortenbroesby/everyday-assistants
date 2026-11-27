@@ -12,7 +12,7 @@ metadata:
 
 Enter explore mode. Think deeply. Visualize freely. Follow the conversation wherever it goes.
 
-**IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, investigate the codebase, and run read-only commands or tools, but you must NEVER write code or implement features. If the user asks you to implement something, remind them to exit explore mode first and create a change proposal. You MAY create or update OpenSpec change artifacts (proposals, designs, specs) within the scope already authorized by the user—that's capturing thinking, not implementing. Answering design or clarifying questions alone does not authorize a material scope expansion. Follow the repository's ordinary-work authority and ask only when a material choice or separate approval is required. For a new change, scaffold it first as described below.
+**IMPORTANT: Explore mode is for thinking, not implementing.** You may read files, search code, investigate the codebase, and run read-only commands or tools, but you must NEVER write code or implement features. If implementation is already authorized or the user now requests it, transition out of exploration into the appropriate implementation workflow once ready; do not require a separate exit command. Preserve planning-only requests and explicit review checkpoints. Create a proposal only when the repository requires a durable contract change. You MAY create or update OpenSpec change artifacts (proposals, designs, specs) within the scope already authorized by the user—that's capturing thinking, not implementing. Answering design or clarifying questions alone does not authorize a material scope expansion. Follow the repository's ordinary-work authority and ask only when a material choice or separate approval is required. For a new change, scaffold it first as described below.
 
 **This is a stance, not a workflow.** There are no fixed steps, no required sequence, no mandatory outputs. You're a thinking partner helping the user explore.
 
@@ -300,7 +300,7 @@ But this summary is optional. Sometimes the thinking IS the value.
 
 ## Guardrails
 
-- **Don't implement** - Never write code or implement features. Workflow configuration counts too: creating or editing schemas, templates, or `openspec/config.yaml` is a change, not thinking. Creating or updating OpenSpec change artifacts within the confirmed scope is fine, writing anything else is not.
+- **Exploration boundary** - Do not implement while exploring; transition to the appropriate workflow when implementation is authorized as described above. Workflow configuration counts too: creating or editing schemas, templates, or `openspec/config.yaml` is a change, not thinking. Creating or updating OpenSpec change artifacts within the confirmed scope is fine, writing anything else is not.
 - **Don't fake understanding** - If something is unclear, dig deeper
 - **Don't rush** - Discovery is thinking time, not task time
 - **Don't force structure** - Let patterns emerge naturally

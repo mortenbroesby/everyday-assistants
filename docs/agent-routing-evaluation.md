@@ -177,3 +177,37 @@ enforce the remaining demonstrated dependency direction. Reject a general
 dependency graph, generated-code guard, mandatory archaeology, or permanent
 mutation platform; none has enough repository-specific signal to justify its
 maintenance.
+
+## Guidance maintenance decisions
+
+Keep repository policy in its owning document: Definition of Done owns
+verification, Code Simplifier owns cleanup, and the user request determines
+planning versus implementation authority. Compatibility skill names point to
+those owners rather than maintaining alternate thresholds or checklists.
+
+Assess these decisions with bounded scenarios when the relevant guidance
+changes:
+
+| Scenario | Expected behavior |
+| --- | --- |
+| User asks only for a proposal | Present the plan and stop without implementation. |
+| User authorizes proposal and implementation | Prepare the artifacts, then apply within scope once ready; do not invent a second approval gate. |
+| User requires review before implementation | Honor that checkpoint even if artifacts are ready. |
+| A check already passed and relevant inputs are unchanged | Reuse its complete evidence; do not rerun merely to announce status. |
+| A check yields or times out | Inspect/resume that process before retrying or claiming a result. |
+| Installed skill and repository source disagree | Verify the loaded source/version and tool contract; do not claim a deployment refreshed the skill. |
+
+Reflection reminders remain an experiment. Existing records and matched trials
+are evidence, not proof of improved agent behavior. Retain useful factual
+records and direct fixes; do not add mandatory record checks, stronger prompts,
+or more lifecycle hooks without repeated comparable trials demonstrating the
+specific benefit. Prefer correcting a reproduced tool/environment defect over
+adding instructions to work around it. Preserve task outcome, failed operations,
+prior-evidence reuse, and host activation as separate observations. A successful
+hook smoke test establishes execution only; it does not establish learning or
+reduced work. Reassess the mechanism if comparable trials continue to show no
+benefit; do not erase failures or expand the system to manufacture success.
+
+These scenarios are review criteria, not a required model benchmark on every
+edit. Static policy alignment and observed agent behavior must be reported
+separately; new paid evaluations require their own authorization.

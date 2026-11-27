@@ -122,6 +122,25 @@ Use evidence to select the layer before changing it:
    is required and evidence confirms that this ChatGPT integration is updated
    from that package. A ZIP download/upload menu alone is not evidence.
 
+## Installed instruction drift
+
+When skill guidance disagrees with tool behavior, compare the skill file
+actually loaded by the host (path, version, and relevant instructions) with
+`apps/nemlig-assistant/chatgpt-plugin-source/nemlig-shopping/plugin.json`, its
+`skills/grocery-shopping/SKILL.md`, and the current tool schema. Repository,
+installed-plugin, and server revisions are separate evidence. A source commit,
+server deployment, or tool-catalog refresh does not prove that installed skill
+text changed. Disabling plugin tools also does not prove its skills disappeared
+from discovery.
+
+Use the host's supported plugin update/import flow only after confirming that
+it updates the affected installation. Reload and inspect the actually loaded
+skill and tool contract afterward; do not edit plugin cache files as a substitute.
+If no supported refresh is available, report the installed/source mismatch and
+that limitation. Do not change credentials or weaken exact-target validation to
+compensate. Verify the affected interaction separately: correcting instruction
+drift does not itself prove a behavioral failure is fixed.
+
 ## Historical shopping-list creation validation (PR #315)
 
 This section records the superseded native-list behavior. The current #318
