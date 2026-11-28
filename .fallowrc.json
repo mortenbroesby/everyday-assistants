@@ -3,6 +3,7 @@
     "apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs",
     "scripts/fallow-agent-hook.mjs"
   ],
+  "ignoreBinaries": ["codex"],
   "ignorePatterns": ["!.agents/**"],
   "ignoreUnresolvedImports": ["./picker.html", "../dist/picker.html"],
   "rules": {

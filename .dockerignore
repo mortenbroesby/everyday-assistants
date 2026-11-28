@@ -1,5 +1,6 @@
 /.git/
 /.codex/
+/apps/nemlig-assistant/.codex/local-auth/
 /.agents/
 /node_modules/
 /.turbo/

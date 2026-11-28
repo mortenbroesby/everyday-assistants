@@ -390,6 +390,8 @@ of the repository.
 
 ## 🛠️ Development
 
+Run the [local conversation checks](../../docs/nemlig-local-conversation.md) to exercise a Danish draft request, redisplay and widget edit before opening ChatGPT.
+
 ```sh
 pnpm lint
 pnpm build

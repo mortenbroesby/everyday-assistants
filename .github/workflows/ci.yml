@@ -111,3 +111,5 @@ jobs:
           fi
       - run: google-chrome --version
       - run: pnpm nemlig:smoke:review-ui
+      - name: Verify the conversation result in the built widget
+        run: pnpm --filter nemlig-assistant exec node --import tsx scripts/check-conversation-widget.mjs

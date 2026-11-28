@@ -517,7 +517,7 @@ export default {
         },
         async consumeCsrf(subject, csrf, expiresAt) {
           return getContainer(
-            env.NEMLIG_MCP_CONTAINER.jurisdiction("eu"),
+            containerNamespace(env),
             FIXED_CONTAINER_NAME,
           ).consumePortalCsrf(subject, csrf, expiresAt);
         },
