@@ -35,7 +35,12 @@ test("advises only for search-shaped Codex shell commands", async () => {
     tool_input: { cmd: "rg rankProducts apps", workdir: "/repo" },
   });
   assert.equal(result.code, 0);
-  assert.match(result.stdout, /JCodeMunch routing skill/);
+  const { additionalContext } = JSON.parse(result.stdout).hookSpecificOutput;
+  assert.match(
+    additionalContext,
+    /Start nontrivial code exploration with JCodeMunch/,
+  );
+  assert.match(additionalContext, /resolve_repo/);
   assert.doesNotMatch(result.stdout, /permissionDecision/);
 });
 
