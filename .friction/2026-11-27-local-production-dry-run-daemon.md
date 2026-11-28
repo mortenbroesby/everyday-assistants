@@ -7,7 +7,7 @@
 - Paths: docs/nemlig-production-readiness.md; apps/nemlig-assistant/package.json
 - Category: environment
 - Severity: medium
-- Status: open
+- Status: resolved
 
 ## Observation and evidence
 
@@ -44,3 +44,7 @@ the Container build with a rollout-skipping flag or add another container system
 Local engine repair and rerun remain unperformed. Service deployment succeeded
 through the existing protected workflow. No secret retrieval or provider/account
 configuration change was used to work around the local failure.
+
+### Verified follow-up
+
+Readiness now checks the configured engine before validation and build. With the local Colima socket unreachable, the normal entry point exited 1 at this check. The focused command-order regression failed before the change and passed afterward. The engine itself remains unavailable locally; CI exercises the engine check and dry run on its own runner.

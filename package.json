@@ -26,7 +26,7 @@
     "nemlig:cloudflare:preflight": "pnpm --dir apps/nemlig-assistant exec wrangler deployments list --env production --json >/dev/null && pnpm --dir apps/nemlig-assistant exec wrangler containers list --env production --json >/dev/null",
     "nemlig:mcp": "pnpm --dir apps/nemlig-assistant mcp",
     "nemlig:production:deploy": "pnpm --dir apps/nemlig-assistant production:deploy",
-    "nemlig:production:ready": "pnpm spec:validate && pnpm privacy:check && pnpm exec turbo run lint build && pnpm format:check && pnpm nemlig:smoke:package && pnpm nemlig:cloudflare:check",
+    "nemlig:production:ready": "node scripts/check-container-engine.mjs && pnpm spec:validate && pnpm privacy:check && pnpm exec turbo run lint build && pnpm format:check && pnpm nemlig:smoke:package && pnpm nemlig:cloudflare:check",
     "nemlig:release:apply": "pnpm --dir apps/nemlig-assistant release:apply",
     "nemlig:release:plan": "pnpm --dir apps/nemlig-assistant release:plan",
     "nemlig:smoke": "turbo smoke",

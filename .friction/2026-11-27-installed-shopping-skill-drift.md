@@ -6,7 +6,7 @@
 - Paths: apps/nemlig-assistant/chatgpt-plugin-source/nemlig-shopping/skills/grocery-shopping/SKILL.md, apps/nemlig-assistant/chatgpt-plugin-source/nemlig-shopping/plugin.json, apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md
 - Category: environment
 - Severity: medium
-- Status: investigating
+- Status: resolved
 
 ## Observation and evidence
 In two fresh Codex gpt-6-astra model turns with the same synthetic fixture and
@@ -56,3 +56,7 @@ language are not sufficient explanations. The version mismatch remains factual;
 do not present updating the plugin as a validated fix for handle omission.
 The next candidate targets the display tool description, with matched repeated
 model trials required to assess value.
+
+### Verified follow-up
+
+Refreshed the private shopping plugin to 0.1.8. After a native catalog refresh, a fresh Codex app-server discovered the versioned skill. Both the published skill and installed file matched the repository source byte for byte. Model routing was not remeasured.

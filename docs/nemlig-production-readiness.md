@@ -7,7 +7,8 @@ evidence:
 pnpm nemlig:production:ready
 ```
 
-The command runs, in order:
+The command first runs a bounded container engine check using Wrangler's configured
+Docker-compatible CLI. Start the engine if this check fails. It then runs, in order:
 
 1. strict OpenSpec validation;
 2. the public-tree privacy check;

@@ -62,6 +62,7 @@ jobs:
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ env.DOCKERHUB_TOKEN }}
+      - run: node scripts/check-container-engine.mjs
       - run: pnpm spec:validate
       - run: pnpm privacy:check
       - run: pnpm exec turbo run lint build check test

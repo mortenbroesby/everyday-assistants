@@ -7,7 +7,7 @@
 - Paths: docs/nemlig-selection-evaluation.md; apps/nemlig-assistant/scripts/agent-routing-fixture.ts
 - Category: permissions
 - Severity: high
-- Status: investigating
+- Status: resolved
 
 ## Observation and evidence
 
@@ -70,3 +70,7 @@ This is direct command-sandbox evidence, not universal native-tool containment;
 MCP and other capabilities need their separate gates. The corrected four-case
 selection batch predates this expanded preflight and is not retroactively
 claimed to have used it. See draft #373's routing and selection runbooks.
+
+### Ledger disposition
+
+PR #373 delivered the fixture-only inventory preflight and recorded the corrected selection batch.
