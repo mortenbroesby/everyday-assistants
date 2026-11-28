@@ -101,6 +101,11 @@ test("local verify is lint-only while production readiness retains lint, build a
   const { scripts } = JSON.parse(
     readFileSync(join(root, "package.json"), "utf8"),
   );
+  assert.ok(
+    scripts["nemlig:production:ready"].startsWith(
+      "node scripts/check-container-engine.mjs && ",
+    ),
+  );
   assert.equal(scripts.verify, "turbo lint");
   assert.match(
     scripts["nemlig:production:ready"],

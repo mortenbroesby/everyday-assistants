@@ -6,7 +6,6 @@
 - Paths: AGENTS.md, .agents/instructions/, docs/agent-harness-recovery.md
 - Category: instructions
 - Severity: medium
-- Status: investigating
 
 ## Observation and evidence
 The primary computer-use service failed to start. An existing PinchTab instance
@@ -34,3 +33,7 @@ mandatory hook is required.
 Instruction coverage is implemented in this branch. Behavioral reduction in
 friction and clean-machine restoration remain unverified; evaluate on the next
 comparable authorized task rather than replaying grocery actions for testing.
+
+### Ledger disposition
+
+PR #376 delivered the portable recovery guidance. Clean-machine restoration and longitudinal impact remain unverified.
