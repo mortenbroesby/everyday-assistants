@@ -48,7 +48,8 @@
     "fallow:health": "fallow health",
     "fallow:dupes": "fallow dupes",
     "fallow:status": "fallow agent status",
-    "fallow:review": "fallow review"
+    "fallow:review": "fallow review",
+    "nemlig:smoke:agent": "pnpm --filter nemlig-assistant journey:segments"
   },
   "devDependencies": {
     "@fission-ai/openspec": "1.11.0",

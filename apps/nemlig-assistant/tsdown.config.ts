@@ -13,5 +13,19 @@ const executable = {
 export default defineConfig([
   { ...executable, clean: true, entry: { cli: "src/cli.ts" } },
   { ...executable, clean: false, entry: { mcp: "src/mcp.ts" } },
-  { ...executable, clean: false, entry: { http: "src/http.ts" } },
+  {
+    ...executable,
+    clean: false,
+    entry: { http: "src/http.ts" },
+  },
+  ...(process.env.NEMLIG_BUILD_JOURNEY === "1"
+    ? [
+        {
+          ...executable,
+          clean: false,
+          define: { __NEMLIG_JOURNEY_BUILD__: "true" },
+          entry: { "journey-http": "src/journey-http.ts" },
+        },
+      ]
+    : []),
 ]);

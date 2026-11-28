@@ -854,3 +854,34 @@ test("removed usage/reset routes are absent even for the owner", async () => {
     assert.equal(response.status, 404);
   }
 });
+
+test("only the journey environment exposes bounded authentication timing", async () => {
+  let clock = 0;
+  const deps: GatewayDependencies = {
+    now: () => clock,
+    authenticate: async () => {
+      clock += 17;
+      return principal;
+    },
+    admit: async () => ({ admitted: true }),
+    forward: async () => {
+      clock += 40;
+      return new Response("ok");
+    },
+  };
+  const enabled = { ...env, NEMLIG_JOURNEY_TIMING: "true" };
+  const request = () => mcpRequest({ method: "ping" });
+  const timed = await handleGatewayRequest(request(), enabled, deps);
+  assert.equal(timed.headers.get("server-timing"), "auth;dur=17");
+  const regular = await handleGatewayRequest(request(), env, deps);
+  assert.equal(regular.headers.get("server-timing"), null);
+  const denied = await handleGatewayRequest(request(), enabled, {
+    ...deps,
+    authenticate: async () => {
+      clock += 8;
+      throw new Error("private");
+    },
+  });
+  assert.equal(denied.status, 401);
+  assert.equal(denied.headers.get("server-timing"), "auth;dur=8");
+});

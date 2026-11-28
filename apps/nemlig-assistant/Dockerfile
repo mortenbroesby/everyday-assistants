@@ -12,8 +12,9 @@ COPY apps/nemlig-assistant/package.json apps/nemlig-assistant/package.json
 RUN pnpm install --frozen-lockfile --filter nemlig-assistant...
 
 COPY apps/nemlig-assistant apps/nemlig-assistant
-RUN pnpm --filter nemlig-assistant build \
-  && pnpm --filter nemlig-assistant deploy --prod /app
+ARG JOURNEY_BUILD=0
+RUN NEMLIG_BUILD_JOURNEY=$JOURNEY_BUILD pnpm --filter nemlig-assistant build \
+  && NEMLIG_BUILD_JOURNEY=$JOURNEY_BUILD pnpm --filter nemlig-assistant deploy --prod /app
 
 FROM node:24.13.0-bookworm-slim
 

@@ -390,6 +390,8 @@ of the repository.
 
 ## 🛠️ Development
 
+Run the [manual agent smoke checks](../../docs/nemlig-segment-checks.md) to exercise the provider adapter, tool server, review card or complete local Wrangler journey.
+
 ```sh
 pnpm lint
 pnpm build

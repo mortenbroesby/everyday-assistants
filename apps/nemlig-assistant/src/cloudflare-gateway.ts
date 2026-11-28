@@ -20,6 +20,8 @@ import {
   PRODUCT_VIEWER_RESOURCE_URI,
   RETIRED_PRODUCT_VIEWER_RESOURCE_URIS,
 } from "./product-viewer-identity.js";
+import { boundedDuration } from "./journey-timing.js";
+
 export type OperationClass = "protocol" | "useful";
 export type ViewerResourceClass = "current" | "retired" | "other";
 const INTERNAL_VIEWER_ARTIFACT_HEADER = "x-nemlig-viewer-artifact-id";
@@ -356,6 +358,8 @@ export async function handleGatewayRequest(
   let operation: GatewayRequestEvent["operation"] = "none";
   let denialReason: GatewayRequestEvent["denial_reason"] = "none";
   let emitted = false;
+  let authStartedAt: number | undefined;
+  let authDuration: number | undefined;
   const finish = (response: Response, outcome: GatewayOutcome): Response => {
     if (!emitted) {
       emitted = true;
@@ -379,7 +383,14 @@ export async function handleGatewayRequest(
         dependencies.event?.(event);
       }
     }
-    return withRequestId(response, requestId);
+    const result = withRequestId(response, requestId);
+    if (authStartedAt !== undefined) {
+      result.headers.append(
+        "server-timing",
+        `auth;dur=${authDuration ?? boundedDuration(now() - authStartedAt)}`,
+      );
+    }
+    return result;
   };
 
   if (env.MCP_ENABLED !== "true") {
@@ -469,6 +480,9 @@ export async function handleGatewayRequest(
     }
     let principal: Principal;
     try {
+      if (env.NEMLIG_JOURNEY_TIMING === "true") {
+        authStartedAt = now();
+      }
       const authenticated = await withinBoundary(
         (deadline) =>
           dependencies.authenticate(match[1] as string, config, deadline),
@@ -477,6 +491,9 @@ export async function handleGatewayRequest(
         totalController.signal,
         "authentication_timeout",
       );
+      if (authStartedAt !== undefined) {
+        authDuration = boundedDuration(now() - authStartedAt);
+      }
       if (!authenticated) {
         denialReason = "principal_not_allowed";
         return finish(
