@@ -6,6 +6,21 @@ Older checked stories below are dated implementation evidence, not a claim
 that their retired tools or policies remain supported. Current behavior is in
 the README and canonical specs; #67, #96 and #137 own outstanding live gates.
 
+## Open follow-ups from GitHub
+
+These checkboxes track remaining work. Each issue link preserves the original acceptance criteria and evidence.
+
+- [ ] [#396](https://github.com/mortenbroesby/everyday-assistants/issues/396) Resolve the two signed MCP discovery 504s on macOS/Colima. Run the integrated fixture draft journey, record tested revision, actual container states and cold/warm timings, then check task 1.5 in the [local journey specification](../../openspec/changes/add-local-shopping-journey/tasks.md).
+- [ ] [#241](https://github.com/mortenbroesby/everyday-assistants/issues/241) Improve suggested alternatives against the known mixed-category oat-drink failure in the service regression from PR #381. Preserve explicit search and dietary uncertainty. Reject name overlap alone, grade multiple categories, and verify the native oat-drink alternatives journey.
+- [ ] [#261](https://github.com/mortenbroesby/everyday-assistants/issues/261) On an iPhone in Safari, open the [hosted Storybook](https://everyday-assistants-storybook.vercel.app/) and interact with the Draft-list walkthrough. Record the device result. Desktop mobile-viewport checks passed. External-fork enforcement has configuration evidence only.
+- [ ] [#283](https://github.com/mortenbroesby/everyday-assistants/issues/283) Check right-to-left swipe in native ChatGPT mobile. If it fails or opens the host menu, implement the specified tap-to-actions overlay with local-only removal and quantity controls, alternatives, keyboard focus return, and 320/375 px touch targets. Record the native result.
+- [ ] [#357](https://github.com/mortenbroesby/everyday-assistants/issues/357) With separate authorization for a new exact operation, verify live provider behavior and operation-specific quantity recovery with bounded sanitized capture. Keep the historical uncertain operation unreplayed and its cause unknown.
+- [ ] [#326](https://github.com/mortenbroesby/everyday-assistants/issues/326) Reconcile installed plugin release and tools/resources with the packaged release, verify remaining native draft/alternatives acceptance, and update the [integration report](../../docs/nemlig-architecture-refactor-closeout.md). Issue 347 supplies paired native draft-display evidence only.
+- [ ] [#319](https://github.com/mortenbroesby/everyday-assistants/issues/319) After the step 6 acceptance above, reconcile the epic checklist with the integration report and obtain the owner’s epic-close decision. Stages 0–6 are integrated.
+- [ ] [#366](https://github.com/mortenbroesby/everyday-assistants/issues/366) Before proposing another MCP schema optimization, attribute actual host model input and compare matched task outcomes and cost. The catalogue-byte experiment was withdrawn. Preserve routing and compatibility regressions.
+- [ ] [#372](https://github.com/mortenbroesby/everyday-assistants/issues/372) When a concrete selection candidate or failure warrants it, run comparable repetitions or held-out trials under verified isolation. Report per-case omissions, unsupported inclusions, unknown qualifiers and forbidden calls. The constructed baseline scored 4/4. Held-out agent performance is unmeasured.
+- [ ] [#365](https://github.com/mortenbroesby/everyday-assistants/issues/365) Continue the engineering programme on comparable ordinary tasks. Record longitudinal task success, recurring developer friction, cost per successful task and attributable model context. Use the existing matched PATH task and selection baseline. Keep dated measurements and unresolved hypotheses in the [programme record](../../docs/nemlig-agent-engineering-programme.md).
+
 ## P3 — simplify the product model
 
 **Status:** Broader roadmap proposed. The owner selected feature-request removal

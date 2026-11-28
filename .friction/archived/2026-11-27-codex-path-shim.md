@@ -78,3 +78,5 @@ token savings and recurrence on other machines remain unmeasured.
 
 The [programme backlog](https://github.com/mortenbroesby/everyday-assistants/issues/365)
 tracks follow-up on the next comparable developer task.
+
+2026-11-28 reconciliation. The command runner required a separate noninteractive Zsh correction. The matched task used three commands both times and reached the correct outcome both times. Failed commands fell from one to zero. Neither run read the ledger. The pair cannot establish sustained improvement or cost savings. [Runner correction](https://github.com/mortenbroesby/everyday-assistants/issues/370#issuecomment-7227189063) · [Matched task](https://github.com/mortenbroesby/everyday-assistants/issues/370#issuecomment-7227230409)
