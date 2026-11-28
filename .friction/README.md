@@ -28,33 +28,17 @@ Severity is low (minor detour), medium (failed step/repeated work), or high
 (blocked outcome or safety risk). Category examples: instructions, discovery,
 environment, tools, validation, context, permissions, handoff.
 
-From the repository root, pass the observation and known details when creating a
-record. For example:
+Run `pnpm friction new <slug>` from the repository root. For example,
+`pnpm friction new pre-push-timeout` creates a Markdown file in
+[active/](active/) from the [template](templates/record.md), fills in the
+local date and Git revision, and prints the path. Open that file and fill in
+the observed details during the same task.
 
-```sh
-pnpm friction new lint-timeout --title "Lint timed out" --scope "developer harness" --category validation --severity medium --observation "Lint exited after 30 seconds." --impact "One rerun."
-pnpm friction update lint-timeout --impact "Two reruns." --hypothesis "Unknown."
-pnpm friction rename lint-timeout pre-push-lint-timeout
-pnpm friction update pre-push-lint-timeout "The next run completed in 12 seconds."
-pnpm friction archive pre-push-lint-timeout
-pnpm friction reopen pre-push-lint-timeout
-```
-
-The slug is the short identifier in the filename. `rename` changes that identifier
-and preserves the date, title, folder and contents. Use `pnpm friction update <slug> --title "New heading"` to change the heading. If two dates share a
-slug, use the full dated filename.
-
-`new` and `update` accept `--title`, `--scope`, `--task`, `--paths`, `--category`,
-`--severity`, `--observation`, `--impact`, `--hypothesis`, `--improvement` and
-`--resolution`. New records use the local date and current Git revision.
-Named fields replace their existing contents. A quoted update appends a dated
-note, preserving earlier observations. Write “unknown” or “not measured” for
-details you cannot establish. Running `new` with only a slug still creates an
-editable [template](templates/record.md).
-
-Records start in [active/](active/). After recording the resolution evidence or
-acceptance decision, use `archive` to move the record to [archived/](archived/).
-Use `reopen` for recurrence. Update links when moving or renaming a linked record.
+Edit the Markdown directly to append evidence. When a fix is verified or a
+limitation is accepted, record the outcome and use `git mv` to move the file
+into [archived/](archived/). If the same cause recurs, move the record back to
+`active/` and append the new observation. The slug is part of the filename.
+Use `git mv` to rename it and update any links to the old path.
 
 Never commit credentials, tokens, cookies, account identifiers, private chat
 links, raw provider bodies or transcripts. Summarize the minimum facts needed
