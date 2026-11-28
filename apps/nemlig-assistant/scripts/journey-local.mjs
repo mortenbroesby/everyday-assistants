@@ -19,6 +19,10 @@ const { AbortController, AbortSignal } = globalThis;
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let temp;
 const children = new Set();
+let engineReady = false;
+let shuttingDown = false;
+const runId = randomBytes(8).toString("hex");
+const imageLabel = "dk.broesby.nemlig.journey";
 const deadline = AbortSignal.timeout(30 * 60_000);
 const stop = new AbortController();
 const signal = AbortSignal.any([deadline, stop.signal]);
@@ -54,7 +58,7 @@ function terminate(child, sig) {
       process.kill(-child.pid, sig);
     } catch (error) {
       if (error.code !== "ESRCH") {
-        throw error;
+        console.warn("Could not confirm journey process shutdown.");
       }
     }
   }
@@ -85,10 +89,42 @@ function health(endpoint, ca) {
   });
 }
 
+/** Remove only image tags created for this invocation; Docker retains live references. */
+export function cleanupJourneyImage(owner, env, execute = execFileSync) {
+  const engine = env.WRANGLER_DOCKER_BIN || "docker";
+  const options = {
+    env,
+    encoding: "utf8",
+    timeout: 10_000,
+    killSignal: "SIGKILL",
+    stdio: ["ignore", "pipe", "ignore"],
+  };
+  const tags = execute(
+    engine,
+    [
+      "image",
+      "ls",
+      "--filter",
+      `label=${imageLabel}=${owner}`,
+      "--format",
+      "{{.Repository}}:{{.Tag}}",
+    ],
+    options,
+  )
+    .trim()
+    .split(/\s+/u);
+  for (const tag of tags) {
+    if (/^cloudflare-dev\/localjourneycontainer:[a-f0-9]{8}$/u.test(tag)) {
+      execute(engine, ["image", "rm", tag], options);
+    }
+  }
+}
+
 async function run() {
   if (!checkContainerEngine(cleanEnv)) {
     throw new Error("Container preflight failed");
   }
+  engineReady = true;
   const port = await availablePort();
   const endpoint = `https://127.0.0.1:${port}/mcp`;
   const key = join(temp, "tls.key");
@@ -139,7 +175,7 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
   );
   delete config.$schema;
   // Concurrent invocations get different namespaces and cold instances.
-  config.name = "nemlig-journey-" + randomBytes(6).toString("hex");
+  config.name = "nemlig-journey-" + runId;
   config.main = workerFile;
   config.assets.directory = resolve(app, config.assets.directory);
   const [container] = config.containers;
@@ -150,7 +186,8 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
   container.image = join(temp, "Dockerfile");
   await writeFile(
     container.image,
-    imageRecipe.replace(/^# syntax=docker\/dockerfile:1\r?\n/u, ""),
+    imageRecipe.replace(/^# syntax=docker\/dockerfile:1\r?\n/u, "") +
+      `\nLABEL ${imageLabel}="${runId}"\n`,
   );
   container.image_build_context = resolve(app, container.image_build_context);
   config.durable_objects.bindings.find(
@@ -219,7 +256,7 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
     },
   );
   const exited = once(wrangler, "exit").then(([code, exitSignal]) => {
-    if (!signal.aborted) {
+    if (!shuttingDown && !signal.aborted) {
       console.error(
         "Wrangler exited",
         JSON.stringify({ code, signal: exitSignal }),
@@ -317,6 +354,7 @@ if (import.meta.main) {
     );
     process.exitCode = 1;
   } finally {
+    shuttingDown = true;
     const active = [...children];
     const exits = active.map((child) => once(child, "exit").catch(() => {}));
     for (const child of active) {
@@ -325,12 +363,21 @@ if (import.meta.main) {
     if (active.length) {
       await Promise.race([
         Promise.all(exits),
-        delay(2500, undefined, { ref: false }),
+        delay(15_000, undefined, { ref: false }),
       ]);
       for (const child of children) {
         terminate(child, "SIGKILL");
       }
       await Promise.all(exits);
+    }
+    if (engineReady) {
+      try {
+        cleanupJourneyImage(runId, cleanEnv);
+      } catch {
+        console.warn(
+          "Docker kept the local journey image or could not confirm cleanup.",
+        );
+      }
     }
     await rm(temp, { recursive: true, force: true });
     process.removeListener("SIGINT", abort);

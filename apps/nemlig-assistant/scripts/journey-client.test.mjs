@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { checkSample, journeyFetch, journeyTarget } from "./journey-client.ts";
+import { cleanupJourneyImage } from "./journey-local.mjs";
 import { installJourneyIssuer } from "./journey-issuer.mjs";
 
 const { AbortSignal, Response } = globalThis;
@@ -80,4 +81,22 @@ test("local issuer serves a public discovery document and key to both verifiers"
   } finally {
     globalThis.fetch = original;
   }
+});
+
+test("cleanup targets only this invocation's exact Wrangler Docker tag", () => {
+  const calls = [];
+  cleanupJourneyImage(
+    "synthetic",
+    { WRANGLER_DOCKER_BIN: "configured" },
+    (engine, args, options) => {
+      assert.equal(engine, "configured");
+      assert.equal(options.timeout, 10000);
+      calls.push(args);
+      return "shared:current\ncloudflare-dev/localjourneycontainer:0011aabb\ncloudflare-dev/other:0011aabb\n<none>:<none>";
+    },
+  );
+  assert.ok(calls[0].includes("label=dk.broesby.nemlig.journey=synthetic"));
+  assert.deepEqual(calls.slice(1), [
+    ["image", "rm", "cloudflare-dev/localjourneycontainer:0011aabb"],
+  ]);
 });

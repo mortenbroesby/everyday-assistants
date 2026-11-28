@@ -51,6 +51,27 @@ The local resource URL and API audience must be the same HTTPS loopback
 `/mcp` URL. The principal policy is local-only and does not contain a real
 Nemlig credential. `MCP_CREDENTIAL_ONBOARDING_ENABLED` stays false.
 
+### A running Colima VM with an unavailable host socket
+
+For the optional manual Docker journey, check `docker info` first. If it fails but `colima ssh -- docker version` reports a server, the existing default-profile VM can also serve the run through a private temporary Unix socket. From the repository root:
+
+```sh
+(
+  set -eu
+  run_dir=$(mktemp -d /tmp/nemlig-engine.XXXXXX)
+  ssh -F "$HOME/.colima/ssh_config" -S none -o ExitOnForwardFailure=yes -N \
+    -L "$run_dir/docker.sock:/var/run/docker.sock" colima &
+  forward_pid=$!
+  trap 'kill "$forward_pid" 2>/dev/null || true; wait "$forward_pid" 2>/dev/null || true; rm -rf "$run_dir"' EXIT
+  for attempt in 1 2 3 4 5; do
+    [ -S "$run_dir/docker.sock" ] && break
+    sleep 1
+  done
+  export DOCKER_HOST="unix://$run_dir/docker.sock"
+  pnpm --filter nemlig-assistant journey:local
+)
+```
+
 ## Start and calibrate
 
 From the repository root, run:
