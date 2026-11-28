@@ -21,7 +21,7 @@ import {
   normalizeBasket,
   storefrontDepartments,
   storefrontCategoryPage,
-  normalizeProducts,
+  normalizeStorefrontFavorites,
   normalizeStorefrontSearch,
   normalizeStorefrontDetail,
   normalizeShoppingList,
@@ -259,11 +259,8 @@ export class NemligClient {
   private sessionGeneration = 0;
   private accessToken?: string;
   private userId?: string;
-  private productTimestamp?: string;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
-  private timeslot?: string;
-  private deliveryZoneId?: number;
   private timeslotId = 0;
 
   constructor(
@@ -511,68 +508,25 @@ export class NemligClient {
     if (!asId(this.userId)) {
       throw new NemligError("Favorites require a verified account ID.");
     }
-    if (!this.deliveryZoneId) {
-      throw new NemligError("Favorites require a provider delivery zone.");
+    if (!this.timeslotId) {
+      throw new NemligError("Favorites require a current delivery slot.");
     }
-    if (!this.timeslot) {
-      throw new NemligError("Favorites require a provider delivery timeslot.");
-    }
-    const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
-    pageUrl.searchParams.set("GetAsJson", "1");
-    pageUrl.searchParams.set("t", this.timeslot);
-    pageUrl.searchParams.set("d", String(this.deliveryZoneId));
-    const favoritesPage = asRecord(
-      await this.json(pageUrl.toString(), { signal }, "Get favorites page"),
+    const params = new URLSearchParams({
+      path: "/favoritter",
+      timeslotId: String(this.timeslotId),
+    });
+    const response = await this.json(
+      `${PRODUCT_BFF_URL}/web/page?${params}`,
+      { signal },
+      "Get favorites page",
+      true,
+      true,
     );
-    const groups = asRecords(favoritesPage.content)
-      .filter((entry) => entry.TemplateName === "productlistshowallspot")
-      .map((entry) => entry.ProductGroupId)
-      .filter(
-        (id): id is string | number =>
-          typeof id === "string" || typeof id === "number",
-      );
-    const products: Product[] = [];
-    const seen = new Set<number | string>();
-    const target =
-      limit === undefined ? Number.POSITIVE_INFINITY : offset + limit;
-    for (const group of groups) {
-      let groupPage = 1;
-      const seenPageSignatures = new Set<string>();
-      while (products.length < target) {
-        throwIfAborted(signal);
-        const pageSize =
-          limit === undefined ? 50 : Math.min(50, target - products.length);
-        const batch = await this.productsByGroup(
-          group,
-          pageSize,
-          "Get favorite products",
-          groupPage,
-          signal,
-        );
-        const pageSignature = JSON.stringify(
-          batch.map((product) => product.id ?? null),
-        );
-        if (seenPageSignatures.has(pageSignature)) {
-          break;
-        }
-        seenPageSignatures.add(pageSignature);
-        for (const product of batch) {
-          if (product.id === undefined || seen.has(product.id)) {
-            continue;
-          }
-          seen.add(product.id);
-          products.push(product);
-        }
-        if (batch.length < pageSize) {
-          break;
-        }
-        groupPage += 1;
-      }
-      if (products.length === target) {
-        break;
-      }
-    }
-    return this.rememberProducts(products.slice(offset, target));
+    throwIfAborted(signal);
+    const products = normalizeStorefrontFavorites(response);
+    return this.rememberProducts(
+      products.slice(offset, limit === undefined ? undefined : offset + limit),
+    );
   }
 
   async listDepartments(): Promise<Department[]> {
@@ -1282,9 +1236,6 @@ export class NemligClient {
     this.loggedIn = false;
     this.accessToken = undefined;
     this.userId = undefined;
-    this.productTimestamp = undefined;
-    this.timeslot = undefined;
-    this.deliveryZoneId = undefined;
     this.timeslotId = 0;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
@@ -1362,8 +1313,6 @@ export class NemligClient {
         signal,
       ),
     );
-    this.timeslot = asString(delivery.TimeslotUtc)?.trim();
-    this.deliveryZoneId = asId(delivery.DeliveryZoneId);
     this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
   }
 
@@ -1491,52 +1440,6 @@ export class NemligClient {
       }
       return [];
     }
-  }
-
-  private async productsByGroup(
-    group: string | number,
-    limit: number | undefined,
-    operation: string,
-    page = 1,
-    signal?: AbortSignal,
-  ): Promise<Product[]> {
-    if (!this.productTimestamp) {
-      const settings = asRecord(
-        await this.optionalJson(
-          `${API_BASE_URL}/v2/AppSettings/Website`,
-          "Get app settings",
-          false,
-          signal,
-        ),
-      );
-      this.productTimestamp = asString(
-        settings.CombinedProductsAndSitecoreTimestamp,
-      )?.trim();
-      if (!this.productTimestamp) {
-        throw new NemligError(
-          "Favorites require a provider catalog timestamp.",
-        );
-      }
-    }
-
-    const endpoint = `${API_BASE_URL}/${encodeURIComponent(this.productTimestamp)}/${encodeURIComponent(this.timeslot!)}/${this.deliveryZoneId}/${this.userId}/Products/GetByProductGroupId`;
-    const params = new URLSearchParams({
-      productGroupId: String(group),
-      pageIndex: String(page - 1),
-      sortorder: "default",
-    });
-    if (limit !== undefined) {
-      params.set("pagesize", String(limit));
-    }
-    const response = asRecord(
-      await this.optionalJson(
-        `${endpoint}?${params}`,
-        operation,
-        false,
-        signal,
-      ),
-    );
-    return normalizeProducts(response.Products, limit);
   }
 
   private async optionalJson(

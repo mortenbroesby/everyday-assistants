@@ -125,3 +125,5 @@ A same-session authenticated comparison used the legacy fixed zone and the zone 
 Favorites require the provider’s account ID, delivery zone, UTC slot and catalog timestamp. An incomplete response should identify the missing context. Settings are still fetched on the first product-group read.
 
 Comparisons omitted the pinned Chrome user agent, client version and device size individually and together where previously sent. Token, anti-forgery, current user, basket, settings, saved-list overview, legacy favorites and storefront catalog reads preserved the checked status and data. Guest basket identity varied even in the control, while normalized contents and delivery context matched. Secret-bearing responses were compared by shape and consistency. Gateway calls already omitted client version and device size. The account had no saved list for a detail comparison. Preserve headers on that read and on writes. No live basket mutation was performed.
+
+The subsequent owner decision in [use-storefront-favorites](../use-storefront-favorites/design.md) supersedes the legacy favorites disposition above.

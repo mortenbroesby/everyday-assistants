@@ -116,10 +116,10 @@
         "summary": "Get website build and catalogue context",
         "security": [{}, { "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used-and-observed",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.productsByGroup", "authenticated favorites read 2026-11-27"]
+          "evidence": ["Former legacy favorites client", "authenticated favorites read 2026-11-27"]
         },
         "responses": {
           "200": {
@@ -350,10 +350,10 @@
         "summary": "Get a page of products in one product group",
         "security": [{ "bearerAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.productsByGroup"]
+          "evidence": ["Former legacy favorites client"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/ProductTimestamp" },
@@ -506,6 +506,29 @@
         }
       }
     },
+    "/productbff/api/web/page": {
+      "get": {
+        "operationId": "getStorefrontFavorites",
+        "tags": ["Catalogue", "Website"],
+        "summary": "Read the signed-in storefront favorites page for the active delivery slot",
+        "servers": [{ "url": "https://webapi.prod.knl.nemlig.it" }],
+        "security": [{ "bearerAuth": [] }],
+        "x-nemlig": {
+          "usage": "client-used-and-observed",
+          "confidence": "high",
+          "safety": "personal-data-read",
+          "evidence": ["Current storefront CMS page loader and authenticated favorites comparison"]
+        },
+        "parameters": [
+          { "name": "path", "in": "query", "required": true, "schema": { "type": "string" }, "description": "Storefront favorites page path." },
+          { "name": "timeslotId", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
+        ],
+        "responses": {
+          "200": { "description": "Storefront pageContent with ordered product-list sections and product cards." },
+          "default": { "$ref": "#/components/responses/ProviderError" }
+        }
+      }
+    },
     "/favoritter": {
       "get": {
         "operationId": "getFavoritesPageModel",
@@ -513,15 +536,15 @@
         "summary": "Get the authenticated favourites page model",
         "security": [{ "bearerAuth": [] }, { "cookieAuth": [] }],
         "x-nemlig": {
-          "usage": "client-used",
+          "usage": "observed-only",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.listFavorites"]
+          "evidence": ["Former legacy favorites client"]
         },
         "parameters": [
           { "$ref": "#/components/parameters/GetAsJson" },
           { "name": "t", "in": "query", "required": true, "description": "Current timeslot UTC token.", "schema": { "type": "string" } },
-          { "name": "d", "in": "query", "required": true, "schema": { "type": "integer", "const": 1 } }
+          { "name": "d", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 1 } }
         ],
         "responses": {
           "200": {

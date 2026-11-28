@@ -192,7 +192,8 @@ test("CLI favorites authenticates and prints the existing product format", async
   const output: string[] = [];
   let requestedLimit: number | undefined;
   const client = fakeClient({
-    listFavorites: async (limit) => {
+    listFavorites: async (limit, page) => {
+      assert.equal(page, 2);
       requestedLimit = limit;
       return [product];
     },
@@ -203,7 +204,7 @@ test("CLI favorites authenticates and prints the existing product format", async
   await createProgram({
     client,
     out: (message) => output.push(message),
-  }).parseAsync(["node", "nemlig", "favorites", "--limit", "1"]);
+  }).parseAsync(["node", "nemlig", "favorites", "--limit", "1", "--page", "2"]);
   assert.equal(requestedLimit, 1);
   assert.match(output.join("\n"), /Økologisk mælk/);
   assert.match(output.join("\n"), /7/);

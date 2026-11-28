@@ -315,7 +315,8 @@ const storefrontPriceUnits = new Map<unknown, string>([
 ]);
 
 function storefrontProductFields(product: Record<string, unknown>) {
-  if (!asId(product.id) || !asString(product.title)?.trim()) {
+  const id = asId(product.id);
+  if (!id || !asString(product.title)?.trim()) {
     throw new NemligError(
       "Invalid catalogue response: incomplete product identity.",
     );
@@ -328,7 +329,7 @@ function storefrontProductFields(product: Record<string, unknown>) {
     asString(product.unitOfMeasure) ??
     storefrontPriceUnits.get(unitPrice.unitType);
   return {
-    Id: product.id,
+    Id: id,
     Name: product.title,
     Brand: product.brandName ?? tracking.item_brand,
     Description: product.description,
@@ -417,6 +418,44 @@ export function normalizeStorefrontDetail(
     ],
     1,
   )[0]!;
+}
+
+function favoriteCards(block: unknown): unknown[] {
+  const section = asRecord(block);
+  if (!asString(section.contentType)) {
+    throw new NemligError("Invalid favorites response: missing section type.");
+  }
+  if (section.contentType !== "ProductList") {
+    return [];
+  }
+  if (!Array.isArray(section.products)) {
+    throw new NemligError("Invalid favorites response: missing product list.");
+  }
+  return section.products;
+}
+
+export function normalizeStorefrontFavorites(value: unknown): Product[] {
+  const { pageContent } = asRecord(value);
+  if (!Array.isArray(pageContent)) {
+    throw new NemligError("Invalid favorites response: missing page content.");
+  }
+  const products = new Map<
+    number,
+    ReturnType<typeof storefrontProductFields>
+  >();
+  for (const tile of pageContent.flatMap(favoriteCards)) {
+    const card = asRecord(tile);
+    if (typeof card.isFavorite !== "boolean") {
+      throw new NemligError(
+        "Invalid favorites response: missing favorite status.",
+      );
+    }
+    const fields = storefrontProductFields(card);
+    if (card.isFavorite && !products.has(fields.Id)) {
+      products.set(fields.Id, fields);
+    }
+  }
+  return normalizeProducts([...products.values()]);
 }
 
 export function normalizeStorefrontSearch(
