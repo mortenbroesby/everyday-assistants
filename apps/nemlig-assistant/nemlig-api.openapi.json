@@ -94,7 +94,7 @@
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "sensitive-read",
-          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+          "evidence": ["NemligClient.ensureAccessToken", "anonymous Playwright trace 2026-09-13"]
         },
         "responses": {
           "200": {
@@ -119,11 +119,11 @@
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "read-only",
-          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+          "evidence": ["NemligClient.productsByGroup", "authenticated favorites read 2026-11-27"]
         },
         "responses": {
           "200": {
-            "description": "Website settings; only catalogue and correlation stamps are currently consumed.",
+            "description": "Website settings supplying the legacy catalogue timestamp for personalized favorites.",
             "content": {
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/WebsiteSettings" }
@@ -144,7 +144,7 @@
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.refreshSession", "anonymous Playwright trace 2026-09-13"]
+          "evidence": ["NemligClient.loadCurrentUser", "anonymous Playwright trace 2026-09-13"]
         },
         "responses": {
           "200": {
@@ -268,7 +268,7 @@
         },
         "parameters": [
           { "$ref": "#/components/parameters/SearchQuery" },
-          { "name": "correlationId", "in": "query", "required": true, "schema": { "type": "string" } }
+          { "name": "correlationId", "in": "query", "required": false, "schema": { "type": "string" } }
         ],
         "responses": {
           "200": {
@@ -589,7 +589,7 @@
           "usage": "client-used-and-observed",
           "confidence": "high",
           "safety": "personal-data-read",
-          "evidence": ["NemligClient.getCart and refreshSession", "guest and authenticated read comparisons 2026-11-27"]
+          "evidence": ["NemligClient.getCart and loadDeliveryContext", "guest and authenticated read comparisons 2026-11-27"]
         },
         "responses": {
           "200": {
