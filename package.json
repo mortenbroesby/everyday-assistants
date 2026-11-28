@@ -10,7 +10,8 @@
     "pnpm": "9.15.9"
   },
   "scripts": {
-    "friction:new": "node scripts/new-friction.mjs",
+    "friction": "node scripts/friction.mjs",
+    "friction:new": "node scripts/friction.mjs new",
     "build": "turbo build",
     "check": "turbo check",
     "coverage": "turbo coverage && node apps/nemlig-assistant/scripts/coverage.mjs --validate",

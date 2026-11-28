@@ -28,21 +28,26 @@ Severity is low (minor detour), medium (failed step/repeated work), or high
 (blocked outcome or safety risk). Category examples: instructions, discovery,
 environment, tools, validation, context, permissions, handoff.
 
-Run this command from the repository root, replacing the slug with a short
-description of the observed friction:
+Run the CLI from the repository root. For example:
 
 ```sh
-pnpm friction:new pre-push-timeout
+pnpm friction new example-detour
+pnpm friction update YYYY-MM-DD-example-detour.md "The focused rerun passed."
+pnpm friction archive YYYY-MM-DD-example-detour.md
+pnpm friction reopen YYYY-MM-DD-example-detour.md
 ```
 
-The command creates a dated file from the [record template](templates/record.md)
-and prints its path. Fill in the observation before committing. The date uses
-local time and the revision defaults to the current commit.
+`new` creates a dated file in [active/](active/) from the
+[record template](templates/record.md) and prints its path. The date uses local
+time and the revision defaults to the current commit. Fill in the observation
+before committing.
 
-Dated files directly in this directory are active. When a fix is verified or
-a limitation is accepted, append the evidence or decision and move the whole
-file into [archived/](archived/) with `git mv`. Update links to the moved file.
-If the same cause recurs, move its record back here and append the new evidence.
+Use the dated filename printed by `new` for subsequent commands. `update`
+appends a dated note to an active or archived record. When a fix is verified
+or a limitation is accepted, record the evidence with `update`, then use
+`archive` to move it to [archived/](archived/). If the same cause recurs,
+use `reopen` and append the new evidence. Update repository links when moving a
+linked record.
 
 Never commit credentials, tokens, cookies, account identifiers, private chat
 links, raw provider bodies or transcripts. Summarize the minimum facts needed
