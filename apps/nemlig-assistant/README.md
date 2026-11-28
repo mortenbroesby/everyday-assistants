@@ -72,8 +72,8 @@ this includes existing basket rows and does not clear the basket.
   product details in provider order; no application result cap is invented.
 - Mark an individual detail failure as unavailable instead of presenting a
   shallow row as complete, while preserving other successful results.
-- The local CLI also supports favorites, department browsing, and exact details;
-  the MCP catalog uses `find_groceries` for product discovery.
+- The local CLI also supports favorites from the signed-in Nemlig storefront,
+  department browsing, and exact details. The MCP catalog uses `find_groceries` for product discovery.
 - Compare product name, ID, package, price, unit price, discount, organic
   status, availability, product description, item details, and other known
   classifications when Nemlig supplies them.

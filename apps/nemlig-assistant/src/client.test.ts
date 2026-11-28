@@ -75,10 +75,6 @@ const deliveryRequest = (): ExpectedRequest => ({
     DeliveryZoneId: 9,
   }),
 });
-const settingsRequest = (): ExpectedRequest => ({
-  match: "/v2/AppSettings/Website$",
-  response: json({ CombinedProductsAndSitecoreTimestamp: "product-stamp" }),
-});
 const catalogueRequests = () => [tokenRequest(), deliveryRequest()];
 const sessionRequests = () => [
   tokenRequest(),
@@ -1214,9 +1210,7 @@ test("exact product reads retry network failure, preserve cancellation, and keep
   }) as typeof fetch);
   Object.assign(client, {
     accessToken: "token",
-    productTimestamp: "stamp",
     userId: "42",
-    timeslot: "slot",
     timeslotId: 7,
   });
   assert.equal((await client.getProduct(7)).name, "Recovered");
@@ -1392,16 +1386,31 @@ test("category fallback resolves a credential-free redirect and validates the co
   assert.equal(requests.length, 0);
 });
 
-test("favorites explain incomplete provider context before reading product groups", async () => {
-  for (const missing of [
-    "account ID",
-    "delivery zone",
-    "delivery timeslot",
-    "catalog timestamp",
-  ]) {
-    const requests = [
-      antiForgeryRequest(),
-      { match: "/login$", response: json({ MergeSuccessful: true }) },
+const favoritesClient = async (
+  requests: ExpectedRequest[],
+  context = sessionRequests(),
+) => {
+  requests.unshift(
+    antiForgeryRequest(),
+    { match: "/login$", response: json({ MergeSuccessful: true }) },
+    ...context,
+  );
+  const client = new NemligClient(mockFetch(requests));
+  await client.login("person@example.test", "secret");
+  return client;
+};
+
+const favoritesPath = "/productbff/api/web/page\\?";
+const favoriteCard = (id: number, title = "Favorite") => ({
+  id,
+  title,
+  isFavorite: true,
+});
+
+test("favorites require verified account and slot before reading the storefront", async () => {
+  for (const missing of ["account ID", "delivery slot"]) {
+    const requests: ExpectedRequest[] = [];
+    const client = await favoritesClient(requests, [
       tokenRequest(),
       {
         match: "/user/GetCurrentUser$",
@@ -1410,104 +1419,70 @@ test("favorites explain incomplete provider context before reading product group
       {
         match: "/basket/GetBasket$",
         response: json({
-          TimeslotUtc:
-            missing === "delivery timeslot" ? undefined : "2026083115-60-240",
-          DeliveryZoneId: missing === "delivery zone" ? undefined : 9,
+          DeliveryTimeSlot: { Id: missing === "delivery slot" ? undefined : 7 },
         }),
       },
-    ];
-    if (missing === "catalog timestamp") {
-      requests.push(
-        {
-          match: "/favoritter",
-          response: json({
-            content: [
-              {
-                TemplateName: "productlistshowallspot",
-                ProductGroupId: "fixture",
-              },
-            ],
-          }),
-        },
-        { match: "/v2/AppSettings/Website$", response: json({}) },
-      );
-    }
-    const client = new NemligClient(mockFetch(requests));
-    await client.login("person@example.test", "secret");
+    ]);
     await assert.rejects(client.listFavorites(), new RegExp(missing));
     assert.equal(requests.length, 0);
   }
 });
 
-test("favorites follows authenticated show-all groups, deduplicates, and never mutates", async () => {
-  const requests: ExpectedRequest[] = [
-    antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) },
-    ...sessionRequests(),
-    {
-      match: "https://www.nemlig.com/favoritter\\?",
-      inspect: (url, init) => {
-        const parsed = new URL(url);
-        assert.equal(parsed.searchParams.get("GetAsJson"), "1");
-        assert.equal(parsed.searchParams.get("t"), "2026083115-60-240");
-        assert.equal(parsed.searchParams.get("d"), "9");
-        assert.equal(init?.method, undefined);
-        assert.equal(new Headers(init?.headers).has("content-type"), false);
-      },
-      response: json({
-        content: [
-          {
-            TemplateName: "productlistonerowspot",
-            ProductGroupId: "recommendations",
-          },
-          { TemplateName: "productlistshowallspot", ProductGroupId: "sale" },
-          { TemplateName: "productlistshowallspot", ProductGroupId: "produce" },
-        ],
-      }),
+test("favorites use one authenticated storefront page and paginate after ordered deduplication", async () => {
+  const response = () =>
+    json({
+      pageContent: [
+        { contentType: "RichTextBlock", content: "Title" },
+        {
+          contentType: "ProductList",
+          layout: "Onerow",
+          products: [favoriteCard(7), favoriteCard(8)],
+        },
+        {
+          contentType: "ProductList",
+          layout: "Showall",
+          products: [
+            favoriteCard(7, "Duplicate"),
+            { ...favoriteCard(3), isFavorite: false },
+            {
+              ...favoriteCard(9, "Milk"),
+              price: 1250,
+              currency: "DKK",
+              description: "1 l",
+            },
+          ],
+        },
+      ],
+    });
+  const request = (): ExpectedRequest => ({
+    match: favoritesPath,
+    inspect: (url, init) => {
+      const target = new URL(url);
+      assert.equal(target.origin, "https://webapi.prod.knl.nemlig.it");
+      assert.deepEqual(Object.fromEntries(target.searchParams), {
+        path: "/favoritter",
+        timeslotId: "7",
+      });
+      assert.equal(init?.method ?? "GET", "GET");
+      assert.equal(
+        new Headers(init?.headers).get("Authorization"),
+        "Bearer token-value",
+      );
     },
-    settingsRequest(),
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url, init) => {
-        const parsed = new URL(url);
-        assert.match(
-          parsed.pathname,
-          /product-stamp\/2026083115-60-240\/9\/42\//u,
-        );
-        for (const header of ["user-agent", "device-size", "version"]) {
-          assert.equal(new Headers(init?.headers).has(header), false);
-        }
-        assert.equal(parsed.searchParams.get("productGroupId"), "sale");
-        assert.equal(parsed.searchParams.get("pagesize"), "3");
-        assert.equal(init?.method, undefined);
-      },
-      response: json({
-        Products: [{ Id: 7, Name: "Favorite milk", Price: 12.5 }],
-      }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) => {
-        const parsed = new URL(url);
-        assert.equal(parsed.searchParams.get("productGroupId"), "produce");
-        assert.equal(parsed.searchParams.get("pagesize"), "2");
-      },
-      response: json({
-        Products: [
-          { Id: 7, Name: "Favorite milk", Price: 12.5 },
-          { Id: 8, Name: "Favorite banana", Price: 2.5 },
-        ],
-      }),
-    },
-  ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
+    response,
+  });
+  const requests = [request(), request()];
+  const client = await favoritesClient(requests);
+  const all = await client.listFavorites();
   assert.deepEqual(
-    (await client.listFavorites(3)).map(({ id, name }) => ({ id, name })),
-    [
-      { id: 7, name: "Favorite milk" },
-      { id: 8, name: "Favorite banana" },
-    ],
+    all.map((p) => p.id),
+    [7, 8, 9],
+  );
+  assert.equal(all[0]?.name, "Favorite");
+  const page = await client.listFavorites(2, 2);
+  assert.deepEqual(
+    page.map((p) => [p.id, p.name, p.price, p.unitSize]),
+    [[9, "Milk", 12.5, "1 l"]],
   );
   assert.equal(requests.length, 0);
 });
@@ -1537,154 +1512,61 @@ test("favorites matching is Danish-aware, ordered, limited, and empty when unmat
   );
 });
 
-test("favorites paging applies one global offset across groups", async () => {
-  const requests: ExpectedRequest[] = [
-    antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) },
-    ...sessionRequests(),
-    {
-      match: "https://www.nemlig.com/favoritter\\?",
-      response: json({
-        content: [
-          { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
-          { TemplateName: "productlistshowallspot", ProductGroupId: "second" },
-        ],
-      }),
-    },
-    settingsRequest(),
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("productGroupId"), "first"),
-      response: json({ Products: [{ Id: 1, Name: "First" }] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) =>
-        assert.equal(new URL(url).searchParams.get("productGroupId"), "second"),
-      response: json({ Products: [{ Id: 2, Name: "Second" }] }),
-    },
+test("favorites distinguish an empty page from malformed responses and lost authorization", async () => {
+  const blocks = (products: unknown[]) => ({
+    pageContent: [{ contentType: "ProductList", products }],
+  });
+  const malformed = [
+    {},
+    { pageContent: [{}] },
+    { pageContent: [{ contentType: "ProductList" }] },
+    blocks([favoriteCard(8), { ...favoriteCard(1), id: 0 }]),
+    blocks([favoriteCard(8), { id: 2, title: "Unknown membership" }]),
   ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
-  assert.deepEqual(
-    (await client.listFavorites(1, 2)).map(({ id }) => id),
-    [2],
+  const requests = [
+    { match: favoritesPath, response: json({ pageContent: [] }) },
+    ...malformed.map((body) => ({
+      match: favoritesPath,
+      response: json(body),
+    })),
+    { match: favoritesPath, response: json({}, { status: 401 }) },
+  ];
+  const client = await favoritesClient(requests);
+  assert.deepEqual(await client.listFavorites(), []);
+  for (let i = 0; i < malformed.length; ++i) {
+    await assert.rejects(
+      client.listFavorites(1),
+      /Invalid (catalogue|favorites) response/,
+    );
+  }
+  await assert.rejects(
+    client.listFavorites(),
+    (error) => error instanceof NemligError && error.status === 401,
   );
   assert.equal(requests.length, 0);
 });
 
-test("favorites continue after a full page duplicated from a preceding group", async () => {
-  const firstGroup = Array.from({ length: 50 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Favorite ${index + 1}`,
-  }));
-  const requests: ExpectedRequest[] = [
-    antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) },
-    ...sessionRequests(),
-    {
-      match: "https://www.nemlig.com/favoritter\\?",
-      response: json({
-        content: [
-          { TemplateName: "productlistshowallspot", ProductGroupId: "first" },
-          {
-            TemplateName: "productlistshowallspot",
-            ProductGroupId: "overlapping",
-          },
-        ],
-      }),
-    },
-    settingsRequest(),
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) => {
-        const query = new URL(url).searchParams;
-        assert.equal(query.get("productGroupId"), "first");
-        assert.equal(query.get("pageIndex"), "0");
-      },
-      response: json({ Products: firstGroup }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) => {
-        const query = new URL(url).searchParams;
-        assert.equal(query.get("productGroupId"), "first");
-        assert.equal(query.get("pageIndex"), "1");
-      },
-      response: json({ Products: [] }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) => {
-        const query = new URL(url).searchParams;
-        assert.equal(query.get("productGroupId"), "overlapping");
-        assert.equal(query.get("pageIndex"), "0");
-      },
-      response: json({ Products: firstGroup }),
-    },
-    {
-      match: "/Products/GetByProductGroupId\\?",
-      inspect: (url) => {
-        const query = new URL(url).searchParams;
-        assert.equal(query.get("productGroupId"), "overlapping");
-        assert.equal(query.get("pageIndex"), "1");
-      },
-      response: json({ Products: [{ Id: 51, Name: "New favorite" }] }),
-    },
-  ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
-  const favorites = await client.listFavorites();
-  assert.equal(favorites.length, 51);
-  assert.equal(favorites.at(-1)?.id, 51);
-  assert.equal(requests.length, 0);
-});
-
-test("favorites stop before starting another provider page after cancellation", async () => {
+test("favorites preserve caller cancellation during the storefront read", async () => {
   const controller = new AbortController();
   const reason = new Error("favorites cancelled");
-  const products = Array.from({ length: 50 }, (_, index) => ({
-    Id: index + 1,
-    Name: `Favorite ${index + 1}`,
-  }));
   const requests: ExpectedRequest[] = [
-    antiForgeryRequest(),
-    { match: "/login$", response: json({ MergeSuccessful: true }) },
-    ...sessionRequests(),
     {
-      match: "https://www.nemlig.com/favoritter\\?",
-      response: json({
-        content: [
-          {
-            TemplateName: "productlistshowallspot",
-            ProductGroupId: "many-pages",
-          },
-        ],
-      }),
-    },
-    settingsRequest(),
-    {
-      match: "/Products/GetByProductGroupId\\?",
+      match: favoritesPath,
       inspect: (_url, init) => {
-        assert.ok(init?.signal);
         controller.abort(reason);
+        assert.equal(init?.signal?.aborted, true);
       },
-      response: json({ Products: products }),
+      response: () => {
+        throw reason;
+      },
     },
   ];
-  const client = new NemligClient(mockFetch(requests));
-  await client.login("person@example.test", "secret");
-
+  const client = await favoritesClient(requests);
   await assert.rejects(
     client.listFavorites(undefined, 1, controller.signal),
     (error) => error === reason,
   );
-  assert.equal(
-    requests.length,
-    0,
-    "no subsequent page request may start after cancellation",
-  );
+  assert.equal(requests.length, 0);
 });
 
 test("basket add treats quantity as a positive delta and preserves every existing line", async () => {

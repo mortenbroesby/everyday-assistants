@@ -257,16 +257,19 @@ export function createProgram(
         options: { limit: number; page: number },
       ) => {
         await ensureLoggedIn(dependencies.client, dependencies.credentials);
-        const favorites = await dependencies.client.listFavorites(
-          query === undefined ? options.limit : undefined,
-          query === undefined ? options.page : 1,
-        );
-        const matches =
-          query === undefined ? favorites : matchFavorites(favorites, query);
-        const products = matches.slice(
-          (options.page - 1) * options.limit,
-          options.page * options.limit,
-        );
+        const products =
+          query === undefined
+            ? await dependencies.client.listFavorites(
+                options.limit,
+                options.page,
+              )
+            : matchFavorites(
+                await dependencies.client.listFavorites(),
+                query,
+              ).slice(
+                (options.page - 1) * options.limit,
+                options.page * options.limit,
+              );
         dependencies.out(formatProductList(products, "No favorites found."));
       },
     );
