@@ -47,4 +47,10 @@ app, also apply this file. Then select the matching app-local skill:
 
 ## Manual agent smoke test
 
-For a substantial change to the provider adapter, MCP tools or renderer, an agent can run `pnpm nemlig:smoke:agent` from the repository root. It checks the three boundaries locally with synthetic data. The [manual smoke runbook](../../docs/nemlig-segment-checks.md) lists individual checks, the optional native Codex conversation and the local Wrangler profile. Record the failing segment and exact readback.
+Run commands from the repository root. Choose the check that exercises the change.
+
+1. For a focused fix, run the affected segment in the [manual smoke runbook](../../docs/nemlig-segment-checks.md). For a substantial change or a change spanning the provider, MCP tools and viewer, run `pnpm nemlig:smoke:agent` before handoff. If it fails, fix the failing segment, rerun it, then rerun the combined command.
+2. When tool descriptions, discovery or conversation instructions change how a model chooses tools, also run `pnpm --filter nemlig-assistant eval:conversation` with the signed-in Codex CLI. Claims about native ChatGPT or Copilot require evidence from that host.
+3. Reserve Colima for a thorough pre-deployment rehearsal or a question that specifically depends on the Cloudflare runtime. Examples include changes to Worker authentication, Durable Object bindings, the container image or startup. Use the Wrangler procedure in the runbook. Routine provider, tool and UI checks run with Colima stopped.
+
+In the handoff, record the revision, commands, outcomes and what was observed. For a draft edit, report whether reopening the original draft returned the edited quantity. If a selected check fails or cannot run, identify the failing step or missing prerequisite and which behavior remains unverified.
