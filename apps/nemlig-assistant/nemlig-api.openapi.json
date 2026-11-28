@@ -343,7 +343,7 @@
         }
       }
     },
-    "/webapi/{productTimestamp}/{timeslotUtc}/1/{userId}/Products/GetByProductGroupId": {
+    "/webapi/{productTimestamp}/{timeslotUtc}/{deliveryZoneId}/{userId}/Products/GetByProductGroupId": {
       "get": {
         "operationId": "getProductsByGroup",
         "tags": ["Catalogue"],
@@ -358,6 +358,7 @@
         "parameters": [
           { "$ref": "#/components/parameters/ProductTimestamp" },
           { "$ref": "#/components/parameters/TimeslotUtc" },
+          { "$ref": "#/components/parameters/DeliveryZoneId" },
           { "$ref": "#/components/parameters/UserId" },
           { "name": "productGroupId", "in": "query", "required": true, "schema": { "oneOf": [{ "type": "string" }, { "type": "integer" }] } },
           { "name": "pageIndex", "in": "query", "required": true, "schema": { "type": "integer", "minimum": 0 } },

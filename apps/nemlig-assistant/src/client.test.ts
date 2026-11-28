@@ -1014,6 +1014,7 @@ test("v2 search maps product cards, skips banners, and uses current delivery con
       match: searchPath,
       inspect: (url, init) => {
         const parsed = new URL(url);
+        assert.equal(new Headers(init?.headers).has("user-agent"), false);
         assert.equal(parsed.searchParams.get("take"), "2");
         assert.deepEqual([...parsed.searchParams.keys()].sort(), [
           "query",
@@ -1391,6 +1392,53 @@ test("category fallback resolves a credential-free redirect and validates the co
   assert.equal(requests.length, 0);
 });
 
+test("favorites explain incomplete provider context before reading product groups", async () => {
+  for (const missing of [
+    "account ID",
+    "delivery zone",
+    "delivery timeslot",
+    "catalog timestamp",
+  ]) {
+    const requests = [
+      antiForgeryRequest(),
+      { match: "/login$", response: json({ MergeSuccessful: true }) },
+      tokenRequest(),
+      {
+        match: "/user/GetCurrentUser$",
+        response: json({ DebitorId: missing === "account ID" ? 0 : 42 }),
+      },
+      {
+        match: "/basket/GetBasket$",
+        response: json({
+          TimeslotUtc:
+            missing === "delivery timeslot" ? undefined : "2026083115-60-240",
+          DeliveryZoneId: missing === "delivery zone" ? undefined : 9,
+        }),
+      },
+    ];
+    if (missing === "catalog timestamp") {
+      requests.push(
+        {
+          match: "/favoritter",
+          response: json({
+            content: [
+              {
+                TemplateName: "productlistshowallspot",
+                ProductGroupId: "fixture",
+              },
+            ],
+          }),
+        },
+        { match: "/v2/AppSettings/Website$", response: json({}) },
+      );
+    }
+    const client = new NemligClient(mockFetch(requests));
+    await client.login("person@example.test", "secret");
+    await assert.rejects(client.listFavorites(), new RegExp(missing));
+    assert.equal(requests.length, 0);
+  }
+});
+
 test("favorites follows authenticated show-all groups, deduplicates, and never mutates", async () => {
   const requests: ExpectedRequest[] = [
     antiForgeryRequest(),
@@ -1402,6 +1450,7 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
         const parsed = new URL(url);
         assert.equal(parsed.searchParams.get("GetAsJson"), "1");
         assert.equal(parsed.searchParams.get("t"), "2026083115-60-240");
+        assert.equal(parsed.searchParams.get("d"), "9");
         assert.equal(init?.method, undefined);
         assert.equal(new Headers(init?.headers).has("content-type"), false);
       },
@@ -1423,8 +1472,11 @@ test("favorites follows authenticated show-all groups, deduplicates, and never m
         const parsed = new URL(url);
         assert.match(
           parsed.pathname,
-          /product-stamp\/2026083115-60-240\/1\/42\//u,
+          /product-stamp\/2026083115-60-240\/9\/42\//u,
         );
+        for (const header of ["user-agent", "device-size", "version"]) {
+          assert.equal(new Headers(init?.headers).has(header), false);
+        }
         assert.equal(parsed.searchParams.get("productGroupId"), "sale");
         assert.equal(parsed.searchParams.get("pagesize"), "3");
         assert.equal(init?.method, undefined);
