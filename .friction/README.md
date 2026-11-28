@@ -28,26 +28,33 @@ Severity is low (minor detour), medium (failed step/repeated work), or high
 (blocked outcome or safety risk). Category examples: instructions, discovery,
 environment, tools, validation, context, permissions, handoff.
 
-Run the CLI from the repository root. For example:
+From the repository root, pass the observation and known details when creating a
+record. For example:
 
 ```sh
-pnpm friction new example-detour
-pnpm friction update YYYY-MM-DD-example-detour.md "The focused rerun passed."
-pnpm friction archive YYYY-MM-DD-example-detour.md
-pnpm friction reopen YYYY-MM-DD-example-detour.md
+pnpm friction new lint-timeout --title "Lint timed out" --scope "developer harness" --category validation --severity medium --observation "Lint exited after 30 seconds." --impact "One rerun."
+pnpm friction update lint-timeout --impact "Two reruns." --hypothesis "Unknown."
+pnpm friction rename lint-timeout pre-push-lint-timeout
+pnpm friction update pre-push-lint-timeout "The next run completed in 12 seconds."
+pnpm friction archive pre-push-lint-timeout
+pnpm friction reopen pre-push-lint-timeout
 ```
 
-`new` creates a dated file in [active/](active/) from the
-[record template](templates/record.md) and prints its path. The date uses local
-time and the revision defaults to the current commit. Fill in the observation
-before committing.
+The slug is the short identifier in the filename. `rename` changes that identifier
+and preserves the date, title, folder and contents. Use `pnpm friction update <slug> --title "New heading"` to change the heading. If two dates share a
+slug, use the full dated filename.
 
-Use the dated filename printed by `new` for subsequent commands. `update`
-appends a dated note to an active or archived record. When a fix is verified
-or a limitation is accepted, record the evidence with `update`, then use
-`archive` to move it to [archived/](archived/). If the same cause recurs,
-use `reopen` and append the new evidence. Update repository links when moving a
-linked record.
+`new` and `update` accept `--title`, `--scope`, `--task`, `--paths`, `--category`,
+`--severity`, `--observation`, `--impact`, `--hypothesis`, `--improvement` and
+`--resolution`. New records use the local date and current Git revision.
+Named fields replace their existing contents. A quoted update appends a dated
+note, preserving earlier observations. Write “unknown” or “not measured” for
+details you cannot establish. Running `new` with only a slug still creates an
+editable [template](templates/record.md).
+
+Records start in [active/](active/). After recording the resolution evidence or
+acceptance decision, use `archive` to move the record to [archived/](archived/).
+Use `reopen` for recurrence. Update links when moving or renaming a linked record.
 
 Never commit credentials, tokens, cookies, account identifiers, private chat
 links, raw provider bodies or transcripts. Summarize the minimum facts needed

@@ -6,9 +6,11 @@ import {
   linkSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
+import { parseArgs } from "node:util";
 import { fileURLToPath } from "node:url";
 
 const ledger = new URL("../.friction/", import.meta.url);
@@ -21,7 +23,85 @@ const date = [
 const slugPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const recordPattern = /^\d{4}-\d{2}-\d{2}-[a-z0-9]+(?:-[a-z0-9]+)*\.md$/u;
 
-function create(slug) {
+const fields = {
+  title: /^# .+$/mu,
+  scope: /^- Scope: .*$/mu,
+  task: /^- Task: .*$/mu,
+  paths: /^- Paths: .*$/mu,
+  category: /^- Category: .*$/mu,
+  severity: /^- Severity: .*$/mu,
+  observation: "Observation and evidence",
+  impact: "Impact",
+  hypothesis: "Hypothesis",
+  improvement: "Improvement and validation",
+  resolution: "Resolution",
+};
+
+function replaceField(text, key, value) {
+  if (!value.trim()) {
+    throw new Error("Empty value for --" + key);
+  }
+  const field = fields[key];
+  if (typeof field === "string") {
+    const section = new RegExp(
+      "^## " + field + "\\n[\\s\\S]*?(?=\\n#+ |(?![\\s\\S]))",
+      "mu",
+    );
+    if (!section.test(text)) {
+      throw new Error("Missing section: " + field);
+    }
+    return text.replace(
+      section,
+      () => "## " + field + "\n" + value.trim() + "\n",
+    );
+  } else {
+    if (/[\r\n]/u.test(value) || !field.test(text)) {
+      throw new Error("Expected one line for --" + key);
+    }
+    return text.replace(
+      field,
+      (line) =>
+        (key === "title" ? "# " : line.slice(0, line.indexOf(":") + 1) + " ") +
+        value.trim(),
+    );
+  }
+}
+
+function fill(text, args) {
+  const options = Object.fromEntries(
+    Object.keys(fields).map((key) => [key, { type: "string" }]),
+  );
+  const { values } = parseArgs({ args, options });
+  for (const [key, value] of Object.entries(values)) {
+    text = replaceField(text, key, value);
+  }
+  return text;
+}
+
+function filenameFor(name) {
+  if (recordPattern.test(name)) {
+    return name;
+  }
+  if (!name || !slugPattern.test(name)) {
+    throw new Error("Supply a slug or dated filename.");
+  }
+  const matches = ["active/", "archived/"].flatMap((folder) => {
+    const dir = new URL(folder, ledger);
+    return existsSync(dir)
+      ? readdirSync(dir).filter(
+          (file) => recordPattern.test(file) && file.slice(11, -3) === name,
+        )
+      : [];
+  });
+  if (matches.length !== 1) {
+    throw new Error(
+      "Expected one matching record for " + name + ". Use its dated filename.",
+    );
+  }
+  return matches[0];
+}
+
+function create(slug, args) {
   const filename = date + "-" + slug + ".md";
   const record = new URL("active/" + filename, ledger);
   if (existsSync(new URL("archived/" + filename, ledger))) {
@@ -39,7 +119,7 @@ function create(slug) {
     .replace("{{revision}}", revision)
     .replace("{{title}}", slug.replaceAll("-", " "));
   try {
-    writeFileSync(record, contents, { flag: "wx" });
+    writeFileSync(record, fill(contents, args), { flag: "wx" });
   } catch (error) {
     if (error.code !== "EEXIST") {
       throw error;
@@ -50,11 +130,10 @@ function create(slug) {
   return record;
 }
 
-function update(active, archived, note) {
+function appendNote(record, note) {
   if (!note?.trim()) {
     throw new Error("Supply a non-empty update in quotes.");
   }
-  const record = existsSync(active) ? active : archived;
   appendFileSync(record, "\n## Update " + date + "\n\n" + note.trim() + "\n", {
     flag: constants.O_WRONLY | constants.O_APPEND,
   });
@@ -72,31 +151,57 @@ function move(from, to, unexpectedArgument) {
   return to;
 }
 
-function run([command, name, note, ...extra]) {
+function update(record, args) {
+  if (args[0]?.startsWith("--")) {
+    const contents = fill(readFileSync(record, "utf8"), args);
+    writeFileSync(record, contents);
+    return record;
+  }
+  if (args.length !== 1) {
+    throw new Error("Supply a quoted note or named fields.");
+  }
+  return appendNote(record, args[0]);
+}
+
+function renameRecord(record, filename, args) {
+  const [slug] = args;
+  if (args.length !== 1 || !slugPattern.test(slug)) {
+    throw new Error("Supply one new slug.");
+  }
+  const dest = filename.slice(0, 11) + slug + ".md";
+  if (
+    existsSync(new URL("active/" + dest, ledger)) ||
+    existsSync(new URL("archived/" + dest, ledger))
+  ) {
+    throw new Error("Record already exists: " + dest);
+  }
+  return move(record, new URL(dest, record));
+}
+
+function run([command, name, ...args]) {
   if (command === "new") {
-    if (!name || !slugPattern.test(name) || note !== undefined) {
-      throw new Error("Usage: pnpm friction new <lowercase-hyphenated-slug>");
+    if (!name || !slugPattern.test(name)) {
+      throw new Error("Supply a lowercase hyphenated slug.");
     }
-    return create(name);
+    return create(name, args);
   }
-  if (!recordPattern.test(name) || extra.length) {
-    throw new Error(
-      'Usage: pnpm friction update <dated-filename.md> "<note>" | archive <dated-filename.md> | reopen <dated-filename.md>',
-    );
-  }
-  const active = new URL("active/" + name, ledger);
-  const archived = new URL("archived/" + name, ledger);
+  const filename = filenameFor(name);
+  const active = new URL("active/" + filename, ledger);
+  const archived = new URL("archived/" + filename, ledger);
+  const record = existsSync(active) ? active : archived;
   switch (command) {
     case "update":
-      return update(active, archived, note);
+      return update(record, args);
+    case "rename": {
+      return renameRecord(record, filename, args);
+    }
     case "archive":
-      return move(active, archived, note);
+      return move(active, archived, args[0]);
     case "reopen":
-      return move(archived, active, note);
+      return move(archived, active, args[0]);
+    default:
+      throw new Error("Choose new, update, rename, archive or reopen.");
   }
-  throw new Error(
-    'Usage: pnpm friction new <slug> | update <filename> "<note>" | archive <filename> | reopen <filename>',
-  );
 }
 
 try {
