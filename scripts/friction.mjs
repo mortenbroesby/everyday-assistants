@@ -50,6 +50,28 @@ function create(slug) {
   return record;
 }
 
+function update(active, archived, note) {
+  if (!note?.trim()) {
+    throw new Error("Supply a non-empty update in quotes.");
+  }
+  const record = existsSync(active) ? active : archived;
+  appendFileSync(record, "\n## Update " + date + "\n\n" + note.trim() + "\n", {
+    flag: constants.O_WRONLY | constants.O_APPEND,
+  });
+  return record;
+}
+
+function move(from, to, unexpectedArgument) {
+  if (unexpectedArgument !== undefined) {
+    throw new Error("Archive and reopen take only the dated filename.");
+  }
+  mkdirSync(new URL(".", to), { recursive: true });
+  // Linking first prevents overwriting an existing destination.
+  linkSync(from, to);
+  unlinkSync(from);
+  return to;
+}
+
 function run([command, name, note, ...extra]) {
   if (command === "new") {
     if (!name || !slugPattern.test(name) || note !== undefined) {
@@ -64,25 +86,13 @@ function run([command, name, note, ...extra]) {
   }
   const active = new URL("active/" + name, ledger);
   const archived = new URL("archived/" + name, ledger);
-  if (command === "update" && note?.trim()) {
-    const record = existsSync(active) ? active : archived;
-    appendFileSync(
-      record,
-      "\n## Update " + date + "\n\n" + note.trim() + "\n",
-      {
-        flag: constants.O_WRONLY | constants.O_APPEND,
-      },
-    );
-    return record;
-  }
-  if ((command === "archive" || command === "reopen") && note === undefined) {
-    const [from, to] =
-      command === "archive" ? [active, archived] : [archived, active];
-    mkdirSync(new URL(".", to), { recursive: true });
-    // Linking first preserves both records if the destination already exists.
-    linkSync(from, to);
-    unlinkSync(from);
-    return to;
+  switch (command) {
+    case "update":
+      return update(active, archived, note);
+    case "archive":
+      return move(active, archived, note);
+    case "reopen":
+      return move(archived, active, note);
   }
   throw new Error(
     'Usage: pnpm friction new <slug> | update <filename> "<note>" | archive <filename> | reopen <filename>',
