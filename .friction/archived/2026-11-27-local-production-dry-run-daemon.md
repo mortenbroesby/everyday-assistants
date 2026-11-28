@@ -7,7 +7,6 @@
 - Paths: docs/nemlig-production-readiness.md; apps/nemlig-assistant/package.json
 - Category: environment
 - Severity: medium
-- Status: resolved
 
 ## Observation and evidence
 

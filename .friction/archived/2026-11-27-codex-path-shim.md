@@ -6,7 +6,6 @@
 - Paths: .tool-versions, docs/agent-routing-evaluation.md
 - Category: environment
 - Severity: medium
-- Status: resolved
 
 ## Observation and evidence
 During hook capability discovery, `which -a codex` returned an asdf shim before

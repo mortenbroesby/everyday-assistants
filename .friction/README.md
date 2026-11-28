@@ -28,32 +28,21 @@ Severity is low (minor detour), medium (failed step/repeated work), or high
 (blocked outcome or safety risk). Category examples: instructions, discovery,
 environment, tools, validation, context, permissions, handoff.
 
-```markdown
-# Short factual title
-- Date: YYYY-MM-DD
-- Scope: developer harness / named app
-- Task: issue or PR link
-- Revision: full or unambiguous commit SHA
-- Paths: relevant repository paths; no private local paths
-- Category: one category
-- Severity: low | medium | high
-- Status: open | investigating | resolved | accepted
+Run this command from the repository root, replacing the slug with a short
+description of the observed friction:
 
-## Observation and evidence
-What happened, expected versus actual; sanitized commands/errors or public links.
-
-## Impact
-Observed counts, time or cost with method; otherwise not measured.
-
-## Hypothesis
-Suspected cause and confidence, clearly distinct from established facts.
-
-## Improvement and validation
-Smallest candidate fix and the test or comparable task that would demonstrate value.
-
-## Resolution
-Fix/PR links, revision, validation, remaining uncertainty and recurrence history.
+```sh
+pnpm friction:new pre-push-timeout
 ```
+
+The command creates a dated file from the [record template](templates/record.md)
+and prints its path. Fill in the observation before committing. The date uses
+local time and the revision defaults to the current commit.
+
+Dated files directly in this directory are active. When a fix is verified or
+a limitation is accepted, append the evidence or decision and move the whole
+file into [archived/](archived/) with `git mv`. Update links to the moved file.
+If the same cause recurs, move its record back here and append the new evidence.
 
 Never commit credentials, tokens, cookies, account identifiers, private chat
 links, raw provider bodies or transcripts. Summarize the minimum facts needed

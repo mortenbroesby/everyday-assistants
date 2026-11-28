@@ -6,7 +6,6 @@
 - Paths: .github/pull_request_template.md, AGENTS.md
 - Category: instructions
 - Severity: low
-- Status: resolved
 
 ## Observation and evidence
 The PR template asked every release-bearing Nemlig change to paste a summary

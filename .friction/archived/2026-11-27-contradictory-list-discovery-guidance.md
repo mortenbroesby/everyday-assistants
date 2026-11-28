@@ -6,7 +6,6 @@
 - Paths: apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md, apps/nemlig-assistant/src/mcp.ts
 - Category: instructions
 - Severity: low
-- Status: resolved
 
 ## Observation and evidence
 The MCP section correctly directed saved-list display to show_product_review

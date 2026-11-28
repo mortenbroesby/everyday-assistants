@@ -6,7 +6,6 @@
 - Paths: .codex/hooks.json, .codex/config.toml, AGENTS.md
 - Category: discovery
 - Severity: medium
-- Status: resolved
 
 ## Observation and evidence
 The default checkout was at `31c81e6`. Its hooks contained only the JCodeMunch

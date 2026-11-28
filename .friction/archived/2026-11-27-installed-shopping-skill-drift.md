@@ -6,7 +6,6 @@
 - Paths: apps/nemlig-assistant/chatgpt-plugin-source/nemlig-shopping/skills/grocery-shopping/SKILL.md, apps/nemlig-assistant/chatgpt-plugin-source/nemlig-shopping/plugin.json, apps/nemlig-assistant/.codex/skills/nemlig-basket/SKILL.md
 - Category: environment
 - Severity: medium
-- Status: resolved
 
 ## Observation and evidence
 In two fresh Codex gpt-6-astra model turns with the same synthetic fixture and

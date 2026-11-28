@@ -6,7 +6,6 @@
 - Paths: AGENTS.md, .agents/instructions/, docs/agent-harness-recovery.md
 - Category: instructions
 - Severity: medium
-- Status: resolved
 
 ## Observation and evidence
 The primary computer-use service failed to start. An existing PinchTab instance

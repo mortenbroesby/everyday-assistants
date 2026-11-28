@@ -7,7 +7,6 @@
 - Paths: docs/nemlig-selection-evaluation.md; apps/nemlig-assistant/scripts/agent-routing-fixture.ts
 - Category: permissions
 - Severity: high
-- Status: resolved
 
 ## Observation and evidence
 

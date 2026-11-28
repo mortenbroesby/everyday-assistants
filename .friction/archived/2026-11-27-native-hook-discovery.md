@@ -6,7 +6,6 @@
 - Paths: .codex/hooks.json, .agents/hooks/friction-reminder.mjs, .friction/README.md
 - Category: environment and validation
 - Severity: medium
-- Status: accepted
 
 ## Observation and evidence
 The initial activation request referred broadly to the host `/hooks` interface.
