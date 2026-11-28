@@ -6,7 +6,6 @@
 - Paths: .codex/hooks.json, .agents/hooks/friction-reminder.mjs, .friction/README.md
 - Category: environment and validation
 - Severity: medium
-- Status: investigating
 
 ## Observation and evidence
 The initial activation request referred broadly to the host `/hooks` interface.
@@ -77,3 +76,7 @@ failed attempts are preserved here; token usage for the interrupted attempt
 was not exposed. Temporary app-server processes exited; the candidate checkout
 remained clean. Both lifecycle events now have native execution evidence in
 the standalone checkout. The original linked-worktree limitation is unchanged.
+
+### Ledger disposition
+
+Both native events ran in the standalone checkout. The verified linked-worktree source behavior is accepted.

@@ -28,32 +28,17 @@ Severity is low (minor detour), medium (failed step/repeated work), or high
 (blocked outcome or safety risk). Category examples: instructions, discovery,
 environment, tools, validation, context, permissions, handoff.
 
-```markdown
-# Short factual title
-- Date: YYYY-MM-DD
-- Scope: developer harness / named app
-- Task: issue or PR link
-- Revision: full or unambiguous commit SHA
-- Paths: relevant repository paths; no private local paths
-- Category: one category
-- Severity: low | medium | high
-- Status: open | investigating | resolved | accepted
+Run `pnpm friction new <slug>` from the repository root. For example,
+`pnpm friction new pre-push-timeout` creates a Markdown file in
+[active/](active/) from the [template](templates/record.md), fills in the
+local date and Git revision, and prints the path. Open that file and fill in
+the observed details during the same task.
 
-## Observation and evidence
-What happened, expected versus actual; sanitized commands/errors or public links.
-
-## Impact
-Observed counts, time or cost with method; otherwise not measured.
-
-## Hypothesis
-Suspected cause and confidence, clearly distinct from established facts.
-
-## Improvement and validation
-Smallest candidate fix and the test or comparable task that would demonstrate value.
-
-## Resolution
-Fix/PR links, revision, validation, remaining uncertainty and recurrence history.
-```
+Edit the Markdown directly to append evidence. When a fix is verified or a
+limitation is accepted, record the outcome and use `git mv` to move the file
+into [archived/](archived/). If the same cause recurs, move the record back to
+`active/` and append the new observation. The slug is part of the filename.
+Use `git mv` to rename it and update any links to the old path.
 
 Never commit credentials, tokens, cookies, account identifiers, private chat
 links, raw provider bodies or transcripts. Summarize the minimum facts needed

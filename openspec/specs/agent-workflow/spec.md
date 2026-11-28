@@ -88,7 +88,7 @@ cleanup, integration, release, deployment, or external mutation.
   work, and recommends exactly one approval-sized next epic
 
 ### Requirement: Friction capture preserves factual evidence
-Agents SHALL record meaningful observed developer friction with task, revision, scope, category, severity, sanitized evidence, impact or explicit unknowns, hypothesis, validation plan and resolution status. Records MUST preserve historical observations and distinguish facts from hypotheses. Production incidents SHALL retain their existing canonical record.
+Agents SHALL record meaningful observed developer friction with task, revision, scope, category, severity, sanitized evidence, impact or explicit unknowns, hypothesis, and validation plan. Active records live in `.friction/active/`. Once a fix is verified or a limitation is accepted, agents SHALL append the evidence and move the record to `.friction/archived/`. Records MUST preserve historical observations and distinguish facts from hypotheses. Production incidents SHALL retain their existing canonical record.
 
 #### Scenario: Meaningful friction occurs
 - **WHEN** an agent observes a failed or unnecessarily costly engineering step

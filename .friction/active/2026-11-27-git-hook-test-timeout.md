@@ -6,7 +6,6 @@
 - Paths: scripts/git-hooks.test.mjs, .husky/pre-push
 - Category: validation
 - Severity: medium
-- Status: investigating
 
 ## Observation and evidence
 `node --test scripts/friction-hook.test.mjs scripts/git-hooks.test.mjs`

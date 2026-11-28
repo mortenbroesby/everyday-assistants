@@ -237,7 +237,7 @@ Official Codex documentation permits linked-worktree layers to load from the
 main checkout; that is a supported hypothesis, not a verified source trace.
 The user authorized approval of the reminder hooks, but no matching hook was
 available to approve. No trust was changed. See the
-[discovery record](../.friction/2026-11-27-native-hook-discovery.md).
+[discovery record](../.friction/archived/2026-11-27-native-hook-discovery.md).
 A subsequent native test must first verify source path and installed events,
 then trust only those definitions and observe real Stop/Interrupt execution.
 Do not merge the draft or change the main checkout merely to make this test pass.
