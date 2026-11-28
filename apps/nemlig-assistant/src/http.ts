@@ -159,6 +159,7 @@ export function createHttpApp(
     "validateCredentials"
   > = () => new NemligClient(),
   mcpEnv: NodeJS.ProcessEnv = process.env,
+  syntheticShopper?: PrincipalContextFactory,
 ) {
   const app = createMcpExpressApp({ host: config.host });
   const contexts = new Map<string, PrincipalContext>();
@@ -223,6 +224,9 @@ export function createHttpApp(
     res.json({ revision: config.revision }),
   );
   app.post("/__credential-validation", async (req: Request, res: Response) => {
+    if (syntheticShopper) {
+      return res.status(403).json({ error: "validation_rejected" });
+    }
     try {
       const principalKey = req.get("x-nemlig-principal-key");
       const policyRevision = req.get("x-nemlig-policy-revision");
@@ -360,10 +364,14 @@ export function createHttpApp(
           !req.get("x-nemlig-credential-generation") &&
           !encodedEnvelope
         ) {
-          if (!isCredentialFreeRequest(req)) {
+          if (
+            !isCredentialFreeRequest(req) &&
+            !(syntheticShopper && req.get("x-nemlig-local-basket-capability"))
+          ) {
             return res.status(403).json({ error: "principal_not_allowed" });
           }
         } else if (
+          syntheticShopper ||
           !principalKey ||
           configured.principal_key !== principalKey ||
           policyRevision !== config.principalPolicy.revision ||
@@ -404,7 +412,7 @@ export function createHttpApp(
         context = serviceContext();
       }
       // Credential-free discovery is request-local, not a credential rotation.
-      else if (generation === 0) {
+      else if (generation === 0 && !syntheticShopper) {
         context = createContext(principal);
       } else {
         context = contexts.get(contextKey);
@@ -420,7 +428,7 @@ export function createHttpApp(
             .status(503)
             .json({ error: "principal_capacity_unavailable" });
         }
-        context = createContext(principal);
+        context = (syntheticShopper ?? createContext)(principal);
         contexts.set(contextKey, context);
       }
       const authInfo = req.auth;
@@ -474,12 +482,19 @@ export function createHttpApp(
 
 export async function startHttpServer(
   env: NodeJS.ProcessEnv = process.env,
+  syntheticShopper?: PrincipalContextFactory,
 ): Promise<Server> {
   const config = loadAuth0Config(env);
   let app: ReturnType<typeof createHttpApp> | undefined;
   let startupError = false;
   const server = createServer((request, response) => {
     if (app) {
+      if (syntheticShopper && env.NEMLIG_JOURNEY_IMAGE_REVISION) {
+        response.setHeader(
+          "x-nemlig-journey-image",
+          env.NEMLIG_JOURNEY_IMAGE_REVISION,
+        );
+      }
       return app(request, response);
     }
     response.statusCode = 503;
@@ -499,7 +514,15 @@ export async function startHttpServer(
   });
   void fetchAuth0Metadata(config)
     .then(({ oauth, jwksUrl }) => {
-      app = createHttpApp(config, oauth, createAuth0Verifier(config, jwksUrl));
+      app = createHttpApp(
+        config,
+        oauth,
+        createAuth0Verifier(config, jwksUrl),
+        undefined,
+        undefined,
+        env,
+        syntheticShopper,
+      );
     })
     .catch((error) => {
       startupError = true;

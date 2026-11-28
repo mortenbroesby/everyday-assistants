@@ -390,6 +390,8 @@ of the repository.
 
 ## 🛠️ Development
 
+Run the [synthetic shopping journey](../../docs/nemlig-staging-journey.md) with local Wrangler and Docker, or verify a reviewed build through the private staging connector.
+
 ```sh
 pnpm lint
 pnpm build

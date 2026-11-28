@@ -6,6 +6,7 @@ import {
 export const FIXED_CONTAINER_NAME = "nemlig-production";
 
 export interface CloudflareEnv {
+  NEMLIG_JOURNEY_TIMING?: string;
   MCP_ENABLED?: string;
   MCP_AUTH_TIMEOUT_MS?: string;
   MCP_CONTROL_TIMEOUT_MS?: string;

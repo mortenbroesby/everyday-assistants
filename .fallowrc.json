@@ -1,7 +1,9 @@
 {
   "entry": [
     "apps/nemlig-assistant/scripts/package-chatgpt-plugin.mjs",
-    "scripts/fallow-agent-hook.mjs"
+    "scripts/fallow-agent-hook.mjs",
+    "apps/nemlig-assistant/src/journey-worker.ts",
+    "apps/nemlig-assistant/src/journey-http.ts"
   ],
   "ignorePatterns": ["!.agents/**"],
   "ignoreUnresolvedImports": ["./picker.html", "../dist/picker.html"],

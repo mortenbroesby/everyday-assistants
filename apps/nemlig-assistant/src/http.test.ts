@@ -1118,3 +1118,57 @@ test("family HTTP denies unknown, disabled and mismatched identities before crea
     );
   }
 });
+
+test("synthetic shopper reopens the edited draft across stateless MCP requests", async () => {
+  const { createJourneyShopper } = await import("./journey-shopper.js");
+  const { runShoppingJourney } = await import("../scripts/shopping-journey.js");
+  const { VIEWER_ASSET_ORIGIN } = await import("./viewer-asset-contract.js");
+  const app = createHttpApp(
+    config,
+    oauth,
+    {
+      verifyAccessToken: async (token) => ({
+        token,
+        clientId: "journey",
+        scopes: [config.requiredScope],
+        expiresAt: Date.now() / 1000 + 300,
+        extra: { subject: ownerSubject },
+      }),
+    },
+    undefined,
+    undefined,
+    {},
+    createJourneyShopper,
+  );
+  const server = app.listen(0, config.host);
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", resolve);
+    server.once("error", reject);
+  });
+  const endpoint = new URL(
+    `http://${config.host}:${(server.address() as AddressInfo).port}/mcp`,
+  );
+  const client = modernClient("journey-test");
+  try {
+    await client.connect(
+      new StreamableHTTPClientTransport(endpoint, {
+        requestInit: {
+          headers: {
+            authorization: "Bearer test",
+            "x-nemlig-local-basket-capability": "test-only",
+          },
+        },
+      }),
+    );
+    await runShoppingJourney(client, VIEWER_ASSET_ORIGIN);
+    const validation = await fetch(
+      new URL("/__credential-validation", endpoint),
+      { method: "POST" },
+    );
+    assert.equal(validation.status, 403);
+  } finally {
+    await client.close();
+    await app.locals.mcpHandler.close();
+    server.close();
+  }
+});

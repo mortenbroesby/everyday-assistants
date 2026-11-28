@@ -62,7 +62,10 @@
     "smoke:package": "tsx scripts/smoke-package.ts",
     "test": "tsx --test src/*.test.ts src/picker/*.test.ts src/picker/components/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs",
-    "eval:routing:fixture": "tsx scripts/agent-routing-fixture.ts"
+    "eval:routing:fixture": "tsx scripts/agent-routing-fixture.ts",
+    "journey:local": "pnpm build:ui && node scripts/journey-local.mjs",
+    "journey:staging": "tsx scripts/journey-client.ts",
+    "staging:deploy": "tsx scripts/staging-journey.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",

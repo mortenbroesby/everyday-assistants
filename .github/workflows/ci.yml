@@ -69,6 +69,14 @@ jobs:
       - run: pnpm --filter nemlig-assistant build:storybook
       - run: node --test scripts/git-hooks.test.mjs scripts/friction-hook.test.mjs
       - run: pnpm nemlig:smoke:package
+      - name: Exercise authenticated shopping through local Wrangler and Docker
+        timeout-minutes: 15
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if ! git diff --quiet "$BASE_SHA" HEAD -- apps/nemlig-assistant pnpm-lock.yaml .dockerignore .github/workflows/ci.yml; then
+            pnpm --filter nemlig-assistant journey:local
+          fi
       - name: Run Nemlig Cloudflare check
         run: |
           set -o pipefail

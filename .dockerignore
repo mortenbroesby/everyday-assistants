@@ -15,3 +15,7 @@
 /.env
 /.env.*
 !.env.example
+
+**/.wrangler/
+**/.codex/
+**/credentials.json
