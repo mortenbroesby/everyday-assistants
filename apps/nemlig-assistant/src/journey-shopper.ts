@@ -1,36 +1,53 @@
-import type { Product, ShoppingClient } from "./client.js";
+import { NemligClient, type ShoppingClient } from "./client.js";
 
 const milk = {
-  id: 910001,
-  name: "Laktosefri letmælk",
-  price: 12,
-  unit: "kr/l",
-  unitPrice: 12,
-  unitSize: "1 liter",
-  brand: "Journey",
-  category: "Mejeri",
-  subcategory: "Mælk",
-  imageUrl: "",
-  available: true,
-  labels: [],
-  isOrganic: false,
-  isFrozen: false,
-  isRefrigerated: true,
-  isDairy: true,
-  isLactoseFree: true,
-  isGlutenFree: true,
-  isVegan: false,
-  isOnDiscount: false,
-} satisfies Product;
-const getProduct = async (id: number) => {
-  if (id !== milk.id) {
-    throw new Error("Unknown synthetic product");
-  }
-  return structuredClone(milk);
+  id: "910001",
+  title: "Laktosefri letmælk",
+  price: 1200,
+  currency: "DKK",
+  description: "1 liter",
+  brandName: "Journey",
+  certificates: [{ text: "Laktosefri" }],
+  pricePerUnit: { value: 1200, unitType: "Volume" },
+  availability: { type: "Available" },
+  tracking: { item_category: "Mejeri", item_category2: "Mælk" },
 };
+
+// Supply wire responses at the fetch boundary so the normal catalogue client
+// constructs requests, loads its slot, parses minor units and hydrates details.
+const catalogueFetch: typeof fetch = async (input, init) => {
+  const url = new URL(input instanceof Request ? input.url : input);
+  if ((init?.method ?? "GET") !== "GET") {
+    throw new Error("Synthetic catalogue only supports reads");
+  }
+  switch (url.origin + url.pathname) {
+    case "https://www.nemlig.com/webapi/Token":
+      return Response.json({ access_token: "fixture-token" });
+    case "https://www.nemlig.com/webapi/basket/GetBasket":
+      return Response.json({ DeliveryTimeSlot: { Id: 7 } });
+    case "https://webapi.prod.knl.nemlig.it/productbff/api/v2/web/search/products": {
+      const matches = /laktosefri|mælk|milk/i.test(
+        url.searchParams.get("query") ?? "",
+      );
+      return Response.json({
+        searchResult: {
+          items: matches ? [{ type: "product", product: milk }] : [],
+        },
+      });
+    }
+    case "https://webapi.prod.knl.nemlig.it/searchgateway/api/quick":
+      return Response.json({ Categories: [] });
+    case "https://webapi.prod.knl.nemlig.it/productbff/api/web/productDetails/910001":
+      return Response.json({ product: milk });
+    default:
+      return new Response(null, { status: 404 });
+  }
+};
+
 export function createJourneyShopper(): {
   client: ShoppingClient & { providerIdentity(): string };
 } {
+  const catalogue = new NemligClient(catalogueFetch);
   return {
     client: {
       providerIdentity: () => "synthetic-shopper",
@@ -38,14 +55,13 @@ export function createJourneyShopper(): {
       login: async () => {
         throw new Error("Synthetic shopper has no provider account");
       },
-      searchProducts: async (query) =>
-        /laktosefri|mælk|milk/i.test(query) ? [await getProduct(milk.id)] : [],
-      getProduct,
-      getFreshProduct: getProduct,
+      searchProducts: catalogue.searchProducts.bind(catalogue),
+      getProduct: catalogue.getProduct.bind(catalogue),
+      getFreshProduct: catalogue.getFreshProduct.bind(catalogue),
       listFavorites: async () => [],
       listDepartments: async () => [{ id: "/mejeri", name: "Mejeri" }],
       browseDepartment: async () => ({
-        products: [await getProduct(milk.id)],
+        products: [await catalogue.getProduct(Number(milk.id))],
         page: 1,
         hasNext: false,
       }),

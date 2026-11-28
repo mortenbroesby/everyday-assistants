@@ -7,18 +7,12 @@ import {
 import { readJourneyTiming } from "../src/journey-timing.js";
 import { runShoppingJourney } from "./shopping-journey.js";
 
-const staging = "https://nemlig-staging.broesby.dk/mcp";
 type Evidence = ReturnType<typeof readJourneyTiming> & { http_status?: number };
 
 export function journeyTarget(env: NodeJS.ProcessEnv) {
-  const endpoint = new URL(env.NEMLIG_JOURNEY_ENDPOINT ?? staging);
+  const endpoint = new URL(env.NEMLIG_JOURNEY_ENDPOINT ?? "");
   const token = env.NEMLIG_JOURNEY_TOKEN;
   assert.ok(token);
-  if (endpoint.href === staging) {
-    const revision = env.NEMLIG_JOURNEY_EXPECTED_REVISION ?? "";
-    assert.match(revision, /^[0-9a-f]{40}$/u);
-    return { endpoint, token, revision };
-  }
   assert.match(endpoint.href, /^https:\/\/127\.0\.0\.1:\d+\/mcp$/u);
   return { endpoint, token };
 }
@@ -46,34 +40,17 @@ export function journeyFetch(
       http_status: response.status,
       ...readJourneyTiming(response.headers),
     });
-    if (
-      target.revision &&
-      response.ok &&
-      response.headers.get("x-nemlig-journey-image") !== target.revision
-    ) {
-      await response.body?.cancel();
-      throw new Error("Staging container revision mismatch");
-    }
     return response;
   };
 }
 
 type Sample = "first" | "second";
-export function checkSample(
-  evidence: Evidence,
-  local: boolean,
-  sample: Sample,
-) {
+export function checkSample(evidence: Evidence, sample: Sample) {
   assert.ok(evidence.container_state);
   assert.notEqual(evidence.ready_ms, undefined);
   assert.notEqual(evidence.auth_ms, undefined);
   assert.notEqual(evidence.mcp_headers_ms, undefined);
-  if (local) {
-    assert.equal(
-      evidence.container_state,
-      sample === "first" ? "cold" : "warm",
-    );
-  }
+  assert.equal(evidence.container_state, sample === "first" ? "cold" : "warm");
 }
 
 async function runSample(target: Target, sample: Sample, signal: AbortSignal) {
@@ -98,7 +75,7 @@ async function runSample(target: Target, sample: Sample, signal: AbortSignal) {
     try {
       await client.connect(transport, { signal, timeout: 90_000 });
       assert.ok(client.getServerVersion());
-      checkSample(evidence, !target.revision, sample);
+      checkSample(evidence, sample);
       outcome = "pass";
     } finally {
       console.log(

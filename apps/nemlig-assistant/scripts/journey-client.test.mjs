@@ -2,15 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { checkSample, journeyFetch, journeyTarget } from "./journey-client.ts";
 import { installJourneyIssuer } from "./journey-issuer.mjs";
-import { ensureDocker } from "./journey-local.mjs";
 
 const { AbortSignal, Response } = globalThis;
-const staging = {
+const local = {
   NEMLIG_JOURNEY_TOKEN: "test",
-  NEMLIG_JOURNEY_EXPECTED_REVISION: "a".repeat(40),
+  NEMLIG_JOURNEY_ENDPOINT: "https://127.0.0.1:4000/mcp",
 };
 
-test("client sends tokens only to canonical staging or exact TLS loopback endpoints", async () => {
+test("client sends tokens only to exact TLS loopback endpoints", async () => {
   for (const target of [
     "https://nemlig-mcp.broesby.dk/mcp",
     "https://another.invalid/mcp",
@@ -19,18 +18,10 @@ test("client sends tokens only to canonical staging or exact TLS loopback endpoi
     "https://127.0.0.1:4000/mcp?q=1",
   ]) {
     assert.throws(() =>
-      journeyTarget({ ...staging, NEMLIG_JOURNEY_ENDPOINT: target }),
+      journeyTarget({ ...local, NEMLIG_JOURNEY_ENDPOINT: target }),
     );
   }
-  assert.throws(() =>
-    journeyTarget({ ...staging, NEMLIG_JOURNEY_EXPECTED_REVISION: "short" }),
-  );
-  const local = journeyTarget({
-    ...staging,
-    NEMLIG_JOURNEY_ENDPOINT: "https://127.0.0.1:4000/mcp",
-  });
-  assert.equal(local.revision, undefined);
-  const config = journeyTarget(staging);
+  const config = journeyTarget(local);
   const evidence = [];
   const send = journeyFetch(
     config,
@@ -41,7 +32,6 @@ test("client sends tokens only to canonical staging or exact TLS loopback endpoi
       assert.equal(init.redirect, "error");
       return new Response("ok", {
         headers: {
-          "x-nemlig-journey-image": config.revision,
           "server-timing": "auth;dur=11, private;desc=test",
         },
       });
@@ -52,17 +42,6 @@ test("client sends tokens only to canonical staging or exact TLS loopback endpoi
   await assert.rejects(send("https://another.invalid/mcp"));
 });
 
-test("hosted client rejects a response from the wrong deployed image", async () => {
-  const config = journeyTarget(staging);
-  const send = journeyFetch(
-    config,
-    AbortSignal.timeout(2000),
-    () => {},
-    async () => new Response("ok"),
-  );
-  await assert.rejects(send(config.endpoint), /revision mismatch/u);
-});
-
 test("local sample requires actual cold then warm state with all phase timings", () => {
   const first = {
     container_state: "cold",
@@ -70,12 +49,10 @@ test("local sample requires actual cold then warm state with all phase timings",
     ready_ms: 1,
     mcp_headers_ms: 2,
   };
-  checkSample(first, true, "first");
-  assert.throws(() => checkSample(first, true, "second"));
-  assert.throws(() =>
-    checkSample({ ...first, auth_ms: undefined }, false, "first"),
-  );
-  checkSample({ ...first, container_state: "warm" }, true, "second");
+  checkSample(first, "first");
+  assert.throws(() => checkSample(first, "second"));
+  assert.throws(() => checkSample({ ...first, auth_ms: undefined }, "first"));
+  checkSample({ ...first, container_state: "warm" }, "second");
 });
 
 test("local issuer serves a public discovery document and key to both verifiers", async () => {
@@ -103,29 +80,4 @@ test("local issuer serves a public discovery document and key to both verifiers"
   } finally {
     globalThis.fetch = original;
   }
-});
-
-test("local bootstrap only starts an explicitly selected Colima context", async () => {
-  const calls = [];
-  const exec = async (bin, args) => {
-    calls.push([bin, args]);
-    if (args[0] === "version") {
-      throw new Error("offline");
-    }
-    return { stdout: "colima\n" };
-  };
-  await ensureDocker(exec, "darwin", {});
-  assert.equal(calls.at(-1)[0], "colima");
-  calls.length = 0;
-  await assert.rejects(
-    ensureDocker(exec, "linux", {}),
-    /Docker engine unavailable/u,
-  );
-  assert.equal(calls.length, 1);
-  calls.length = 0;
-  await assert.rejects(
-    ensureDocker(exec, "darwin", { DOCKER_HOST: "unix:///other" }),
-    /Docker engine unavailable/u,
-  );
-  assert.equal(calls.length, 1);
 });

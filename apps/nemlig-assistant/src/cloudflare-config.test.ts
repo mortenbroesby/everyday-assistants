@@ -220,3 +220,18 @@ test("retired PlanStorage is absent from the Worker", async () => {
   );
   assert.doesNotMatch(worker, /PlanStorage|NEMLIG_PLAN_STORAGE/u);
 });
+
+test("portal CSRF uses the local controller in Wrangler and the EU controller in production", async () => {
+  const worker = await readFile(
+    new URL("./cloudflare-worker.ts", import.meta.url),
+    "utf8",
+  );
+  assert.match(
+    worker,
+    /env\.NEMLIG_MCP_REVISION === "local"\s*\? env\.NEMLIG_MCP_CONTAINER\s*:\s*env\.NEMLIG_MCP_CONTAINER\.jurisdiction\("eu"\)/u,
+  );
+  assert.match(
+    worker,
+    /getContainer\(\s*containerNamespace\(env\),\s*FIXED_CONTAINER_NAME,?\s*\)\.consumePortalCsrf\(/u,
+  );
+});

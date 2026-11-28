@@ -1,4 +1,4 @@
-import { spawn, execFileSync, execFile } from "node:child_process";
+import { spawn, execFileSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
 import { once } from "node:events";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -7,25 +7,26 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
 import { Buffer } from "node:buffer";
 import console from "node:console";
 import process from "node:process";
 import { URL, fileURLToPath } from "node:url";
 import { SignJWT } from "jose";
+import { checkContainerEngine } from "../../../scripts/check-container-engine.mjs";
 import { installJourneyIssuer } from "./journey-issuer.mjs";
 
 const { AbortController, AbortSignal } = globalThis;
 const app = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 let temp;
 const children = new Set();
-const deadline = AbortSignal.timeout(15 * 60_000);
+const deadline = AbortSignal.timeout(30 * 60_000);
 const stop = new AbortController();
 const signal = AbortSignal.any([deadline, stop.signal]);
 const abort = () => stop.abort();
 const cleanEnv = { ...process.env };
 for (const name of Object.keys(cleanEnv)) {
   if (
+    name !== "WRANGLER_DOCKER_BIN" &&
     /^(?:NEMLIG_|MCP_|STAGING_|AUTH0_|CLOUDFLARE_|CF_API_|WRANGLER_|NODE_OPTIONS|NODE_TLS_REJECT_UNAUTHORIZED)/u.test(
       name,
     )
@@ -84,38 +85,10 @@ function health(endpoint, ca) {
   });
 }
 
-const execute = promisify(execFile);
-export async function ensureDocker(
-  executeCommand = execute,
-  platform = process.platform,
-  env = cleanEnv,
-) {
-  const options = { signal, timeout: 30_000, env };
-  try {
-    await executeCommand(
-      "docker",
-      ["version", "--format", "{{.Server.Version}}"],
-      options,
-    );
-  } catch {
-    if (platform !== "darwin" || env.DOCKER_HOST) {
-      throw new Error("Docker engine unavailable");
-    }
-    const { stdout } = await executeCommand(
-      "docker",
-      ["context", "show"],
-      options,
-    );
-    if (stdout.trim() !== "colima") {
-      throw new Error("Docker engine unavailable");
-    }
-    console.log("Starting the selected Colima Docker engine");
-    await executeCommand("colima", ["start"], { ...options, timeout: 120_000 });
-  }
-}
-
 async function run() {
-  await ensureDocker();
+  if (!checkContainerEngine(cleanEnv)) {
+    throw new Error("Container preflight failed");
+  }
   const port = await availablePort();
   const endpoint = `https://127.0.0.1:${port}/mcp`;
   const key = join(temp, "tls.key");
@@ -162,16 +135,23 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
 `,
   );
   const config = JSON.parse(
-    await readFile(join(app, "wrangler.staging.json"), "utf8"),
+    await readFile(join(app, "wrangler.journey.json"), "utf8"),
   );
   delete config.$schema;
-  delete config.routes;
+  // Concurrent invocations get different namespaces and cold instances.
+  config.name = "nemlig-journey-" + randomBytes(6).toString("hex");
   config.main = workerFile;
-  config.name = "nemlig-journey-local";
   config.assets.directory = resolve(app, config.assets.directory);
   const [container] = config.containers;
   container.class_name = "LocalJourneyContainer";
-  container.image = resolve(app, container.image);
+  // Keep the repository image instructions while using the local engine's bundled
+  // Dockerfile frontend. This avoids a separate Docker Hub frontend process.
+  const imageRecipe = await readFile(resolve(app, container.image), "utf8");
+  container.image = join(temp, "Dockerfile");
+  await writeFile(
+    container.image,
+    imageRecipe.replace(/^# syntax=docker\/dockerfile:1\r?\n/u, ""),
+  );
   container.image_build_context = resolve(app, container.image_build_context);
   config.durable_objects.bindings.find(
     (b) => b.name === "NEMLIG_MCP_CONTAINER",
@@ -238,7 +218,13 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
-  const exited = once(wrangler, "exit").then(() => {
+  const exited = once(wrangler, "exit").then(([code, exitSignal]) => {
+    if (!signal.aborted) {
+      console.error(
+        "Wrangler exited",
+        JSON.stringify({ code, signal: exitSignal }),
+      );
+    }
     throw new Error("Wrangler exited before journey completion");
   });
   // Install an early handler while polling, including during cleanup.
@@ -251,6 +237,21 @@ LocalJourneyContainer.outboundByHost = JourneyContainer.outboundByHost;
         "Could not resolve",
         "no space left on device",
         "Failed to build",
+        "frontend grpc server closed unexpectedly",
+        "Docker build exited with code",
+        "Preparing container image",
+        "failed to solve",
+        "failed to fetch",
+        "connection reset",
+        "connection refused",
+        "failed to read",
+        "context deadline exceeded",
+        "context canceled",
+        "i/o timeout",
+        "permission denied",
+        "failed to dial",
+        "out of memory",
+        "EOF",
         "Unknown arguments",
         "Build failed",
         "Ready on",
@@ -307,7 +308,7 @@ if (import.meta.main) {
   } catch (error) {
     console.error(
       [
-        "Docker engine unavailable",
+        "Container preflight failed",
         "Local MCP journey failed",
         "Wrangler exited before journey completion",
       ].includes(error.message)

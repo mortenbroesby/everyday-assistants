@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
 import type { Client } from "@modelcontextprotocol/client";
 import { z } from "zod";
 import {
@@ -18,7 +17,6 @@ export async function runShoppingJourney(
   expectedOrigin: string,
   report?: (step: JourneyStep) => void,
 ): Promise<void> {
-  const session = randomUUID();
   async function step<T>(
     operation: string,
     check: () => Promise<T>,
@@ -45,11 +43,29 @@ export async function runShoppingJourney(
     const response = await client.callTool({
       name,
       arguments: args,
-      _meta: { "openai/session": session },
     });
     assert.ok(!response.isError);
+    if (name === "find_groceries") {
+      assert.ok(
+        response.content.some(
+          (block) =>
+            block.type === "text" && block.text.includes("Laktosefri letmælk"),
+        ),
+      );
+    }
     return response.structuredContent;
   };
+  await step("list_tools", async () => {
+    const { tools } = await client.listTools();
+    const renderer = tools.find((tool) => tool.name === "show_product_review");
+    assert.equal(
+      z
+        .object({ ui: z.object({ resourceUri: z.string() }) })
+        .parse(renderer?._meta).ui.resourceUri,
+      PRODUCT_VIEWER_RESOURCE_URI,
+    );
+    assert.ok(tools.some((tool) => tool.name === "find_groceries"));
+  });
   const productId = await step("search", async () => {
     const value = z
       .object({

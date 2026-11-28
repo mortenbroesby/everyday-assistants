@@ -22,8 +22,6 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
-ARG JOURNEY_IMAGE_REVISION
-ENV NEMLIG_JOURNEY_IMAGE_REVISION=$JOURNEY_IMAGE_REVISION
 ENV NODE_ENV=production
 ENV NEMLIG_MCP_HTTP_HOST=0.0.0.0
 ENV NEMLIG_MCP_HTTP_PORT=8080

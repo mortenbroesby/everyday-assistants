@@ -63,9 +63,14 @@
     "test": "tsx --test src/*.test.ts src/picker/*.test.ts src/picker/components/*.test.ts release/*.test.ts scripts/*.test.mjs",
     "coverage": "node scripts/coverage.mjs",
     "eval:routing:fixture": "tsx scripts/agent-routing-fixture.ts",
+    "journey:segments": "pnpm journey:provider && pnpm journey:tools && pnpm journey:ui",
+    "journey:provider": "tsx --test src/client.test.ts src/client-errors.test.ts src/provider-response.test.ts",
+    "journey:tools": "tsx --test --test-name-pattern='synthetic shopper reopens' src/http.test.ts",
+    "journey:ui": "pnpm eval:conversation:widget",
     "journey:local": "pnpm build:ui && node scripts/journey-local.mjs",
-    "journey:staging": "tsx scripts/journey-client.ts",
-    "staging:deploy": "tsx scripts/staging-journey.ts"
+    "eval:conversation": "pnpm build:ui && node --import tsx scripts/local-conversation.mjs",
+    "eval:conversation:widget": "pnpm build:ui && node --import tsx scripts/check-conversation-widget.mjs",
+    "auth:local:provider": "tsx scripts/local-provider-check.ts"
   },
   "dependencies": {
     "@cloudflare/containers": "0.3.7",

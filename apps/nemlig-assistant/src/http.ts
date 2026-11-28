@@ -489,12 +489,6 @@ export async function startHttpServer(
   let startupError = false;
   const server = createServer((request, response) => {
     if (app) {
-      if (syntheticShopper && env.NEMLIG_JOURNEY_IMAGE_REVISION) {
-        response.setHeader(
-          "x-nemlig-journey-image",
-          env.NEMLIG_JOURNEY_IMAGE_REVISION,
-        );
-      }
       return app(request, response);
     }
     response.statusCode = 503;

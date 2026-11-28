@@ -390,7 +390,7 @@ of the repository.
 
 ## 🛠️ Development
 
-Run the [synthetic shopping journey](../../docs/nemlig-staging-journey.md) with local Wrangler and Docker, or verify a reviewed build through the private staging connector.
+Run the [manual agent smoke checks](../../docs/nemlig-segment-checks.md) to exercise the provider adapter, tool server, review card or complete local Wrangler journey.
 
 ```sh
 pnpm lint

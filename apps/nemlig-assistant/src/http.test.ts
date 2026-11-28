@@ -1155,6 +1155,8 @@ test("synthetic shopper reopens the edited draft across stateless MCP requests",
         requestInit: {
           headers: {
             authorization: "Bearer test",
+            // Exercise independent stateless connections, including exact draft readback.
+            connection: "close",
             "x-nemlig-local-basket-capability": "test-only",
           },
         },

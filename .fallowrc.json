@@ -14,5 +14,6 @@
   "$schema": "./node_modules/fallow/schema.json",
   "audit": {
     "gate": "new-only"
-  }
+  },
+  "ignoreBinaries": ["codex"]
 }

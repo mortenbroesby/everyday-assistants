@@ -44,3 +44,7 @@ app, also apply this file. Then select the matching app-local skill:
   regression purposes. The compendium does not grant authority for live writes.
 - For shipped user-visible behavior, update the README feature inventory; keep
   planned work in `BACKLOG.md` or a linked OpenSpec change.
+
+## Manual agent smoke test
+
+For a substantial change to the provider adapter, MCP tools or renderer, an agent can run `pnpm nemlig:smoke:agent` from the repository root. It checks the three boundaries locally with synthetic data. The [manual smoke runbook](../../docs/nemlig-segment-checks.md) lists individual checks, the optional native Codex conversation and the local Wrangler profile. Record the failing segment and exact readback.
