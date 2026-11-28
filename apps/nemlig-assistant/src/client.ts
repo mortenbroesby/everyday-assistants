@@ -62,8 +62,6 @@ const MAX_SHOPPING_LIST_PAGES = 100;
 const isStorefrontPage = (url: URL): boolean =>
   url.origin === "https://www.nemlig.com" && !url.username && !url.password;
 
-const DEFAULT_PRODUCT_TIMESTAMP = "AAAAAAAA-YFA_17hS";
-
 /** A failure known to occur before the provider's basket-write request was dispatched. */
 export class BasketPreflightError extends NemligError {
   override readonly name: string = "BasketPreflightError";
@@ -256,7 +254,6 @@ const decodeCookie = (value: string): string | undefined => {
 
 export class NemligClient {
   private readonly cookies = new Map<string, Map<string, string>>();
-  private readonly defaultTimeslot: string;
   private loggedIn = false;
   private basketMutationInProgress = false;
   private sessionGeneration = 0;
@@ -265,27 +262,14 @@ export class NemligClient {
   private productTimestamp?: string;
   private readonly knownProducts = new Map<number, Product>();
   private readonly hydratedProductIds = new Set<number>();
-  private timeslot: string;
+  private timeslot?: string;
+  private deliveryZoneId?: number;
   private timeslotId = 0;
 
   constructor(
     private readonly fetcher: Fetch = fetch,
-    now: Date = new Date(),
-  ) {
-    const tomorrow = new Date(now);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const date = [
-      tomorrow.getFullYear(),
-      tomorrow.getMonth() + 1,
-      tomorrow.getDate(),
-    ]
-      .map((part) =>
-        String(part).padStart(part === tomorrow.getFullYear() ? 4 : 2, "0"),
-      )
-      .join("");
-    this.defaultTimeslot = `${date}15-60-240`;
-    this.timeslot = this.defaultTimeslot;
-  }
+    _now?: Date,
+  ) {}
 
   isLoggedIn(): boolean {
     return this.loggedIn;
@@ -330,13 +314,9 @@ export class NemligClient {
       if (!data.RedirectUrl && !data.MergeSuccessful) {
         throw new NemligError("Login failed: invalid credentials");
       }
-      const timeslot = asString(data.TimeslotUtc);
       await this.ensureAccessToken();
       await this.loadCurrentUser();
       await this.loadDeliveryContext();
-      if (timeslot && !this.timeslotId) {
-        this.timeslot = timeslot;
-      }
       this.loggedIn = true;
       this.sessionGeneration += 1;
     } catch (error) {
@@ -528,10 +508,19 @@ export class NemligClient {
       throw new NemligError("Favorites page must be positive.");
     }
     const offset = limit === undefined ? 0 : (page - 1) * limit;
+    if (!asId(this.userId)) {
+      throw new NemligError("Favorites require a verified account ID.");
+    }
+    if (!this.deliveryZoneId) {
+      throw new NemligError("Favorites require a provider delivery zone.");
+    }
+    if (!this.timeslot) {
+      throw new NemligError("Favorites require a provider delivery timeslot.");
+    }
     const pageUrl = new URL("/favoritter", "https://www.nemlig.com");
     pageUrl.searchParams.set("GetAsJson", "1");
     pageUrl.searchParams.set("t", this.timeslot);
-    pageUrl.searchParams.set("d", "1");
+    pageUrl.searchParams.set("d", String(this.deliveryZoneId));
     const favoritesPage = asRecord(
       await this.json(pageUrl.toString(), { signal }, "Get favorites page"),
     );
@@ -1294,7 +1283,8 @@ export class NemligClient {
     this.accessToken = undefined;
     this.userId = undefined;
     this.productTimestamp = undefined;
-    this.timeslot = this.defaultTimeslot;
+    this.timeslot = undefined;
+    this.deliveryZoneId = undefined;
     this.timeslotId = 0;
     this.knownProducts.clear();
     this.hydratedProductIds.clear();
@@ -1372,7 +1362,8 @@ export class NemligClient {
         signal,
       ),
     );
-    this.timeslot = asString(delivery.TimeslotUtc) ?? this.timeslot;
+    this.timeslot = asString(delivery.TimeslotUtc)?.trim();
+    this.deliveryZoneId = asId(delivery.DeliveryZoneId);
     this.timeslotId = asId(asRecord(delivery.DeliveryTimeSlot).Id) ?? 0;
   }
 
@@ -1518,12 +1509,17 @@ export class NemligClient {
           signal,
         ),
       );
-      this.productTimestamp =
-        asString(settings.CombinedProductsAndSitecoreTimestamp) ??
-        DEFAULT_PRODUCT_TIMESTAMP;
+      this.productTimestamp = asString(
+        settings.CombinedProductsAndSitecoreTimestamp,
+      )?.trim();
+      if (!this.productTimestamp) {
+        throw new NemligError(
+          "Favorites require a provider catalog timestamp.",
+        );
+      }
     }
 
-    const endpoint = `${API_BASE_URL}/${this.productTimestamp}/${this.timeslot}/1/${this.userId ?? "0"}/Products/GetByProductGroupId`;
+    const endpoint = `${API_BASE_URL}/${encodeURIComponent(this.productTimestamp)}/${encodeURIComponent(this.timeslot!)}/${this.deliveryZoneId}/${this.userId}/Products/GetByProductGroupId`;
     const params = new URLSearchParams({
       productGroupId: String(group),
       pageIndex: String(page - 1),
@@ -1598,10 +1594,6 @@ export class NemligClient {
         const requestUrl = new URL(url);
         const api = requestUrl.pathname.startsWith("/webapi");
         if (api || gateway) {
-          headers.set(
-            "User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143 Safari/537.36",
-          );
           headers.set("Referer", "https://www.nemlig.com/");
         }
         if (gateway) {
@@ -1615,8 +1607,19 @@ export class NemligClient {
           ) {
             headers.set("Content-Type", "application/json");
           }
-          headers.set("version", "11.201.0");
           headers.set("platform", "web");
+        }
+        // Saved-list details and writes retain their existing storefront headers.
+        if (
+          api &&
+          (targetMethod !== "GET" ||
+            target.pathname === "/webapi/ShoppingList/getShoppingList")
+        ) {
+          headers.set(
+            "User-Agent",
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/143 Safari/537.36",
+          );
+          headers.set("version", "11.201.0");
           headers.set("device-size", "desktop");
         }
         if (includeSession && this.accessToken) {
