@@ -7,7 +7,32 @@ import {
 import { readJourneyTiming } from "../src/journey-timing.js";
 import { runShoppingJourney } from "./shopping-journey.js";
 
-type Evidence = ReturnType<typeof readJourneyTiming> & { http_status?: number };
+type Evidence = ReturnType<typeof readJourneyTiming> & {
+  http_status?: number;
+  transport_error?: string;
+};
+const networkCodes = new Set([
+  "ECONNREFUSED",
+  "ECONNRESET",
+  "UND_ERR_SOCKET",
+  "DEPTH_ZERO_SELF_SIGNED_CERT",
+  "SELF_SIGNED_CERT_IN_CHAIN",
+  "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+  "ERR_TLS_CERT_ALTNAME_INVALID",
+  "ETIMEDOUT",
+  "ENOTFOUND",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+function transportError(error: unknown): string {
+  const cause = error instanceof Error ? error.cause : undefined;
+  const code =
+    cause && typeof cause === "object" && "code" in cause
+      ? cause.code
+      : undefined;
+  return typeof code === "string" && networkCodes.has(code)
+    ? code
+    : "request_failed";
+}
 
 export function journeyTarget(env: NodeJS.ProcessEnv) {
   const endpoint = new URL(env.NEMLIG_JOURNEY_ENDPOINT ?? "");
@@ -35,6 +60,9 @@ export function journeyFetch(
       headers,
       redirect: "error",
       signal: init?.signal ? AbortSignal.any([init.signal, signal]) : signal,
+    }).catch((error: unknown) => {
+      report({ transport_error: transportError(error) });
+      throw error;
     });
     report({
       http_status: response.status,

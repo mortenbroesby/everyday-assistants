@@ -100,3 +100,18 @@ test("cleanup targets only this invocation's exact Wrangler Docker tag", () => {
     ["image", "rm", "cloudflare-dev/localjourneycontainer:0011aabb"],
   ]);
 });
+
+test("network diagnostics retain only a recognized transport failure code", async () => {
+  const target = journeyTarget(local);
+  const events = [];
+  const send = journeyFetch(
+    target,
+    AbortSignal.timeout(2000),
+    (value) => events.push(value),
+    async () => {
+      throw new TypeError("private detail", { cause: { code: "ECONNRESET" } });
+    },
+  );
+  await assert.rejects(send(target.endpoint));
+  assert.deepEqual(events.at(-1), { transport_error: "ECONNRESET" });
+});
