@@ -80,3 +80,5 @@ the standalone checkout. The original linked-worktree limitation is unchanged.
 ### Ledger disposition
 
 Both native events ran in the standalone checkout. The verified linked-worktree source behavior is accepted.
+
+2026-11-28 reconciliation. Discovery and trust were verified in the primary and linked checkouts. Primary Stop and Interrupt completed in 226 ms and 184 ms respectively. Linked-worktree execution remains unmeasured. [Primary runtime evidence](https://github.com/mortenbroesby/everyday-assistants/issues/370#issuecomment-7211792325) · [Discovery and trust](https://github.com/mortenbroesby/everyday-assistants/issues/365)

@@ -443,3 +443,7 @@ benefit; do not erase failures or expand the system to manufacture success.
 These scenarios are review criteria, not a required model benchmark on every
 edit. Static policy alignment and observed agent behavior must be reported
 separately; new paid evaluations require their own authorization.
+
+## Current developer-harness evidence, 2026-11-28
+
+The [hook record](../.friction/archived/2026-11-27-native-hook-discovery.md) now includes merged discovery, trust and primary runtime evidence. The [PATH record](../.friction/archived/2026-11-27-codex-path-shim.md) includes the command-runner correction and matched task. Track recurrence on ordinary comparable work in the [repository backlog](../apps/nemlig-assistant/BACKLOG.md#open-follow-ups-from-github).
